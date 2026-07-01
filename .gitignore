@@ -1,0 +1,19 @@
+# Build output
+build/
+*.exe
+*.obj
+*.ilk
+*.pdb
+
+# IDE
+.vscode/
+
+# Misc
+*.pdf
+
+# Documentation is maintained outside the repository
+docs/
+*.md
+!/README.md
+!**/THIRD_PARTY_NOTICES.md
+!**/CREDITS.md
