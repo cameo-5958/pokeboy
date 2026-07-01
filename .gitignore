@@ -1,0 +1,12 @@
+# Build output
+build/
+*.exe
+*.obj
+*.ilk
+*.pdb
+
+# IDE
+.vscode/
+
+# Misc
+*.pdf
