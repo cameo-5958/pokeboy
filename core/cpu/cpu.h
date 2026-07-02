@@ -21,6 +21,12 @@ private:
     bool handle_interrupts();
     int  exec_cb(uint8_t op);
     void alu(int op, uint8_t v);
+    uint8_t rot(int kind, uint8_t v);   // RLC RRC RL RR SLA SRA SWAP SRL
+    uint8_t inc8(uint8_t v);
+    uint8_t dec8(uint8_t v);
+    void    add_hl(uint16_t v);
+    uint16_t sp_plus_r8();
+    void    daa();
     uint8_t get_r(int i);
     void    set_r(int i, uint8_t v);
     uint8_t  fetch8();
