@@ -47,7 +47,9 @@ uint8_t Bus::read_io(uint16_t a) {
         case 0xFF47: return ppu->bgp;
         case 0xFF48: return ppu->obp0;  case 0xFF49: return ppu->obp1;
         case 0xFF4A: return ppu->wy;    case 0xFF4B: return ppu->wx;
-        default:     return io_misc[a - 0xFF00];   // APU regs live here until M6
+        default:
+            if (a >= 0xFF10 && a <= 0xFF3F) return apu->read_reg(a);
+            return io_misc[a - 0xFF00];
     }
 }
 
@@ -75,7 +77,9 @@ void Bus::write_io(uint16_t a, uint8_t v) {
         case 0xFF47: ppu->bgp  = v; return;
         case 0xFF48: ppu->obp0 = v; return; case 0xFF49: ppu->obp1 = v; return;
         case 0xFF4A: ppu->wy   = v; return; case 0xFF4B: ppu->wx   = v; return;
-        default:     io_misc[a - 0xFF00] = v; return;
+        default:
+            if (a >= 0xFF10 && a <= 0xFF3F) { apu->write_reg(a, v); return; }
+            io_misc[a - 0xFF00] = v; return;
     }
 }
 
