@@ -9,13 +9,16 @@ add_library(gbcore
     core/cpu/cpu.cpp
     core/ppu/ppu.cpp
     core/timer/timer.cpp
-    core/cart/cart.cpp)
-target_include_directories(gbcore PUBLIC core)
+    core/apu/apu.cpp
+    core/cart/cart.cpp
+    adapter/gb_api.cpp)
+target_include_directories(gbcore PUBLIC core adapter)
 
-# M1: headless runner — runs Blargg tests, output via serial (no SDL needed).
-# At M2, paste PDF §11.1 into frontend/main_sdl.cpp and switch to:
-#   find_package(SDL2 CONFIG REQUIRED)
-#   add_executable(gbemu frontend/main_sdl.cpp)
-#   target_link_libraries(gbemu PRIVATE gbcore SDL2::SDL2 SDL2::SDL2main)
-add_executable(gbemu frontend/headless.cpp)
-target_link_libraries(gbemu PRIVATE gbcore)
+add_executable(gbemu_headless frontend/headless.cpp)
+target_link_libraries(gbemu_headless PRIVATE gbcore)
+
+if(WIN32)
+    add_executable(gbemu WIN32 frontend/win32/main_win32.cpp)
+    target_link_libraries(gbemu PRIVATE gbcore user32 gdi32 winmm comdlg32)
+    set_target_properties(gbemu PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
+endif()
