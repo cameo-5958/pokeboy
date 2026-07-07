@@ -1,0 +1,24 @@
+# Build output
+build/
+*.exe
+*.obj
+*.ilk
+*.pdb
+
+# IDE
+.vscode/
+
+# ROMs and battery saves (not redistributable)
+*.gb
+*.gbc
+*.sav
+
+# Misc
+*.pdf
+
+# Documentation is maintained outside the repository
+docs/
+*.md
+!/README.md
+!**/THIRD_PARTY_NOTICES.md
+!**/CREDITS.md
