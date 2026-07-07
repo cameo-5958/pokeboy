@@ -343,6 +343,25 @@
                0 2px 4px rgba(0,0,0,.45);
   }
 
+  /* ---------- custom music toggle ---------- */
+  #musicBtn{
+    appearance:none; border:none; outline:none;
+    width:26px; height:26px; border-radius:50%;
+    flex:none;
+    font-size:12px; line-height:1;
+    color:var(--led-amber);
+    background:radial-gradient(circle at 35% 30%, #55584a, #23251d 78%);
+    box-shadow:inset 0 1px 2px rgba(255,255,255,.15), inset 0 -2px 3px rgba(0,0,0,.6),
+               0 2px 4px rgba(0,0,0,.45);
+    display:flex; align-items:center; justify-content:center;
+    font-family:inherit;
+  }
+  #musicBtn[hidden]{ display:none; }
+  #musicBtn.muted{ color:var(--ink-dim); }
+  #musicBtn:active{
+    box-shadow:inset 0 2px 4px rgba(0,0,0,.65);
+  }
+
   /* ---------- cartridge dock ---------- */
   #cartDock{
     position:fixed; top:0; left:50%; transform:translateX(-50%);
@@ -492,6 +511,7 @@
     <div id="volume">
       <span class="vol-label">VOLUME</span>
       <input id="volSlider" type="range" min="0" max="100" value="70" aria-label="volume">
+      <button id="musicBtn" hidden aria-label="toggle custom music">&#9835;</button>
     </div>
     <div id="speed">
       <span class="vol-label">SPEED</span>
@@ -546,7 +566,7 @@
   var DPAD = { RIGHT:0x01, LEFT:0x02, UP:0x04, DOWN:0x08 };
   var SAVE_INTERVAL_MS = 10000;
   // cartridge library: overridden by carts.json if present
-  var CARTS = [{ file:"pokemon-blue.gb", title:"Pokémon Blue" }];
+  var CARTS = [{ id:"pokemon-blue", file:"pokemon-blue.gb", title:"Pokémon Blue" }];
   var currentCart = null;
   function saveKey(){
     return "gbemu.save." + currentCart.file.replace(/\.gb$/i, "");
@@ -934,7 +954,16 @@
 
     function resume(){ if(ctx && ctx.state === "suspended") return ctx.resume(); return Promise.resolve(); }
 
-    return { init:init, push:push, resume:resume, playClick:playClick, setVolume:setVolume };
+    /* dedicated bus for the custom-music player: follows the master volume
+       slider but carries its own gain so it can be muted independently */
+    function musicChannel(){
+      if(!ctx) return null;
+      var g = ctx.createGain();
+      g.connect(master);
+      return { ctx:ctx, gain:g };
+    }
+
+    return { init:init, push:push, resume:resume, playClick:playClick, setVolume:setVolume, musicChannel:musicChannel };
   })();
 
   /* volume slider */
@@ -948,6 +977,127 @@
       AudioSystem.setVolume(slider.value / 100);
       try{ localStorage.setItem("gbemu.volume", slider.value); }catch(err){}
     });
+  })();
+
+  /* ---------------- custom music ----------------
+     Per-rom soundtrack replacement. For supported roms (matched by cart id)
+     the core will expose the game's location/music byte; each pack maps that
+     byte to an audio file which plays in place of the game's own music.
+     Gets its own mute button, independent of the master volume slider. */
+  var CustomMusic = (function(){
+    // rom-id -> pack. tracks maps the rom's music byte to an audio URL
+    // (files served from music/<rom-id>/). Backend hook lands separately.
+    var MUSIC_PACKS = {
+      "pokemon-blue": { tracks: {} },
+      "pokemon-yellow": { tracks: {} }
+    };
+
+    var btn = document.getElementById("musicBtn");
+    var pack = null;        // active pack for the inserted cart
+    var channel = null;     // { ctx, gain } from AudioSystem
+    var muted = false;
+    var currentByte = -1;   // music byte of the track now playing
+    var currentSrc = null;  // playing AudioBufferSourceNode
+    var trackCache = {};    // url -> AudioBuffer
+
+    try{ muted = localStorage.getItem("gbemu.music.muted") === "1"; }catch(err){}
+
+    function renderBtn(){
+      btn.hidden = !pack;
+      btn.classList.toggle("muted", muted);
+      btn.innerHTML = muted ? "&#9834;" : "&#9835;";
+    }
+
+    function applyGain(){
+      if(channel) channel.gain.gain.value = muted ? 0 : 1;
+    }
+
+    function ensureChannel(){
+      if(!channel) channel = AudioSystem.musicChannel();
+      if(channel) applyGain();
+      return channel;
+    }
+
+    function stopTrack(){
+      if(currentSrc){
+        try{ currentSrc.stop(); }catch(err){}
+        currentSrc = null;
+      }
+      currentByte = -1;
+    }
+
+    /* switch to the track mapped to the rom's music byte; called by the
+       polling hook whenever the byte changes */
+    function setTrack(byte){
+      if(!pack || byte === currentByte) return;
+      stopTrack();
+      currentByte = byte;
+      var url = pack.tracks[byte];
+      if(!url || !ensureChannel()) return;
+      var wantedByte = byte;
+      loadTrack(url).then(function(buf){
+        if(!buf || currentByte !== wantedByte || !channel) return;
+        var src = channel.ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        src.connect(channel.gain);
+        src.start();
+        currentSrc = src;
+      });
+    }
+
+    function loadTrack(url){
+      if(trackCache[url]) return Promise.resolve(trackCache[url]);
+      return fetch(url).then(function(resp){
+        if(!resp.ok) throw new Error("HTTP " + resp.status);
+        return resp.arrayBuffer();
+      }).then(function(buf){
+        return new Promise(function(resolve, reject){
+          channel.ctx.decodeAudioData(buf, resolve, reject);
+        });
+      }).then(function(decoded){
+        trackCache[url] = decoded;
+        return decoded;
+      }).catch(function(err){
+        console.warn("custom music track failed", url, err);
+        return null;
+      });
+    }
+
+    function attach(cart){
+      detach();
+      pack = (cart && cart.id && MUSIC_PACKS[cart.id]) || null;
+      renderBtn();
+    }
+
+    function detach(){
+      stopTrack();
+      pack = null;
+      packId = null;
+      renderBtn();
+    }
+
+    /* per-frame hook: once the core exposes the location/music byte
+       (api.readMusicByte), poll it and follow track changes */
+    function update(){
+      if(!pack || !api.readMusicByte) return;
+      setTrack(api.readMusicByte(gb));
+    }
+
+    function isActive(){
+      return !!(pack && !muted);
+    }
+
+    btn.addEventListener("click", function(){
+      muted = !muted;
+      try{ localStorage.setItem("gbemu.music.muted", muted ? "1" : "0"); }catch(err){}
+      applyGain();
+      renderBtn();
+      AudioSystem.playClick("pill");
+    });
+
+    renderBtn();
+    return { attach:attach, detach:detach, update:update, isActive:isActive };
   })();
 
   /* ---------------- render + loop ---------------- */
@@ -1006,7 +1156,10 @@
       }
       if(acc > FRAME_MS * cap) acc = FRAME_MS * cap;
     }
-    if(frames > 0) renderFrame();
+    if(frames > 0){
+      renderFrame();
+      CustomMusic.update();
+    }
   }
 
   /* speed slider: snaps at x0.5, x1, x2, x5, MAX */
@@ -1144,6 +1297,7 @@
     persistSave();
     pauseEmulation();
     currentCart = null;
+    CustomMusic.detach();
     powerDot.classList.remove("playing");
     buttonState = 0; dpadState = 0; syncInput();
     // powered-off LCD
@@ -1166,6 +1320,7 @@
   function insertCart(cart){
     return fetchRomInto(cart.file).then(function(){
       currentCart = cart;
+      CustomMusic.attach(cart);
       cartTitle.textContent = cart.title;
       try{ localStorage.setItem("gbemu.lastCart", cart.file); }catch(err){}
       hasBattery = !!api.hasBattery(gb);
