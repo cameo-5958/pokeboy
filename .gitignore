@@ -8,9 +8,13 @@ build/
 # IDE
 .vscode/
 
+# ROMs and battery saves (not redistributable)
+*.gb
+*.gbc
+*.sav
+
 # Misc
 *.pdf
-
 
 # Documentation is maintained outside the repository
 docs/
