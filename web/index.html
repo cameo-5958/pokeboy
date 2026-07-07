@@ -319,22 +319,27 @@
     padding-top:env(safe-area-inset-top);
     pointer-events:none;
   }
-  /* the slot opening: sits at the console's top edge, always visible */
-  #cartDock .cart-slot-lip{
-    position:relative; z-index:2;
-    height:9px; margin:-4px 2px 0;
+  /* slot opening: part of the console, rides its top edge */
+  .cart-slot-lip{
+    position:absolute; z-index:4;
+    top:-5px; left:50%; margin-left:-82px; width:164px; height:9px;
     background:linear-gradient(180deg,#050604,#191b14);
     border-radius:4px;
     box-shadow:inset 0 2px 3px rgba(0,0,0,.95), 0 1px 1px rgba(255,255,255,.25);
   }
+  /* inserted cartridge: sticks up out of the console's slot, moves with it */
   #cartTab{
     appearance:none; border:none; outline:none; padding:0;
-    display:block; width:100%; margin-top:calc(env(safe-area-inset-top) + 8px);
+    position:absolute; z-index:3;
+    top:-44px; left:50%; margin-left:-78px; width:156px;
     background:transparent; font-family:inherit; cursor:pointer;
     pointer-events:auto;
     transition:transform .3s cubic-bezier(.34,1.4,.5,1), opacity .22s ease;
   }
-  /* cartridge sticking up out of the slot: opening faces up */
+  #cartTab.out{
+    transform:translateY(-110px); opacity:0; pointer-events:none;
+  }
+  /* cartridge body: opening faces up */
   .cart-body{
     display:block; margin:0 8px;
     background:linear-gradient(180deg,#6e7361,#494d3f);
@@ -355,10 +360,6 @@
     font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
     text-align:center; padding:4px 6px; border-radius:3px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  /* pulled out: cart slides up and away, tray drops down */
-  #cartDock.open #cartTab{
-    transform:translateY(-90px); opacity:0; pointer-events:none;
   }
   #cartTray{
     overflow:hidden; max-height:0; margin:4px 2px 0;
@@ -389,6 +390,8 @@
 
   @media (orientation:landscape){
     #cartDock{ left:max(14px, env(safe-area-inset-left)); transform:none; }
+    #cartTab{ left:calc(max(14px, env(safe-area-inset-left)) + 8px); margin-left:0; }
+    .cart-slot-lip{ left:calc(max(14px, env(safe-area-inset-left)) + 4px); margin-left:0; }
   }
   @media (orientation:portrait){
     #brand{ justify-content:flex-start; padding-left:8px; }
@@ -428,6 +431,13 @@
 <body>
 
 <div id="app">
+  <button id="cartTab" class="out" aria-label="pull out cartridge">
+    <span class="cart-body">
+      <span class="cart-grip"></span>
+      <span class="cart-sticker" id="cartTitle">CARTRIDGE</span>
+    </span>
+  </button>
+  <div class="cart-slot-lip"></div>
   <div id="brand"><span class="dot" id="powerDot"></span></div>
 
   <div id="screen-wrap">
@@ -464,13 +474,6 @@
 </div>
 
 <div id="cartDock">
-  <button id="cartTab" aria-label="pull out cartridge">
-    <span class="cart-body">
-      <span class="cart-grip"></span>
-      <span class="cart-sticker" id="cartTitle">CARTRIDGE</span>
-    </span>
-  </button>
-  <div class="cart-slot-lip"></div>
   <div id="cartTray"></div>
 </div>
 
@@ -1059,13 +1062,16 @@
     // powered-off LCD
     ctx2d.fillStyle = "rgb(" + palette[0].join(",") + ")";
     ctx2d.fillRect(0, 0, W, H);
-    // console moves down first, THEN the cartridge comes out
+    // console (cart aboard) moves down, THEN cart pops out, THEN library opens
     clearTimeout(animTimer);
     document.body.classList.add("nocart");
     animTimer = setTimeout(function(){
-      renderTray();
-      cartDock.classList.add("open");
-    }, 480);
+      cartTab.classList.add("out");
+      animTimer = setTimeout(function(){
+        renderTray();
+        cartDock.classList.add("open");
+      }, 300);
+    }, 520);
   }
 
   function insertCart(cart){
@@ -1076,16 +1082,19 @@
       hasBattery = !!api.hasBattery(gb);
       loadSaveIfPresent();
       started = true;
-      // cartridge goes in first, THEN the console moves up and powers on
+      // library closes, cart slides INTO the slot, THEN console rises and powers on
       clearTimeout(animTimer);
       cartDock.classList.remove("open");
       animTimer = setTimeout(function(){
-        document.body.classList.remove("nocart");
+        cartTab.classList.remove("out");
         animTimer = setTimeout(function(){
-          powerDot.classList.add("playing");
-          resumeEmulation();
-        }, 500);
-      }, 340);
+          document.body.classList.remove("nocart");
+          animTimer = setTimeout(function(){
+            powerDot.classList.add("playing");
+            resumeEmulation();
+          }, 500);
+        }, 320);
+      }, 300);
     });
   }
 
