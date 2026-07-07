@@ -306,12 +306,12 @@ static void draw_button(HDC dc, const RECT& r, bool pressed, const char* label) 
     COLORREF hilite = pressed ? RGB(0x7A, 0x5A, 0x78) : RGB(0x6A, 0x53, 0x68);
     COLORREF text_clr = RGB(0xF2, 0xD9, 0xE8);
 
-    HBRUSH br_base = CreateSolidBrush(base);
     HPEN pen_null = (HPEN)GetStockObject(NULL_PEN);
     HGDIOBJ old_pen = SelectObject(dc, pen_null);
+
+    HBRUSH br_base = CreateSolidBrush(base);
     HGDIOBJ old_br = SelectObject(dc, br_base);
     Ellipse(dc, r.left, r.top, r.right, r.bottom);
-    DeleteObject(br_base);
 
     int cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
     int rr = (r.right - r.left) / 2;
@@ -319,7 +319,9 @@ static void draw_button(HDC dc, const RECT& r, bool pressed, const char* label) 
     HBRUSH br_hi = CreateSolidBrush(hilite);
     SelectObject(dc, br_hi);
     Ellipse(dc, cx - rr + 4, r.top + 4, cx - rr + 4 + hi_r, r.top + 4 + hi_r);
+    SelectObject(dc, old_br);
     DeleteObject(br_hi);
+    DeleteObject(br_base);
 
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, text_clr);
@@ -331,7 +333,7 @@ static void draw_button(HDC dc, const RECT& r, bool pressed, const char* label) 
     TextOutA(dc, cx - sz.cx / 2, cy - sz.cy / 2, label, 1);
     SelectObject(dc, old_fnt);
     DeleteObject(fnt);
-    SelectObject(dc, old_br);
+
     SelectObject(dc, old_pen);
 }
 
