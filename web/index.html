@@ -985,18 +985,31 @@
      byte to an audio file which plays in place of the game's own music.
      Gets its own mute button, independent of the master volume slider. */
   var CustomMusic = (function(){
-    // rom-id -> pack. tracks maps the rom's music byte to an audio URL
-    // (files served from music/<rom-id>/). Backend hook lands separately.
+    // rom-id -> pack. addr is the WRAM location of the game's current-map
+    // byte (wCurMap); resolve() tiers that byte into one of the pack's
+    // tracks. Red/Blue and Yellow share map ids, so they share a track set.
+    var RB_DIR = "music/pokemon-rb/";
+    // cave-style dungeons: Mt Moon 59-61, Rock Tunnel 82/232, Victory Road
+    // 108/194/198 (extend as more map ids get verified)
+    var RB_CAVES = [59, 60, 61, 82, 232, 108, 194, 198];
+    function rbResolve(map){
+      if(map === 0) return RB_DIR + "pallet.mp3";          // Pallet Town
+      if(map >= 1 && map <= 10) return RB_DIR + "town.mp3"; // cities
+      if(map >= 12 && map <= 36) return RB_DIR + "route.mp3"; // Routes 1-25
+      if(RB_CAVES.indexOf(map) !== -1) return RB_DIR + "cave.mp3";
+      return RB_DIR + "building.mp3";                       // interiors etc.
+    }
     var MUSIC_PACKS = {
-      "pokemon-blue": { tracks: {} },
-      "pokemon-yellow": { tracks: {} }
+      "pokemon-blue":   { addr:0xD35E, resolve:rbResolve },
+      "pokemon-yellow": { addr:0xD35D, resolve:rbResolve }
     };
 
     var btn = document.getElementById("musicBtn");
     var pack = null;        // active pack for the inserted cart
     var channel = null;     // { ctx, gain } from AudioSystem
     var muted = false;
-    var currentByte = -1;   // music byte of the track now playing
+    var currentByte = -1;   // last map/music byte seen
+    var currentUrl = null;  // track url now playing (or being loaded)
     var currentSrc = null;  // playing AudioBufferSourceNode
     var trackCache = {};    // url -> AudioBuffer
 
@@ -1024,19 +1037,29 @@
         currentSrc = null;
       }
       currentByte = -1;
+      currentUrl = null;
     }
 
-    /* switch to the track mapped to the rom's music byte; called by the
-       polling hook whenever the byte changes */
+    /* follow the rom's map/music byte; distinct bytes can share a track
+       (e.g. Route 1 -> Route 2), in which case playback continues */
     function setTrack(byte){
       if(!pack || byte === currentByte) return;
-      stopTrack();
       currentByte = byte;
-      var url = pack.tracks[byte];
-      if(!url || !ensureChannel()) return;
-      var wantedByte = byte;
+      var url = pack.resolve(byte);
+      if(url === currentUrl) return;
+      if(currentSrc){
+        try{ currentSrc.stop(); }catch(err){}
+        currentSrc = null;
+      }
+      currentUrl = url;
+      if(!url) return;
+      if(!ensureChannel()){
+        // audio context not unlocked yet; retry on the next poll
+        currentByte = -1; currentUrl = null;
+        return;
+      }
       loadTrack(url).then(function(buf){
-        if(!buf || currentByte !== wantedByte || !channel) return;
+        if(!buf || currentUrl !== url || currentSrc || !channel) return;
         var src = channel.ctx.createBufferSource();
         src.buffer = buf;
         src.loop = true;
@@ -1076,15 +1099,20 @@
       renderBtn();
     }
 
-    /* per-frame hook: once the core exposes the location/music byte
-       (api.readMusicByte), poll it and follow track changes */
+    /* per-frame hook: poll the pack's map/music byte and follow changes */
     function update(){
-      if(!pack || !api.readMusicByte) return;
-      setTrack(api.readMusicByte(gb));
+      if(!pack || !api.readMem || !gb) return;
+      setTrack(api.readMem(gb, pack.addr));
     }
 
     function isActive(){
       return !!(pack && !muted);
+    }
+
+    /* true while a custom track is (or is about to be) audible; the game's
+       native audio output is suppressed for the duration */
+    function overriding(){
+      return !!(pack && !muted && currentUrl);
     }
 
     btn.addEventListener("click", function(){
@@ -1096,7 +1124,7 @@
     });
 
     renderBtn();
-    return { attach:attach, detach:detach, update:update, isActive:isActive };
+    return { attach:attach, detach:detach, update:update, isActive:isActive, overriding:overriding };
   })();
 
   /* ---------------- render + loop ---------------- */
@@ -1118,6 +1146,7 @@
     var n = api.readAudio(gb, audioPtr, AUDIO_MAX_FRAMES);
     if(n <= 0) return;
     if(speed !== 1) return; // off-speed: drain the core's buffer but stay silent
+    if(CustomMusic.overriding()) return; // custom soundtrack replaces native audio
     var interleaved = Module.HEAPF32.subarray(audioPtr/4, audioPtr/4 + n*2);
     var L = new Float32Array(n), R = new Float32Array(n);
     for(var i=0;i<n;i++){ L[i] = interleaved[i*2]; R[i] = interleaved[i*2+1]; }
@@ -1517,6 +1546,7 @@
       api.hasBattery = Module.cwrap("gb_has_battery", "number", ["number"]);
       api.saveRam = Module.cwrap("gb_save_ram", "number", ["number","number"]);
       api.loadSaveRam = Module.cwrap("gb_load_save_ram", "number", ["number","number","number"]);
+      api.readMem = Module.cwrap("gb_read_mem", "number", ["number","number"]);
 
       return refreshCarts().then(function(){
         gb = api.create();
