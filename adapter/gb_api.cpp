@@ -53,4 +53,8 @@ void gb_rom_title(const gb_handle* h, char out[17]) {
         if ((unsigned char)out[i] < 0x20 || (unsigned char)out[i] > 0x7E) { out[i] = 0; break; }
 }
 
+uint8_t gb_read_mem(gb_handle* h, uint16_t addr) {
+    return h->gb.bus.read8(addr);
+}
+
 } // extern "C"
