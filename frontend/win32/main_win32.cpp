@@ -151,23 +151,43 @@ struct Layout {
     RECT btnB;
 };
 
+static bool  g_last_landscape = true;
+static int   g_last_scale = 0;
+
 static Layout calc_layout(int cw, int ch) {
     Layout L = {};
-    int scale = (std::max)(1, (std::min)(cw / GB_SCREEN_W, ch / GB_SCREEN_H));
-    int sw = GB_SCREEN_W * scale;
-    int sh = GB_SCREEN_H * scale;
     int pad = VPAD_SIZE;
     int btnD = VBUTTON_R * 2;
-    int landscape_w = pad + VGAP + sw + VGAP + btnD + VMARGIN * 2;
-    L.landscape = (cw >= landscape_w && ch >= (std::max)(pad, sh) + VMARGIN * 2);
 
-    if (L.landscape) {
-        L.dpad.left  = VMARGIN;
-        L.dpad.top   = (ch - pad) / 2;
-        L.dpad.right = L.dpad.left + pad;
+    // horizontal space consumed by controls in landscape
+    int controls_w = VMARGIN + pad + VGAP + VGAP + btnD + VMARGIN;
+    int avail_lw = cw - controls_w;
+    if (avail_lw < 0) avail_lw = 0;
+
+    int scale_l = (std::max)(1, (std::min)(avail_lw / GB_SCREEN_W, ch / GB_SCREEN_H));
+    int sw_l = GB_SCREEN_W * scale_l;
+    int sh_l = GB_SCREEN_H * scale_l;
+    bool landscape_fits = (avail_lw >= GB_SCREEN_W && ch >= (std::max)(pad, sh_l) + VMARGIN * 2);
+
+    // hysteresis: stay in current mode unless the other clearly fits
+    if (g_last_landscape)
+        landscape_fits = (avail_lw >= GB_SCREEN_W && ch >= (std::max)(pad, sh_l) + VMARGIN * 3);
+    else
+        landscape_fits = (avail_lw >= GB_SCREEN_W + 20 && ch >= (std::max)(pad, sh_l) + VMARGIN * 3);
+
+    if (landscape_fits) {
+        L.landscape = true;
+        int sw = sw_l, sh = sh_l;
+        g_last_scale = scale_l;
+
+        L.dpad.left   = VMARGIN;
+        L.dpad.top    = (ch - pad) / 2;
+        L.dpad.right  = VMARGIN + pad;
         L.dpad.bottom = L.dpad.top + pad;
 
-        L.screen.left   = (cw - sw) / 2;
+        int zone_l = VMARGIN + pad + VGAP;
+        int zone_r = cw - VMARGIN - btnD - VGAP;
+        L.screen.left   = zone_l + ((zone_r - zone_l) - sw) / 2;
         L.screen.top    = (ch - sh) / 2;
         L.screen.right  = L.screen.left + sw;
         L.screen.bottom = L.screen.top + sh;
@@ -183,6 +203,12 @@ static Layout calc_layout(int cw, int ch) {
         L.btnA.right  = L.btnA.left + btnD;
         L.btnA.bottom = L.btnA.top + btnD;
     } else {
+        L.landscape = false;
+        int scale = (std::max)(1, (std::min)(cw / GB_SCREEN_W, ch / GB_SCREEN_H));
+        int sw = GB_SCREEN_W * scale;
+        int sh = GB_SCREEN_H * scale;
+        g_last_scale = scale;
+
         int top_h = sh + VMARGIN;
         L.screen.left   = (cw - sw) / 2;
         L.screen.top    = (top_h - sh) / 2;
@@ -209,6 +235,7 @@ static Layout calc_layout(int cw, int ch) {
         L.btnA.right  = L.btnA.left + btnD;
         L.btnA.bottom = L.btnA.top + btnD;
     }
+    g_last_landscape = L.landscape;
     return L;
 }
 
@@ -416,8 +443,11 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_DESTROY:
             g_running = false;
             return 0;
-        case WM_ERASEBKGND:
+        case WM_ERASEBKGND: {
+            RECT rc; GetClientRect(hwnd, &rc);
+            FillRect((HDC)wp, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
             return 1;
+        }
     }
     return DefWindowProcA(hwnd, msg, wp, lp);
 }
