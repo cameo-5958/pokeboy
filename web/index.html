@@ -386,7 +386,7 @@
 <body>
 
 <div id="app">
-  <div id="brand"><span class="dot" id="powerDot"></span>POCKET &middot; DMG-01</div>
+  <div id="brand"><span class="dot" id="powerDot"></span></div>
 
   <div id="screen-wrap">
     <div id="bezel"><canvas id="screen" width="160" height="144"></canvas></div>
@@ -978,6 +978,7 @@
     });
   }
 
+  var animTimer = 0;
   function ejectCart(){
     captureThumb();
     persistSave();
@@ -988,10 +989,13 @@
     // powered-off LCD
     ctx2d.fillStyle = "rgb(" + palette[0].join(",") + ")";
     ctx2d.fillRect(0, 0, W, H);
-    // pull the console down and open the library
+    // console moves down first, THEN the cartridge comes out
+    clearTimeout(animTimer);
     document.body.classList.add("nocart");
-    renderTray();
-    cartDock.classList.add("open");
+    animTimer = setTimeout(function(){
+      renderTray();
+      cartDock.classList.add("open");
+    }, 480);
   }
 
   function insertCart(cart){
@@ -1002,10 +1006,16 @@
       hasBattery = !!api.hasBattery(gb);
       loadSaveIfPresent();
       started = true;
-      powerDot.classList.add("playing");
-      document.body.classList.remove("nocart");
+      // cartridge goes in first, THEN the console moves up and powers on
+      clearTimeout(animTimer);
       cartDock.classList.remove("open");
-      resumeEmulation();
+      animTimer = setTimeout(function(){
+        document.body.classList.remove("nocart");
+        animTimer = setTimeout(function(){
+          powerDot.classList.add("playing");
+          resumeEmulation();
+        }, 500);
+      }, 340);
     });
   }
 
