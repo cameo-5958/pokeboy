@@ -256,6 +256,77 @@
     .system-cluster .pill-label{ display:none; }
   }
 
+  /* ---------- cartridge dock ---------- */
+  #cartDock{
+    position:fixed; top:0; left:50%; transform:translateX(-50%);
+    z-index:15; width:172px;
+    padding-top:env(safe-area-inset-top);
+    pointer-events:none;
+  }
+  #cartDock .cart-slot-lip{
+    height:6px; margin:0 6px;
+    background:#0c0d0a; border-radius:0 0 5px 5px;
+    box-shadow:inset 0 -2px 3px rgba(0,0,0,.9), 0 1px 1px rgba(255,255,255,.05);
+  }
+  #cartTab{
+    appearance:none; border:none; outline:none; padding:0;
+    display:block; width:100%; margin-top:-2px;
+    background:transparent; font-family:inherit; cursor:pointer;
+    pointer-events:auto;
+    transition:transform .3s cubic-bezier(.34,1.4,.5,1), opacity .22s ease;
+  }
+  .cart-body{
+    display:block;
+    background:linear-gradient(180deg,#686d5c,#3e4237);
+    border-radius:0 0 10px 10px;
+    padding:6px 10px 8px;
+    box-shadow:inset 0 -3px 4px rgba(0,0,0,.4), inset 2px 0 2px rgba(255,255,255,.06),
+               inset -2px 0 2px rgba(0,0,0,.25), 0 4px 7px rgba(0,0,0,.45);
+  }
+  .cart-grip{
+    display:block; height:6px; margin:0 20px 5px;
+    background:repeating-linear-gradient(90deg,#31342a 0 4px,#4c5042 4px 8px);
+    border-radius:2px;
+  }
+  .cart-sticker{
+    display:block;
+    background:linear-gradient(160deg,#2c4f92,#15294d);
+    color:#dfe6f2;
+    font-size:9px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    text-align:center; padding:4px 6px; border-radius:3px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  /* pulled out: cart slides up and away, tray drops down */
+  #cartDock.open #cartTab{
+    transform:translateY(-70px); opacity:0; pointer-events:none;
+  }
+  #cartTray{
+    overflow:hidden; max-height:0; margin:4px 2px 0;
+    transition:max-height .32s ease;
+    pointer-events:auto;
+  }
+  #cartDock.open #cartTray{ max-height:62vh; overflow-y:auto; }
+  .cart-item{
+    appearance:none; border:none; outline:none; font-family:inherit; cursor:pointer;
+    display:block; width:100%; margin:8px 0; padding:8px 10px 10px;
+    background:linear-gradient(180deg,#6a6f5e,#3a3e33);
+    border-radius:8px 8px 12px 12px;
+    box-shadow:0 4px 8px rgba(0,0,0,.5), inset 0 1px 1px rgba(255,255,255,.1);
+    transition:transform .15s ease;
+  }
+  .cart-item:active{ transform:translateY(3px); }
+  .cart-item.current{ box-shadow:0 4px 8px rgba(0,0,0,.5), 0 0 0 2px var(--led-amber); }
+  .cart-item .cart-grip{ margin:0 26px 6px; }
+  .cart-item .cart-sticker{ font-size:10px; padding:10px 6px; }
+  .cart-item.err .cart-sticker{ background:linear-gradient(160deg,#8a2a2a,#4d1515); }
+
+  @media (orientation:landscape){
+    #cartDock{ left:max(14px, env(safe-area-inset-left)); transform:none; }
+  }
+  @media (orientation:portrait){
+    #brand{ justify-content:flex-start; padding-left:8px; }
+  }
+
   /* ---------- overlay ---------- */
   #overlay{
     position:fixed; inset:0; z-index:20;
@@ -321,6 +392,17 @@
   </div>
 </div>
 
+<div id="cartDock">
+  <div class="cart-slot-lip"></div>
+  <button id="cartTab" aria-label="pull out cartridge">
+    <span class="cart-body">
+      <span class="cart-grip"></span>
+      <span class="cart-sticker" id="cartTitle">CARTRIDGE</span>
+    </span>
+  </button>
+  <div id="cartTray"></div>
+</div>
+
 <div id="overlay">
   <div class="spinner" id="ovSpinner"></div>
   <h1 id="ovTitle">Loading cartridge&hellip;</h1>
@@ -339,8 +421,13 @@
   var MAX_CATCHUP_FRAMES = 4;
   var BTN = { A:0x01, B:0x02, SELECT:0x04, START:0x08 };
   var DPAD = { RIGHT:0x01, LEFT:0x02, UP:0x04, DOWN:0x08 };
-  var SAVE_KEY = "gbemu.save.pokemon-blue";
   var SAVE_INTERVAL_MS = 10000;
+  // cartridge library: overridden by carts.json if present
+  var CARTS = [{ file:"pokemon-blue.gb", title:"Pokémon Blue" }];
+  var currentCart = null;
+  function saveKey(){
+    return "gbemu.save." + currentCart.file.replace(/\.gb$/i, "");
+  }
 
   var overlay = document.getElementById("overlay");
   var ovTitle = document.getElementById("ovTitle");
@@ -775,7 +862,7 @@
 
   function loadSaveIfPresent(){
     if(!hasBattery) return;
-    var b64 = localStorage.getItem(SAVE_KEY);
+    var b64 = localStorage.getItem(saveKey());
     if(!b64) return;
     try{
       var bytes = base64ToBytes(b64);
@@ -798,7 +885,7 @@
     if(!ptr || !len) return;
     var bytes = Module.HEAPU8.subarray(ptr, ptr+len);
     try{
-      localStorage.setItem(SAVE_KEY, bytesToBase64(bytes));
+      localStorage.setItem(saveKey(), bytesToBase64(bytes));
     }catch(err){
       console.warn("save persist failed", err);
     }
@@ -809,18 +896,100 @@
     if(document.visibilityState === "hidden") persistSave();
   });
 
-  /* ---------------- boot ---------------- */
+  /* ---------------- run control ---------------- */
+  var running = false;
+  function pauseEmulation(){
+    if(!running) return;
+    running = false;
+    cancelAnimationFrame(rafId);
+  }
+  function resumeEmulation(){
+    if(running || !started) return;
+    running = true;
+    lastT = 0; acc = 0;
+    rafId = requestAnimationFrame(loop);
+  }
   function startEmulationLoop(){
     if(started) return;
     started = true;
     powerDot.classList.add("playing");
-    lastT = 0; acc = 0;
-    rafId = requestAnimationFrame(loop);
+    resumeEmulation();
   }
+
+  /* ---------------- cartridge dock ---------------- */
+  var cartDock = document.getElementById("cartDock");
+  var cartTab = document.getElementById("cartTab");
+  var cartTray = document.getElementById("cartTray");
+  var cartTitle = document.getElementById("cartTitle");
+
+  function fetchRomInto(file){
+    return fetch(encodeURIComponent(file)).then(function(resp){
+      if(!resp.ok) throw new Error("HTTP " + resp.status);
+      return resp.arrayBuffer();
+    }).then(function(buf){
+      var romBytes = new Uint8Array(buf);
+      var romPtr = Module._malloc(romBytes.length);
+      Module.HEAPU8.set(romBytes, romPtr);
+      var ok = api.loadRom(gb, romPtr, romBytes.length);
+      Module._free(romPtr);
+      if(!ok) throw new Error("gb_load_rom rejected " + file);
+    });
+  }
+
+  function ejectCart(){
+    persistSave();
+    pauseEmulation();
+    powerDot.classList.remove("playing");
+    buttonState = 0; dpadState = 0; syncInput();
+    // powered-off LCD
+    ctx2d.fillStyle = "rgb(" + palette[0].join(",") + ")";
+    ctx2d.fillRect(0, 0, W, H);
+  }
+
+  function insertCart(cart){
+    return fetchRomInto(cart.file).then(function(){
+      currentCart = cart;
+      cartTitle.textContent = cart.title;
+      try{ localStorage.setItem("gbemu.lastCart", cart.file); }catch(err){}
+      hasBattery = !!api.hasBattery(gb);
+      loadSaveIfPresent();
+      if(started) powerDot.classList.add("playing");
+      resumeEmulation();
+    });
+  }
+
+  function renderTray(){
+    cartTray.innerHTML = "";
+    CARTS.forEach(function(cart){
+      var item = document.createElement("button");
+      item.className = "cart-item" + (currentCart && cart.file === currentCart.file ? " current" : "");
+      item.innerHTML = '<span class="cart-grip"></span><span class="cart-sticker"></span>';
+      item.querySelector(".cart-sticker").textContent = cart.title;
+      item.addEventListener("click", function(){
+        AudioSystem.playClick("btn");
+        insertCart(cart).then(function(){
+          cartDock.classList.remove("open");
+        }).catch(function(err){
+          console.warn("cart load failed", err);
+          item.classList.add("err");
+          setTimeout(function(){ item.classList.remove("err"); }, 900);
+        });
+      });
+      cartTray.appendChild(item);
+    });
+  }
+
+  cartTab.addEventListener("click", function(){
+    if(!gb) return; // not booted yet
+    AudioSystem.playClick("pill");
+    ejectCart();
+    renderTray();
+    cartDock.classList.add("open");
+  });
 
   function armStartGesture(){
     ovSpinner.style.display = "none";
-    ovTitle.textContent = "Pokémon Blue";
+    ovTitle.textContent = currentCart.title;
     ovText.textContent = "Cartridge loaded. Tap to power on (needed once for audio on iOS).";
     ovButton.style.display = "inline-block";
     ovButton.textContent = "Tap to start";
@@ -854,23 +1023,25 @@
       api.saveRam = Module.cwrap("gb_save_ram", "number", ["number","number"]);
       api.loadSaveRam = Module.cwrap("gb_load_save_ram", "number", ["number","number","number"]);
 
-      return fetch("pokemon-blue.gb").then(function(resp){
-        if(!resp.ok){
-          throw new Error("HTTP " + resp.status);
+      return fetch("carts.json").then(function(resp){
+        return resp.ok ? resp.json() : null;
+      }).catch(function(){ return null; }).then(function(list){
+        if(Array.isArray(list) && list.length){
+          var valid = list.filter(function(c){ return c && c.file && c.title; });
+          if(valid.length) CARTS = valid;
         }
-        return resp.arrayBuffer();
-      }).then(function(buf){
-        var romBytes = new Uint8Array(buf);
-        var romPtr = Module._malloc(romBytes.length);
-        Module.HEAPU8.set(romBytes, romPtr);
+        var last = null;
+        try{ last = localStorage.getItem("gbemu.lastCart"); }catch(err){}
+        var chosen = null;
+        for(var i=0;i<CARTS.length;i++){ if(CARTS[i].file === last) chosen = CARTS[i]; }
+        currentCart = chosen || CARTS[0];
+        cartTitle.textContent = currentCart.title;
 
         gb = api.create();
         if(!gb){ throw new Error("gb_create returned null"); }
 
-        var ok = api.loadRom(gb, romPtr, romBytes.length);
-        Module._free(romPtr);
-        if(!ok){ throw new Error("gb_load_rom rejected the ROM"); }
-
+        return fetchRomInto(currentCart.file);
+      }).then(function(){
         fbPtr = api.framebuffer(gb);
         audioPtr = Module._malloc(audioBufBytes);
         hasBattery = !!api.hasBattery(gb);
@@ -881,7 +1052,7 @@
     }).catch(function(err){
       console.error(err);
       if(String(err.message || err).indexOf("404") !== -1 || String(err.message||err).indexOf("HTTP") !== -1){
-        showError("Cartridge not found", "Place pokemon-blue.gb next to index.html, then reload.");
+        showError("Cartridge not found", "Place " + (currentCart ? currentCart.file : "the ROM") + " next to index.html, then reload.");
       } else {
         showError("Startup failed", (err && err.message) ? err.message : String(err));
       }
