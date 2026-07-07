@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#141410">
+<title>Pocket &middot; Pokémon Blue</title>
+<style>
+  :root{
+    --shell-1:#3a3d34;
+    --shell-2:#2a2c25;
+    --shell-3:#1c1e18;
+    --bezel:#0e120b;
+    --ink:#eae6d8;
+    --ink-dim:#a7a292;
+    --led-amber:#e8a33d;
+    --led-red:#c1442c;
+    --btn-face:#4a3348;
+    --btn-face-dark:#2e1f2c;
+    --lcd-0:#c8d4a4;
+    --lcd-1:#8fa878;
+    --lcd-2:#4e6350;
+    --lcd-3:#1c2b22;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:#08090a; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    overscroll-behavior:none;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  #app{
+    position:fixed; inset:0;
+    height:100dvh; width:100vw;
+    background:
+      radial-gradient(ellipse at 30% 0%, #46493d 0%, transparent 55%),
+      linear-gradient(160deg, var(--shell-1), var(--shell-2) 55%, var(--shell-3));
+    display:grid;
+    padding-top:max(10px, env(safe-area-inset-top));
+    padding-bottom:max(10px, env(safe-area-inset-bottom));
+    padding-left:max(10px, env(safe-area-inset-left));
+    padding-right:max(10px, env(safe-area-inset-right));
+    gap:8px;
+  }
+
+  /* ---------- brand strip ---------- */
+  #brand{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    color:var(--ink-dim);
+    font-size:11px; letter-spacing:.14em; font-weight:600;
+    text-transform:uppercase;
+    grid-area:brand;
+  }
+  #brand .dot{ width:7px; height:7px; border-radius:50%; background:var(--led-amber);
+    box-shadow:0 0 6px 1px var(--led-amber); }
+  #brand .dot.off{ background:#5a4a2c; box-shadow:none; }
+  #brand .dot.playing{ animation:pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1} 50%{opacity:.35} }
+
+  /* ---------- screen ---------- */
+  #screen-wrap{
+    grid-area:screen;
+    display:flex; align-items:center; justify-content:center;
+    min-height:0; min-width:0;
+    position:relative;
+    width:100%; height:100%;
+  }
+  #bezel{
+    background:linear-gradient(160deg,#181a13,var(--bezel) 60%);
+    border-radius:14px;
+    padding:14px;
+    box-shadow:
+      inset 0 2px 3px rgba(255,255,255,.05),
+      inset 0 -3px 8px rgba(0,0,0,.6),
+      0 6px 16px rgba(0,0,0,.45);
+    display:flex; align-items:center; justify-content:center;
+    max-width:100%; max-height:100%;
+    min-height:0;
+  }
+  #screen{
+    background:var(--lcd-0);
+    image-rendering:pixelated;
+    image-rendering:-webkit-optimize-contrast;
+    display:block;
+    box-shadow:0 0 0 1px rgba(0,0,0,.4) inset;
+    border-radius:2px;
+  }
+
+  /* ---------- controls ---------- */
+  #controls{ grid-area:controls; display:grid; min-height:0; }
+
+  .dpad{
+    position:relative;
+    width:132px; height:132px;
+    touch-action:none;
+  }
+  .dpad-base{
+    position:absolute; inset:0;
+    background:radial-gradient(circle at 35% 30%, #4d5040, #23251d 70%);
+    border-radius:16px;
+    box-shadow:inset 0 2px 3px rgba(255,255,255,.06), inset 0 -3px 6px rgba(0,0,0,.6);
+  }
+  .dpad-cross{
+    position:absolute; inset:0;
+  }
+  .dpad-cross::before, .dpad-cross::after{
+    content:""; position:absolute; background:linear-gradient(180deg,#141610,#0a0b08);
+    box-shadow:inset 0 1px 2px rgba(255,255,255,.08), 0 1px 2px rgba(0,0,0,.5);
+    border-radius:5px;
+  }
+  .dpad-cross::before{ left:38%; right:38%; top:6%; bottom:6%; }
+  .dpad-cross::after{ top:38%; bottom:38%; left:6%; right:6%; }
+  .dpad-dot{
+    position:absolute; left:50%; top:50%; width:14px; height:14px;
+    transform:translate(-50%,-50%); border-radius:50%;
+    background:#0a0b08;
+  }
+  .dpad-glow{
+    position:absolute; border-radius:4px; background:var(--led-amber);
+    opacity:0; filter:blur(1px); transition:opacity .05s linear;
+    pointer-events:none;
+  }
+  .dpad-glow.up{ left:38%; right:38%; top:4%; height:44%; }
+  .dpad-glow.down{ left:38%; right:38%; bottom:4%; height:44%; }
+  .dpad-glow.left{ top:38%; bottom:38%; left:4%; width:44%; }
+  .dpad-glow.right{ top:38%; bottom:38%; right:4%; width:44%; }
+  .dpad-glow.on{ opacity:.55; }
+
+  .action-btn{
+    appearance:none; border:none; outline:none;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 28%, #6a4a68, var(--btn-face-dark) 75%);
+    color:#f2d9e8;
+    font-weight:700; font-size:15px; letter-spacing:.02em;
+    box-shadow:
+      inset 0 2px 2px rgba(255,255,255,.15),
+      inset 0 -4px 6px rgba(0,0,0,.55),
+      0 3px 5px rgba(0,0,0,.4);
+    display:flex; align-items:center; justify-content:center;
+    font-family:inherit;
+    transition:transform .04s ease, box-shadow .04s ease;
+  }
+  .action-btn:active, .action-btn.held{
+    transform:translateY(2px);
+    box-shadow:
+      inset 0 2px 3px rgba(0,0,0,.6),
+      0 1px 2px rgba(0,0,0,.4);
+    background:radial-gradient(circle at 35% 28%, #7c5a7a, #3a2638 75%);
+  }
+  .pill-btn{
+    appearance:none; border:none; outline:none;
+    background:linear-gradient(180deg,#3c3d34,#25261f);
+    color:var(--ink-dim);
+    border-radius:999px;
+    font-size:9.5px; font-weight:700; letter-spacing:.12em;
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.08), inset 0 -2px 3px rgba(0,0,0,.5);
+    transform:rotate(-18deg);
+    font-family:inherit;
+  }
+  .pill-btn:active, .pill-btn.held{ box-shadow:inset 0 2px 3px rgba(0,0,0,.6); color:var(--ink); }
+  .pill-label{ display:block; text-align:center; margin-top:4px; font-size:8.5px; letter-spacing:.16em; color:#6b6656; transform:rotate(-18deg); }
+
+  /* ===== Portrait layout ===== */
+  @media (orientation:portrait){
+    #app{
+      grid-template-rows:auto 1fr auto;
+      grid-template-areas:"brand" "screen" "controls";
+    }
+    #controls{
+      grid-template-columns:1fr 1fr;
+      grid-template-rows:auto auto;
+      grid-template-areas:"dpad face" "system system";
+      align-items:center;
+      padding:6px 10px 2px;
+      gap:6px;
+    }
+    .dpad{ grid-area:dpad; justify-self:start; }
+    .face-cluster{
+      grid-area:face; justify-self:end;
+      display:grid; grid-template-columns:auto auto; gap:14px 16px;
+      align-items:end;
+    }
+    .face-cluster .action-btn{ width:60px; height:60px; }
+    #btnB{ align-self:end; }
+    #btnA{ align-self:start; }
+    .system-cluster{
+      grid-area:system; justify-self:center;
+      display:flex; gap:22px; margin-top:2px;
+    }
+    .system-cluster .pill-btn{ width:52px; height:20px; }
+  }
+
+  /* ===== Landscape layout ===== */
+  @media (orientation:landscape){
+    #app{
+      grid-template-columns:auto 1fr auto;
+      grid-template-rows:auto 1fr;
+      grid-template-areas:"brand brand brand" "controls screen controls2";
+      column-gap:10px;
+    }
+    #brand{ grid-area:brand; }
+    #controls{ display:contents; }
+    .dpad{ grid-area:controls; align-self:center; justify-self:start; margin-left:4px; }
+    .face-cluster{
+      grid-area:controls2; align-self:center; justify-self:end; margin-right:4px;
+      display:grid; grid-template-columns:auto auto; gap:12px 14px;
+    }
+    .face-cluster .action-btn{ width:58px; height:58px; }
+    #btnB{ align-self:end; }
+    #btnA{ align-self:start; }
+    .system-cluster{
+      grid-area:controls2; align-self:end; justify-self:end; margin:0 4px 4px 0;
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .system-cluster .pill-btn{ width:44px; height:16px; }
+    .system-cluster .pill-label{ display:none; }
+  }
+
+  /* ---------- overlay ---------- */
+  #overlay{
+    position:fixed; inset:0; z-index:20;
+    background:rgba(6,7,5,.94);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:24px;
+    gap:14px;
+  }
+  #overlay.hidden{ display:none; }
+  #overlay h1{
+    font-size:20px; margin:0; letter-spacing:.04em; color:var(--ink);
+  }
+  #overlay p{
+    margin:0; color:var(--ink-dim); font-size:13.5px; max-width:320px; line-height:1.5;
+  }
+  #overlay button{
+    margin-top:8px; padding:12px 30px; font-size:14px; font-weight:700;
+    letter-spacing:.08em; text-transform:uppercase;
+    border:none; border-radius:999px; color:#1b1408;
+    background:linear-gradient(180deg,#f3c15f,var(--led-amber));
+    box-shadow:0 4px 10px rgba(0,0,0,.4);
+  }
+  #overlay.error h1{ color:#e37a5f; }
+  #overlay .spinner{
+    width:22px; height:22px; border-radius:50%;
+    border:2.5px solid rgba(255,255,255,.15); border-top-color:var(--led-amber);
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="brand"><span class="dot" id="powerDot"></span>POCKET &middot; DMG-01</div>
+
+  <div id="screen-wrap">
+    <div id="bezel"><canvas id="screen" width="160" height="144"></canvas></div>
+  </div>
+
+  <div id="controls">
+    <div class="dpad" id="dpad">
+      <div class="dpad-base"></div>
+      <div class="dpad-cross"></div>
+      <div class="dpad-glow up" id="glowUp"></div>
+      <div class="dpad-glow down" id="glowDown"></div>
+      <div class="dpad-glow left" id="glowLeft"></div>
+      <div class="dpad-glow right" id="glowRight"></div>
+      <div class="dpad-dot"></div>
+    </div>
+    <div class="face-cluster">
+      <button class="action-btn" id="btnB">B</button>
+      <button class="action-btn" id="btnA">A</button>
+    </div>
+    <div class="system-cluster">
+      <div><button class="pill-btn" id="btnSelect"></button><span class="pill-label">SELECT</span></div>
+      <div><button class="pill-btn" id="btnStart"></button><span class="pill-label">START</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="spinner" id="ovSpinner"></div>
+  <h1 id="ovTitle">Loading cartridge&hellip;</h1>
+  <p id="ovText">Fetching Pokémon Blue and starting up the emulator core.</p>
+  <button id="ovButton" style="display:none">Tap to start</button>
+</div>
+
+<script src="gbcore.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- constants ---------------- */
+  var W = 160, H = 144;
+  var FRAME_MS = 1000 / 59.7275;
+  var MAX_CATCHUP_FRAMES = 4;
+  var BTN = { A:0x01, B:0x02, SELECT:0x04, START:0x08 };
+  var DPAD = { RIGHT:0x01, LEFT:0x02, UP:0x04, DOWN:0x08 };
+  var SAVE_KEY = "gbemu.save.pokemon-blue";
+  var SAVE_INTERVAL_MS = 10000;
+
+  var overlay = document.getElementById("overlay");
+  var ovTitle = document.getElementById("ovTitle");
+  var ovText = document.getElementById("ovText");
+  var ovButton = document.getElementById("ovButton");
+  var ovSpinner = document.getElementById("ovSpinner");
+  var powerDot = document.getElementById("powerDot");
+
+  function showError(title, text){
+    overlay.classList.remove("hidden");
+    overlay.classList.add("error");
+    ovSpinner.style.display = "none";
+    ovButton.style.display = "none";
+    ovTitle.textContent = title;
+    ovText.textContent = text;
+  }
+
+  /* ---------------- state ---------------- */
+  var Module = null;
+  var gb = 0;
+  var api = {};
+  var fbPtr = 0;
+  var audioPtr = 0;
+  var AUDIO_MAX_FRAMES = 4096; // stereo frames per read
+  var started = false;
+  var hasBattery = false;
+
+  var canvas = document.getElementById("screen");
+
+  /* size the canvas to fill the screen area, preserving 10:9 */
+  (function(){
+    var wrap = document.getElementById("screen-wrap");
+    var bezel = document.getElementById("bezel");
+    function fit(){
+      var cs = getComputedStyle(bezel);
+      var padW = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+      var padH = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+      var availW = wrap.clientWidth - padW;
+      var availH = wrap.clientHeight - padH;
+      var scale = Math.max(1, Math.min(availW / W, availH / H));
+      canvas.style.width = Math.floor(W * scale) + "px";
+      canvas.style.height = Math.floor(H * scale) + "px";
+    }
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("orientationchange", function(){ setTimeout(fit, 60); });
+    if(window.ResizeObserver) new ResizeObserver(fit).observe(wrap);
+  })();
+
+  var ctx2d = canvas.getContext("2d", { alpha:false });
+  var imageData = ctx2d.createImageData(W, H);
+  var palette = [
+    [0xc8,0xd4,0xa4],
+    [0x8f,0xa8,0x78],
+    [0x4e,0x63,0x50],
+    [0x1c,0x2b,0x22]
+  ];
+  // pre-fill alpha channel
+  (function(){
+    var d = imageData.data;
+    for(var i=3;i<d.length;i+=4) d[i]=255;
+  })();
+
+  /* ---------------- input ---------------- */
+  var buttonState = 0, dpadState = 0;
+  function setButton(mask, on){
+    buttonState = on ? (buttonState | mask) : (buttonState & ~mask);
+    syncInput();
+  }
+  function setDpad(mask, on){
+    dpadState = on ? (dpadState | mask) : (dpadState & ~mask);
+    syncInput();
+  }
+  function syncInput(){
+    if(gb && api.setInput) api.setInput(gb, buttonState, dpadState);
+  }
+
+  function wireHoldButton(el, mask, isDpad){
+    var active = false;
+    function down(e){
+      e.preventDefault();
+      active = true;
+      el.classList.add("held");
+      if(isDpad) setDpad(mask, true); else setButton(mask, true);
+      try{ el.setPointerCapture(e.pointerId); }catch(err){}
+    }
+    function up(e){
+      if(!active) return;
+      active = false;
+      el.classList.remove("held");
+      if(isDpad) setDpad(mask, false); else setButton(mask, false);
+    }
+    el.addEventListener("pointerdown", down, {passive:false});
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    el.addEventListener("pointerleave", up);
+    el.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+  }
+
+  wireHoldButton(document.getElementById("btnA"), BTN.A, false);
+  wireHoldButton(document.getElementById("btnB"), BTN.B, false);
+  wireHoldButton(document.getElementById("btnStart"), BTN.START, false);
+  wireHoldButton(document.getElementById("btnSelect"), BTN.SELECT, false);
+
+  /* d-pad: single touch surface, tracks slide, supports diagonals */
+  (function(){
+    var pad = document.getElementById("dpad");
+    var glowUp = document.getElementById("glowUp");
+    var glowDown = document.getElementById("glowDown");
+    var glowLeft = document.getElementById("glowLeft");
+    var glowRight = document.getElementById("glowRight");
+    var activePointer = null;
+    var current = { up:false, down:false, left:false, right:false };
+
+    function apply(next){
+      if(next.up !== current.up){ setDpad(DPAD.UP, next.up); glowUp.classList.toggle("on", next.up); }
+      if(next.down !== current.down){ setDpad(DPAD.DOWN, next.down); glowDown.classList.toggle("on", next.down); }
+      if(next.left !== current.left){ setDpad(DPAD.LEFT, next.left); glowLeft.classList.toggle("on", next.left); }
+      if(next.right !== current.right){ setDpad(DPAD.RIGHT, next.right); glowRight.classList.toggle("on", next.right); }
+      current = next;
+    }
+
+    function clearAll(){ apply({up:false,down:false,left:false,right:false}); }
+
+    function update(clientX, clientY){
+      var rect = pad.getBoundingClientRect();
+      var cx = rect.left + rect.width/2;
+      var cy = rect.top + rect.height/2;
+      var dx = clientX - cx;
+      var dy = clientY - cy;
+      var dead = rect.width * 0.16;
+      var dist = Math.sqrt(dx*dx + dy*dy);
+      if(dist < dead){ clearAll(); return; }
+      var angle = Math.atan2(dy, dx); // radians, 0 = right, PI/2 = down
+      var deg = angle * 180 / Math.PI;
+      // 8-way split with generous diagonal wedges
+      var next = {up:false,down:false,left:false,right:false};
+      if(deg > -112.5 && deg < -67.5){ next.up = true; }
+      else if(deg >= -67.5 && deg <= -22.5){ next.up = true; next.right = true; }
+      else if(deg > -22.5 && deg < 22.5){ next.right = true; }
+      else if(deg >= 22.5 && deg <= 67.5){ next.down = true; next.right = true; }
+      else if(deg > 67.5 && deg < 112.5){ next.down = true; }
+      else if(deg >= 112.5 && deg <= 157.5){ next.down = true; next.left = true; }
+      else if(deg > 157.5 || deg < -157.5){ next.left = true; }
+      else { next.up = true; next.left = true; }
+      apply(next);
+    }
+
+    pad.addEventListener("pointerdown", function(e){
+      e.preventDefault();
+      activePointer = e.pointerId;
+      try{ pad.setPointerCapture(e.pointerId); }catch(err){}
+      update(e.clientX, e.clientY);
+    }, {passive:false});
+    pad.addEventListener("pointermove", function(e){
+      if(e.pointerId !== activePointer) return;
+      e.preventDefault();
+      update(e.clientX, e.clientY);
+    }, {passive:false});
+    function release(e){
+      if(e.pointerId !== activePointer) return;
+      activePointer = null;
+      clearAll();
+    }
+    pad.addEventListener("pointerup", release);
+    pad.addEventListener("pointercancel", release);
+  })();
+
+  /* keyboard for desktop testing */
+  var KEYMAP = {
+    ArrowUp:["dpad",DPAD.UP], ArrowDown:["dpad",DPAD.DOWN],
+    ArrowLeft:["dpad",DPAD.LEFT], ArrowRight:["dpad",DPAD.RIGHT],
+    "z":["btn",BTN.A], "Z":["btn",BTN.A],
+    "x":["btn",BTN.B], "X":["btn",BTN.B],
+    "Enter":["btn",BTN.START], "Shift":["btn",BTN.SELECT]
+  };
+  window.addEventListener("keydown", function(e){
+    var m = KEYMAP[e.key]; if(!m) return;
+    e.preventDefault();
+    if(m[0]==="dpad") setDpad(m[1], true); else setButton(m[1], true);
+  });
+  window.addEventListener("keyup", function(e){
+    var m = KEYMAP[e.key]; if(!m) return;
+    if(m[0]==="dpad") setDpad(m[1], false); else setButton(m[1], false);
+  });
+
+  /* prevent double-tap zoom / gesture zoom on iOS */
+  document.addEventListener("dblclick", function(e){ e.preventDefault(); }, {passive:false});
+  document.addEventListener("gesturestart", function(e){ e.preventDefault(); }, {passive:false});
+  var lastTouchEnd = 0;
+  document.addEventListener("touchend", function(e){
+    var now = Date.now();
+    if(now - lastTouchEnd <= 300) e.preventDefault();
+    lastTouchEnd = now;
+  }, {passive:false});
+
+  /* ---------------- audio ---------------- */
+  var AudioSystem = (function(){
+    var ctx = null, node = null, mode = null;
+    var resampler = { pos:0, lastL:0, lastR:0 };
+    var spQueue = []; // for ScriptProcessor fallback: array of {L,R,offset}
+
+    function resample(inL, inR, n, outRate){
+      if(!outRate || Math.round(outRate) === 44100){
+        return { L:inL, R:inR, n:n };
+      }
+      var ratio = 44100 / outRate;
+      var outL = [], outR = [];
+      var pos = resampler.pos;
+      while(true){
+        var idx = Math.floor(pos);
+        if(idx >= n - 1) break;
+        var frac = pos - idx;
+        var l0 = idx < 0 ? resampler.lastL : inL[idx];
+        var l1 = inL[idx+1];
+        var r0 = idx < 0 ? resampler.lastR : inR[idx];
+        var r1 = inR[idx+1];
+        outL.push(l0 + (l1-l0)*frac);
+        outR.push(r0 + (r1-r0)*frac);
+        pos += ratio;
+      }
+      resampler.pos = Math.max(0, pos - (n-1));
+      if(n > 0){ resampler.lastL = inL[n-1]; resampler.lastR = inR[n-1]; }
+      return { L:Float32Array.from(outL), R:Float32Array.from(outR), n:outL.length };
+    }
+
+    var WORKLET_SRC = [
+      "class GBProcessor extends AudioWorkletProcessor {",
+      "  constructor(){",
+      "    super();",
+      "    this.qL = []; this.qR = []; this.qLen = 0;",
+      "    this.port.onmessage = (e) => {",
+      "      this.qL.push(e.data.l); this.qR.push(e.data.r); this.qLen += e.data.l.length;",
+      "      if(this.qLen > 44100 * 2){",
+      "        while(this.qLen > 44100){",
+      "          var l = this.qL.shift(); var r = this.qR.shift();",
+      "          this.qLen -= l.length;",
+      "        }",
+      "      }",
+      "    };",
+      "  }",
+      "  process(inputs, outputs){",
+      "    var out = outputs[0];",
+      "    var chL = out[0], chR = out.length>1?out[1]:out[0];",
+      "    for(var i=0;i<chL.length;i++){",
+      "      if(this.qLen <= 0){ chL[i]=0; chR[i]=0; continue; }",
+      "      var l = this.qL[0], r = this.qR[0];",
+      "      chL[i] = l[0]; chR[i] = r[0];",
+      "      if(l.length === 1){ this.qL.shift(); this.qR.shift(); }",
+      "      else { this.qL[0] = l.subarray(1); this.qR[0] = r.subarray(1); }",
+      "      this.qLen--;",
+      "    }",
+      "    return true;",
+      "  }",
+      "}",
+      "registerProcessor('gb-processor', GBProcessor);"
+    ].join("\n");
+
+    function init(){
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      ctx = new Ctx();
+      return tryWorklet().catch(function(){
+        return initScriptProcessor();
+      });
+    }
+
+    function tryWorklet(){
+      if(!ctx.audioWorklet) return Promise.reject(new Error("no audioWorklet"));
+      var blob = new Blob([WORKLET_SRC], { type:"application/javascript" });
+      var url = URL.createObjectURL(blob);
+      return ctx.audioWorklet.addModule(url).then(function(){
+        node = new AudioWorkletNode(ctx, "gb-processor", { outputChannelCount:[2] });
+        node.connect(ctx.destination);
+        mode = "worklet";
+      });
+    }
+
+    function initScriptProcessor(){
+      var bufSize = 2048;
+      node = ctx.createScriptProcessor(bufSize, 0, 2);
+      node.onaudioprocess = function(e){
+        var outL = e.outputBuffer.getChannelData(0);
+        var outR = e.outputBuffer.getChannelData(1);
+        var i = 0;
+        while(i < outL.length){
+          if(spQueue.length === 0){
+            for(; i<outL.length; i++){ outL[i]=0; outR[i]=0; }
+            break;
+          }
+          var chunk = spQueue[0];
+          var avail = chunk.L.length - chunk.offset;
+          var take = Math.min(avail, outL.length - i);
+          for(var k=0;k<take;k++){
+            outL[i+k] = chunk.L[chunk.offset+k];
+            outR[i+k] = chunk.R[chunk.offset+k];
+          }
+          chunk.offset += take;
+          i += take;
+          if(chunk.offset >= chunk.L.length) spQueue.shift();
+        }
+      };
+      node.connect(ctx.destination);
+      mode = "scriptprocessor";
+      return Promise.resolve();
+    }
+
+    function push(inL, inR, n){
+      if(!ctx) return;
+      var res = resample(inL, inR, n, ctx.sampleRate);
+      if(res.n <= 0) return;
+      if(mode === "worklet"){
+        node.port.postMessage({ l:res.L, r:res.R });
+      } else if(mode === "scriptprocessor"){
+        spQueue.push({ L:res.L, R:res.R, offset:0 });
+        // cap backlog to ~1s to avoid runaway latency
+        var total = 0;
+        for(var i=0;i<spQueue.length;i++) total += (spQueue[i].L.length - spQueue[i].offset);
+        while(total > ctx.sampleRate * 1 && spQueue.length > 1){
+          total -= (spQueue[0].L.length - spQueue[0].offset);
+          spQueue.shift();
+        }
+      }
+    }
+
+    function resume(){ if(ctx && ctx.state === "suspended") return ctx.resume(); return Promise.resolve(); }
+
+    return { init:init, push:push, resume:resume };
+  })();
+
+  /* ---------------- render + loop ---------------- */
+  function renderFrame(){
+    var ptr = fbPtr;
+    var src = Module.HEAPU8.subarray(ptr, ptr + W*H);
+    var data = imageData.data;
+    for(var i=0;i<W*H;i++){
+      var shade = src[i] & 3;
+      var c = palette[shade];
+      var o = i*4;
+      data[o] = c[0]; data[o+1] = c[1]; data[o+2] = c[2];
+    }
+    ctx2d.putImageData(imageData, 0, 0);
+  }
+
+  var audioBufBytes = AUDIO_MAX_FRAMES * 2 * 4;
+  function pumpAudio(){
+    var n = api.readAudio(gb, audioPtr, AUDIO_MAX_FRAMES);
+    if(n <= 0) return;
+    var interleaved = Module.HEAPF32.subarray(audioPtr/4, audioPtr/4 + n*2);
+    var L = new Float32Array(n), R = new Float32Array(n);
+    for(var i=0;i<n;i++){ L[i] = interleaved[i*2]; R[i] = interleaved[i*2+1]; }
+    AudioSystem.push(L, R, n);
+  }
+
+  var acc = 0, lastT = 0, rafId = 0;
+  function loop(t){
+    rafId = requestAnimationFrame(loop);
+    if(!lastT) lastT = t;
+    var dt = t - lastT;
+    lastT = t;
+    if(dt > 250) dt = 250; // tab was backgrounded; avoid a huge catch-up burst
+    acc += dt;
+    var frames = 0;
+    while(acc >= FRAME_MS && frames < MAX_CATCHUP_FRAMES){
+      api.runFrame(gb);
+      pumpAudio();
+      acc -= FRAME_MS;
+      frames++;
+    }
+    if(frames > 0) renderFrame();
+  }
+
+  /* ---------------- battery save ---------------- */
+  function bytesToBase64(bytes){
+    var CHUNK = 0x8000, parts = [];
+    for(var i=0;i<bytes.length;i+=CHUNK){
+      parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i+CHUNK)));
+    }
+    return btoa(parts.join(""));
+  }
+  function base64ToBytes(b64){
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  function loadSaveIfPresent(){
+    if(!hasBattery) return;
+    var b64 = localStorage.getItem(SAVE_KEY);
+    if(!b64) return;
+    try{
+      var bytes = base64ToBytes(b64);
+      var ptr = Module._malloc(bytes.length);
+      Module.HEAPU8.set(bytes, ptr);
+      api.loadSaveRam(gb, ptr, bytes.length);
+      Module._free(ptr);
+    }catch(err){
+      console.warn("save load failed", err);
+    }
+  }
+
+  function persistSave(){
+    if(!hasBattery || !gb) return;
+    var lenPtr = Module._malloc(4);
+    Module.HEAPU32[lenPtr/4] = 0;
+    var ptr = api.saveRam(gb, lenPtr);
+    var len = Module.HEAPU32[lenPtr/4];
+    Module._free(lenPtr);
+    if(!ptr || !len) return;
+    var bytes = Module.HEAPU8.subarray(ptr, ptr+len);
+    try{
+      localStorage.setItem(SAVE_KEY, bytesToBase64(bytes));
+    }catch(err){
+      console.warn("save persist failed", err);
+    }
+  }
+
+  setInterval(persistSave, SAVE_INTERVAL_MS);
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "hidden") persistSave();
+  });
+
+  /* ---------------- boot ---------------- */
+  function startEmulationLoop(){
+    if(started) return;
+    started = true;
+    powerDot.classList.add("playing");
+    lastT = 0; acc = 0;
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function armStartGesture(){
+    ovSpinner.style.display = "none";
+    ovTitle.textContent = "Pokémon Blue";
+    ovText.textContent = "Cartridge loaded. Tap to power on (needed once for audio on iOS).";
+    ovButton.style.display = "inline-block";
+    ovButton.textContent = "Tap to start";
+    ovButton.addEventListener("click", function once(){
+      ovButton.removeEventListener("click", once);
+      AudioSystem.init().then(function(){
+        return AudioSystem.resume();
+      }).catch(function(err){
+        console.warn("audio init failed", err);
+      }).then(function(){
+        overlay.classList.add("hidden");
+        startEmulationLoop();
+      });
+    }, {passive:true});
+  }
+
+  function boot(){
+    if(typeof createGBCore !== "function"){
+      showError("Core missing", "gbcore.js did not define createGBCore(). Make sure gbcore.js and gbcore.wasm sit next to index.html.");
+      return;
+    }
+    createGBCore().then(function(mod){
+      Module = mod;
+      api.create = Module.cwrap("gb_create", "number", []);
+      api.loadRom = Module.cwrap("gb_load_rom", "number", ["number","number","number"]);
+      api.runFrame = Module.cwrap("gb_run_frame", null, ["number"]);
+      api.framebuffer = Module.cwrap("gb_framebuffer", "number", ["number"]);
+      api.setInput = Module.cwrap("gb_set_input", null, ["number","number","number"]);
+      api.readAudio = Module.cwrap("gb_read_audio", "number", ["number","number","number"]);
+      api.hasBattery = Module.cwrap("gb_has_battery", "number", ["number"]);
+      api.saveRam = Module.cwrap("gb_save_ram", "number", ["number","number"]);
+      api.loadSaveRam = Module.cwrap("gb_load_save_ram", "number", ["number","number","number"]);
+
+      return fetch("pokemon-blue.gb").then(function(resp){
+        if(!resp.ok){
+          throw new Error("HTTP " + resp.status);
+        }
+        return resp.arrayBuffer();
+      }).then(function(buf){
+        var romBytes = new Uint8Array(buf);
+        var romPtr = Module._malloc(romBytes.length);
+        Module.HEAPU8.set(romBytes, romPtr);
+
+        gb = api.create();
+        if(!gb){ throw new Error("gb_create returned null"); }
+
+        var ok = api.loadRom(gb, romPtr, romBytes.length);
+        Module._free(romPtr);
+        if(!ok){ throw new Error("gb_load_rom rejected the ROM"); }
+
+        fbPtr = api.framebuffer(gb);
+        audioPtr = Module._malloc(audioBufBytes);
+        hasBattery = !!api.hasBattery(gb);
+        loadSaveIfPresent();
+
+        armStartGesture();
+      });
+    }).catch(function(err){
+      console.error(err);
+      if(String(err.message || err).indexOf("404") !== -1 || String(err.message||err).indexOf("HTTP") !== -1){
+        showError("Cartridge not found", "Place pokemon-blue.gb next to index.html, then reload.");
+      } else {
+        showError("Startup failed", (err && err.message) ? err.message : String(err));
+      }
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
