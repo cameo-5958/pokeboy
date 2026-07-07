@@ -399,14 +399,24 @@
   }
   #cartDock.open #cartTray{ max-height:62vh; overflow-y:auto; }
   .cart-item{
-    appearance:none; border:none; outline:none; font-family:inherit; cursor:pointer;
+    appearance:none; border:none; outline:none; font-family:inherit; cursor:grab;
     display:block; width:100%; margin:8px 0; padding:8px 10px 10px;
     background:linear-gradient(180deg,#6a6f5e,#3a3e33);
     border-radius:8px 8px 12px 12px;
     box-shadow:0 4px 8px rgba(0,0,0,.5), inset 0 1px 1px rgba(255,255,255,.1);
-    transition:transform .15s ease;
+    touch-action:none;
   }
-  .cart-item:active{ transform:translateY(3px); }
+  /* cartridge being dragged: fixed clone following the pointer */
+  .cart-ghost{
+    position:fixed; left:0; top:0; margin:0; z-index:30;
+    pointer-events:none; will-change:transform;
+    box-shadow:0 14px 26px rgba(0,0,0,.6), inset 0 1px 1px rgba(255,255,255,.1);
+  }
+  .cart-item.drag-src{ visibility:hidden; }
+  /* slot opening lights up while a cart is in flight */
+  body.cart-dragging .cart-slot-lip{
+    box-shadow:inset 0 2px 3px rgba(0,0,0,.95), 0 0 12px 3px var(--led-amber);
+  }
   .cart-item.current{ box-shadow:0 4px 8px rgba(0,0,0,.5), 0 0 0 2px var(--led-amber); }
   .cart-item .cart-grip{ margin:0 26px 6px; }
   .cart-item .cart-sticker{ font-size:7.5px; padding:10px 6px; }
@@ -1194,17 +1204,134 @@
         img.src = src;
         item.querySelector(".cart-sticker").insertBefore(img, item.querySelector(".cart-name"));
       }
-      item.addEventListener("click", function(){
-        ensureAudio();
-        AudioSystem.playClick("btn");
-        insertCart(cart).catch(function(err){
-          console.warn("cart load failed", err);
-          item.classList.add("err");
-          setTimeout(function(){ item.classList.remove("err"); }, 900);
-        });
+      item.addEventListener("pointerdown", function(e){
+        startCartDrag(cart, item, e);
       });
       cartTray.appendChild(item);
     });
+  }
+
+  /* ---------------- cartridge dragging ----------------
+     Grab a cart from the tray and drag it around; it tilts to face its
+     direction of travel. Passing it over the slot opening inserts it. */
+  var drag = null;
+
+  function slotZone(){
+    var r = document.querySelector(".cart-slot-lip").getBoundingClientRect();
+    // generous hitbox around the thin lip
+    return { left:r.left - 20, right:r.right + 20, top:r.top - 55, bottom:r.bottom + 45,
+             cx:r.left + r.width / 2, cy:r.top + r.height / 2 };
+  }
+
+  function renderDrag(){
+    drag.ghost.style.transform =
+      "translate(" + drag.x + "px," + drag.y + "px) rotate(" + drag.rot + "deg)";
+  }
+
+  function startCartDrag(cart, item, e){
+    if(drag || currentCart) return;
+    ensureAudio();
+    e.preventDefault();
+    var rect = item.getBoundingClientRect();
+    var ghost = item.cloneNode(true);
+    ghost.classList.add("cart-ghost");
+    ghost.classList.remove("drag-src");
+    ghost.style.width = rect.width + "px";
+    document.body.appendChild(ghost);
+    item.classList.add("drag-src");
+    document.body.classList.add("cart-dragging");
+    drag = {
+      cart:cart, item:item, ghost:ghost,
+      x:rect.left, y:rect.top,
+      offX:e.clientX - rect.left, offY:e.clientY - rect.top,
+      rot:0, vx:0, vy:0, lastT:e.timeStamp, done:false
+    };
+    renderDrag();
+    try{ item.setPointerCapture(e.pointerId); }catch(err){}
+    item.addEventListener("pointermove", moveCartDrag);
+    item.addEventListener("pointerup", releaseCartDrag);
+    item.addEventListener("pointercancel", releaseCartDrag);
+    requestAnimationFrame(dragTick);
+  }
+
+  /* runs every frame while dragging: tilt toward the direction of travel,
+     drift back upright once the pointer stops moving */
+  function dragTick(){
+    if(!drag || drag.done) return;
+    var idle = performance.now() - drag.lastT > 90;
+    if(idle){ drag.vx *= 0.8; drag.vy *= 0.8; }
+    var speed = Math.hypot(drag.vx, drag.vy);
+    var moving = !idle && speed > 0.06;
+    var target = moving ? Math.atan2(drag.vx, -drag.vy) * 180 / Math.PI : 0;
+    var diff = ((target - drag.rot + 540) % 360) - 180;
+    drag.rot += diff * (moving ? 0.25 : 0.12);
+    renderDrag();
+    requestAnimationFrame(dragTick);
+  }
+
+  function detachDragListeners(d){
+    d.item.removeEventListener("pointermove", moveCartDrag);
+    d.item.removeEventListener("pointerup", releaseCartDrag);
+    d.item.removeEventListener("pointercancel", releaseCartDrag);
+    document.body.classList.remove("cart-dragging");
+  }
+
+  function moveCartDrag(e){
+    if(!drag || drag.done) return;
+    var nx = e.clientX - drag.offX, ny = e.clientY - drag.offY;
+    var dt = Math.max(1, e.timeStamp - drag.lastT);
+    // smoothed velocity (px/ms)
+    drag.vx += ((nx - drag.x) / dt - drag.vx) * 0.3;
+    drag.vy += ((ny - drag.y) / dt - drag.vy) * 0.3;
+    drag.x = nx; drag.y = ny; drag.lastT = e.timeStamp;
+    renderDrag();
+
+    // cart center over the slot opening -> it goes in
+    var z = slotZone();
+    var g = drag.ghost;
+    var cx = drag.x + g.offsetWidth / 2, cy = drag.y + g.offsetHeight / 2;
+    if(cx > z.left && cx < z.right && cy > z.top && cy < z.bottom){
+      dropCartIn(z);
+    }
+  }
+
+  function dropCartIn(z){
+    var d = drag;
+    d.done = true;
+    drag = null;
+    detachDragListeners(d);
+    var g = d.ghost;
+    // straighten out and sink into the slot
+    g.style.transition = "transform .3s cubic-bezier(.4,.8,.4,1), opacity .2s ease .15s";
+    g.style.opacity = "0";
+    g.style.transform = "translate(" + (z.cx - g.offsetWidth / 2) + "px," +
+      (z.cy - g.offsetHeight / 3) + "px) rotate(0deg) scale(.72)";
+    AudioSystem.playClick("btn");
+    setTimeout(function(){ g.remove(); }, 380);
+    insertCart(d.cart).then(function(){
+      d.item.classList.remove("drag-src");
+    }).catch(function(err){
+      console.warn("cart load failed", err);
+      d.item.classList.remove("drag-src");
+      d.item.classList.add("err");
+      setTimeout(function(){ d.item.classList.remove("err"); }, 900);
+    });
+  }
+
+  function releaseCartDrag(){
+    if(!drag || drag.done) return;
+    var d = drag;
+    drag = null;
+    detachDragListeners(d);
+    // float back to its spot in the tray
+    var home = d.item.getBoundingClientRect();
+    var g = d.ghost;
+    g.style.transition = "transform .28s cubic-bezier(.3,1.3,.5,1)";
+    g.style.transform = "translate(" + home.left + "px," + home.top + "px) rotate(0deg)";
+    setTimeout(function(){
+      g.remove();
+      d.item.classList.remove("drag-src");
+    }, 300);
   }
 
   cartTab.addEventListener("click", function(){
