@@ -10,12 +10,12 @@
 <title>Pocket &middot; Pokémon Blue</title>
 <style>
   :root{
-    --shell-1:#3a3d34;
-    --shell-2:#2a2c25;
-    --shell-3:#1c1e18;
-    --bezel:#0e120b;
-    --ink:#eae6d8;
-    --ink-dim:#a7a292;
+    --shell-1:#cac6ba;
+    --shell-2:#b2aea1;
+    --shell-3:#96927f;
+    --bezel:#3b3847;
+    --ink:#3b3b52;
+    --ink-dim:#5f5c70;
     --led-amber:#e8a33d;
     --led-red:#c1442c;
     --btn-face:#4a3348;
@@ -39,9 +39,10 @@
     position:fixed; inset:0;
     height:100dvh; width:100vw;
     background:
-      radial-gradient(ellipse at 30% 0%, #46493d 0%, transparent 55%),
+      radial-gradient(ellipse at 30% 0%, #ddd9cd 0%, transparent 55%),
       linear-gradient(160deg, var(--shell-1), var(--shell-2) 55%, var(--shell-3));
     display:grid;
+    transition:transform .5s cubic-bezier(.5,.9,.3,1);
     padding-top:max(10px, env(safe-area-inset-top));
     padding-bottom:max(10px, env(safe-area-inset-bottom));
     padding-left:max(10px, env(safe-area-inset-left));
@@ -52,9 +53,10 @@
   /* ---------- brand strip ---------- */
   #brand{
     display:flex; align-items:center; justify-content:center; gap:8px;
-    color:var(--ink-dim);
-    font-size:11px; letter-spacing:.14em; font-weight:600;
+    color:var(--ink);
+    font-size:11px; letter-spacing:.14em; font-weight:800; font-style:italic;
     text-transform:uppercase;
+    text-shadow:0 1px 0 rgba(255,255,255,.35);
     grid-area:brand;
   }
   #brand .dot{ width:7px; height:7px; border-radius:50%; background:var(--led-amber);
@@ -72,17 +74,33 @@
     width:100%; height:100%;
   }
   #bezel{
-    background:linear-gradient(160deg,#181a13,var(--bezel) 60%);
-    border-radius:14px;
-    padding:14px;
+    position:relative;
+    background:linear-gradient(165deg,#59556a,var(--bezel) 65%);
+    border-radius:12px 12px 42px 12px; /* DMG's signature big bottom-right corner */
+    padding:30px 16px 18px;
     box-shadow:
-      inset 0 2px 3px rgba(255,255,255,.05),
-      inset 0 -3px 8px rgba(0,0,0,.6),
-      0 6px 16px rgba(0,0,0,.45);
+      inset 0 2px 3px rgba(255,255,255,.08),
+      inset 0 -3px 8px rgba(0,0,0,.5),
+      0 6px 16px rgba(0,0,0,.35);
     display:flex; align-items:center; justify-content:center;
     max-width:100%; max-height:100%;
     min-height:0;
   }
+  /* the classic two-tone stripe + caption across the bezel top */
+  #bezel::before{
+    content:""; position:absolute; top:12px; left:16px; right:16px; height:5px;
+    border-top:2px solid #8a3557;
+    border-bottom:2px solid #2c4f92;
+  }
+  #bezel::after{
+    content:"DOT MATRIX WITH STEREO SOUND";
+    position:absolute; top:8.5px; left:50%; transform:translateX(-50%);
+    padding:0 8px; background:#575368;
+    font-size:7px; font-weight:600; letter-spacing:.14em; white-space:nowrap;
+    color:#cdcada;
+  }
+  /* console pulled down while no cartridge is inserted */
+  body.nocart #app{ transform:translateY(48%); }
   #screen{
     background:var(--lcd-0);
     image-rendering:pixelated;
@@ -203,7 +221,7 @@
     box-shadow:inset 0 2px 4px rgba(0,0,0,.65), 0 0 0 3px rgba(0,0,0,.28);
     color:var(--ink);
   }
-  .pill-label{ display:block; text-align:center; margin-top:5px; font-size:8.5px; font-weight:700; letter-spacing:.18em; color:#767060; transform:rotate(-25deg); text-shadow:0 1px 0 rgba(0,0,0,.5); }
+  .pill-label{ display:block; text-align:center; margin-top:5px; font-size:8.5px; font-weight:700; letter-spacing:.18em; color:var(--ink-dim); transform:rotate(-25deg); text-shadow:0 1px 0 rgba(255,255,255,.3); }
 
   /* ===== Portrait layout ===== */
   @media (orientation:portrait){
@@ -318,6 +336,13 @@
   .cart-item.current{ box-shadow:0 4px 8px rgba(0,0,0,.5), 0 0 0 2px var(--led-amber); }
   .cart-item .cart-grip{ margin:0 26px 6px; }
   .cart-item .cart-sticker{ font-size:10px; padding:10px 6px; }
+  .cart-item .cart-sticker img{
+    display:block; width:100%; height:70px;
+    object-fit:cover; border-radius:2px;
+    image-rendering:pixelated;
+    margin-bottom:4px;
+  }
+  .cart-item .cart-name{ display:block; }
   .cart-item.err .cart-sticker{ background:linear-gradient(160deg,#8a2a2a,#4d1515); }
 
   @media (orientation:landscape){
@@ -405,8 +430,8 @@
 
 <div id="overlay">
   <div class="spinner" id="ovSpinner"></div>
-  <h1 id="ovTitle">Loading cartridge&hellip;</h1>
-  <p id="ovText">Fetching Pokémon Blue and starting up the emulator core.</p>
+  <h1 id="ovTitle">Powering up&hellip;</h1>
+  <p id="ovText">Starting the emulator core.</p>
   <button id="ovButton" style="display:none">Tap to start</button>
 </div>
 
@@ -909,12 +934,29 @@
     lastT = 0; acc = 0;
     rafId = requestAnimationFrame(loop);
   }
-  function startEmulationLoop(){
-    if(started) return;
-    started = true;
-    powerDot.classList.add("playing");
-    resumeEmulation();
+  /* first cart insertion doubles as the iOS audio-unlock gesture */
+  var audioInited = false;
+  function ensureAudio(){
+    if(audioInited) return;
+    audioInited = true;
+    AudioSystem.init().then(function(){
+      return AudioSystem.resume();
+    }).catch(function(err){
+      console.warn("audio init failed", err);
+    });
   }
+
+  /* gameplay screenshots double as the cartridge label art */
+  function captureThumb(){
+    if(!currentCart || !running) return;
+    try{
+      var t = document.createElement("canvas");
+      t.width = 80; t.height = 72;
+      t.getContext("2d").drawImage(canvas, 0, 0, 80, 72);
+      localStorage.setItem("gbemu.thumb." + currentCart.file, t.toDataURL("image/jpeg", 0.65));
+    }catch(err){}
+  }
+  setInterval(captureThumb, 20000);
 
   /* ---------------- cartridge dock ---------------- */
   var cartDock = document.getElementById("cartDock");
@@ -937,13 +979,19 @@
   }
 
   function ejectCart(){
+    captureThumb();
     persistSave();
     pauseEmulation();
+    currentCart = null;
     powerDot.classList.remove("playing");
     buttonState = 0; dpadState = 0; syncInput();
     // powered-off LCD
     ctx2d.fillStyle = "rgb(" + palette[0].join(",") + ")";
     ctx2d.fillRect(0, 0, W, H);
+    // pull the console down and open the library
+    document.body.classList.add("nocart");
+    renderTray();
+    cartDock.classList.add("open");
   }
 
   function insertCart(cart){
@@ -953,23 +1001,37 @@
       try{ localStorage.setItem("gbemu.lastCart", cart.file); }catch(err){}
       hasBattery = !!api.hasBattery(gb);
       loadSaveIfPresent();
-      if(started) powerDot.classList.add("playing");
+      started = true;
+      powerDot.classList.add("playing");
+      document.body.classList.remove("nocart");
+      cartDock.classList.remove("open");
       resumeEmulation();
     });
+  }
+
+  function cartImage(cart){
+    if(cart.img) return cart.img;
+    try{ return localStorage.getItem("gbemu.thumb." + cart.file); }catch(err){ return null; }
   }
 
   function renderTray(){
     cartTray.innerHTML = "";
     CARTS.forEach(function(cart){
       var item = document.createElement("button");
-      item.className = "cart-item" + (currentCart && cart.file === currentCart.file ? " current" : "");
-      item.innerHTML = '<span class="cart-grip"></span><span class="cart-sticker"></span>';
-      item.querySelector(".cart-sticker").textContent = cart.title;
+      item.className = "cart-item";
+      item.innerHTML = '<span class="cart-grip"></span><span class="cart-sticker"><span class="cart-name"></span></span>';
+      item.querySelector(".cart-name").textContent = cart.title;
+      var src = cartImage(cart);
+      if(src){
+        var img = document.createElement("img");
+        img.alt = "";
+        img.src = src;
+        item.querySelector(".cart-sticker").insertBefore(img, item.querySelector(".cart-name"));
+      }
       item.addEventListener("click", function(){
+        ensureAudio();
         AudioSystem.playClick("btn");
-        insertCart(cart).then(function(){
-          cartDock.classList.remove("open");
-        }).catch(function(err){
+        insertCart(cart).catch(function(err){
           console.warn("cart load failed", err);
           item.classList.add("err");
           setTimeout(function(){ item.classList.remove("err"); }, 900);
@@ -980,31 +1042,10 @@
   }
 
   cartTab.addEventListener("click", function(){
-    if(!gb) return; // not booted yet
+    if(!gb || !currentCart) return; // not booted / already empty
     AudioSystem.playClick("pill");
     ejectCart();
-    renderTray();
-    cartDock.classList.add("open");
   });
-
-  function armStartGesture(){
-    ovSpinner.style.display = "none";
-    ovTitle.textContent = currentCart.title;
-    ovText.textContent = "Cartridge loaded. Tap to power on (needed once for audio on iOS).";
-    ovButton.style.display = "inline-block";
-    ovButton.textContent = "Tap to start";
-    ovButton.addEventListener("click", function once(){
-      ovButton.removeEventListener("click", once);
-      AudioSystem.init().then(function(){
-        return AudioSystem.resume();
-      }).catch(function(err){
-        console.warn("audio init failed", err);
-      }).then(function(){
-        overlay.classList.add("hidden");
-        startEmulationLoop();
-      });
-    }, {passive:true});
-  }
 
   function boot(){
     if(typeof createGBCore !== "function"){
@@ -1030,32 +1071,18 @@
           var valid = list.filter(function(c){ return c && c.file && c.title; });
           if(valid.length) CARTS = valid;
         }
-        var last = null;
-        try{ last = localStorage.getItem("gbemu.lastCart"); }catch(err){}
-        var chosen = null;
-        for(var i=0;i<CARTS.length;i++){ if(CARTS[i].file === last) chosen = CARTS[i]; }
-        currentCart = chosen || CARTS[0];
-        cartTitle.textContent = currentCart.title;
-
         gb = api.create();
         if(!gb){ throw new Error("gb_create returned null"); }
-
-        return fetchRomInto(currentCart.file);
-      }).then(function(){
         fbPtr = api.framebuffer(gb);
         audioPtr = Module._malloc(audioBufBytes);
-        hasBattery = !!api.hasBattery(gb);
-        loadSaveIfPresent();
 
-        armStartGesture();
+        // boot to an empty console: pulled down, library open, no ROM loaded
+        overlay.classList.add("hidden");
+        ejectCart();
       });
     }).catch(function(err){
       console.error(err);
-      if(String(err.message || err).indexOf("404") !== -1 || String(err.message||err).indexOf("HTTP") !== -1){
-        showError("Cartridge not found", "Place " + (currentCart ? currentCart.file : "the ROM") + " next to index.html, then reload.");
-      } else {
-        showError("Startup failed", (err && err.message) ? err.message : String(err));
-      }
+      showError("Startup failed", (err && err.message) ? err.message : String(err));
     });
   }
 
