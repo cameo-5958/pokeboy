@@ -1,0 +1,17 @@
+# Build output
+build/
+*.exe
+*.obj
+*.ilk
+*.pdb
+
+# IDE
+.vscode/
+
+# ROMs and battery saves (not redistributable)
+*.gb
+*.gbc
+*.sav
+
+# Misc
+*.pdf
