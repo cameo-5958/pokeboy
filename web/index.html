@@ -1067,7 +1067,7 @@
   var cartTitle = document.getElementById("cartTitle");
 
   function fetchRomInto(file){
-    return fetch(encodeURIComponent(file)).then(function(resp){
+    return fetch("roms/" + encodeURIComponent(file)).then(function(resp){
       if(!resp.ok) throw new Error("HTTP " + resp.status);
       return resp.arrayBuffer();
     }).then(function(buf){

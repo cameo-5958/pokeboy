@@ -26,9 +26,10 @@ call emcc %CORE% -O2 -std=c++17 -I core -I adapter ^
     -o web\gbcore.js
 if errorlevel 1 exit /b 1
 
+if not exist web\roms mkdir web\roms
 if exist "Pokemon - Blue Version (USA, Europe) (SGB Enhanced).gb" (
-    copy /y "Pokemon - Blue Version (USA, Europe) (SGB Enhanced).gb" web\pokemon-blue.gb >nul
-    echo Copied ROM to web\pokemon-blue.gb
+    copy /y "Pokemon - Blue Version (USA, Europe) (SGB Enhanced).gb" web\roms\pokemon-blue.gb >nul
+    echo Copied ROM to web\roms\pokemon-blue.gb
 )
 
 echo.
