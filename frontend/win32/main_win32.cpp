@@ -136,6 +136,8 @@ static void paint(HWND hwnd) {
     if (x > 0)           { RECT r = {0, y, x, y + sh};    FillRect(dc, &r, bb); }
     if (x + sw < cw)     { RECT r = {x + sw, y, cw, y + sh}; FillRect(dc, &r, bb); }
 
+    SetStretchBltMode(dc, STRETCH_DELETESCANS);
+
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = GB_SCREEN_W;
