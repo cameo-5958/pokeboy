@@ -52,6 +52,10 @@ int            gb_load_save_ram(gb_handle* gb, const uint8_t* data, size_t len);
 // ROM title from the cartridge header (up to 16 chars + NUL).
 void gb_rom_title(const gb_handle* gb, char out[17]);
 
+// Reads one byte from the emulated address space (game-state peeks, e.g.
+// the current map/music id in WRAM). Safe for RAM; IO reads are live.
+uint8_t gb_read_mem(gb_handle* gb, uint16_t addr);
+
 #ifdef __cplusplus
 }
 #endif
