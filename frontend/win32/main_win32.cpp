@@ -122,14 +122,28 @@ static void paint(HWND hwnd) {
     PAINTSTRUCT ps;
     HDC dc = BeginPaint(hwnd, &ps);
     RECT rc; GetClientRect(hwnd, &rc);
+    int cw = rc.right, ch = rc.bottom;
+
+    int scale = max(1, min(cw / GB_SCREEN_W, ch / GB_SCREEN_H));
+    int sw = GB_SCREEN_W * scale;
+    int sh = GB_SCREEN_H * scale;
+    int x = (cw - sw) / 2;
+    int y = (ch - sh) / 2;
+
+    HBRUSH bb = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    if (y > 0)           { RECT r = {0, 0, cw, y};       FillRect(dc, &r, bb); }
+    if (y + sh < ch)     { RECT r = {0, y + sh, cw, ch};  FillRect(dc, &r, bb); }
+    if (x > 0)           { RECT r = {0, y, x, y + sh};    FillRect(dc, &r, bb); }
+    if (x + sw < cw)     { RECT r = {x + sw, y, cw, y + sh}; FillRect(dc, &r, bb); }
+
     BITMAPINFO bmi = {};
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bmi.bmiHeader.biWidth = GB_SCREEN_W;
-    bmi.bmiHeader.biHeight = -GB_SCREEN_H;           // top-down
+    bmi.bmiHeader.biHeight = -GB_SCREEN_H;
     bmi.bmiHeader.biPlanes = 1;
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
-    StretchDIBits(dc, 0, 0, rc.right, rc.bottom,
+    StretchDIBits(dc, x, y, sw, sh,
                   0, 0, GB_SCREEN_W, GB_SCREEN_H,
                   g_pixels, &bmi, DIB_RGB_COLORS, SRCCOPY);
     EndPaint(hwnd, &ps);
@@ -142,7 +156,11 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_KEYUP:      handle_key(wp, false); return 0;
         case WM_CLOSE:
         case WM_DESTROY:    g_running = false; return 0;
-        case WM_ERASEBKGND: return 1;
+        case WM_ERASEBKGND: {
+            RECT rc; GetClientRect(hwnd, &rc);
+            FillRect((HDC)wp, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
+            return 1;
+        }
     }
     return DefWindowProcA(hwnd, msg, wp, lp);
 }
