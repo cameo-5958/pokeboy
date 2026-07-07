@@ -1101,6 +1101,17 @@
   var cartTray = document.getElementById("cartTray");
   var cartTitle = document.getElementById("cartTitle");
 
+  function refreshCarts(){
+    return fetch("carts.json", { cache:"no-store" }).then(function(resp){
+      return resp.ok ? resp.json() : null;
+    }).catch(function(){ return null; }).then(function(list){
+      if(Array.isArray(list) && list.length){
+        var valid = list.filter(function(c){ return c && c.file && c.title; });
+        if(valid.length) CARTS = valid;
+      }
+    });
+  }
+
   function fetchRomInto(file){
     return fetch("roms/" + encodeURIComponent(file)).then(function(resp){
       if(!resp.ok) throw new Error("HTTP " + resp.status);
@@ -1134,6 +1145,8 @@
       animTimer = setTimeout(function(){
         renderTray();
         cartDock.classList.add("open");
+        // pick up newly added carts without a page reload
+        refreshCarts().then(renderTray);
       }, 300);
     }, 520);
   }
@@ -1217,13 +1230,7 @@
       api.saveRam = Module.cwrap("gb_save_ram", "number", ["number","number"]);
       api.loadSaveRam = Module.cwrap("gb_load_save_ram", "number", ["number","number","number"]);
 
-      return fetch("carts.json").then(function(resp){
-        return resp.ok ? resp.json() : null;
-      }).catch(function(){ return null; }).then(function(list){
-        if(Array.isArray(list) && list.length){
-          var valid = list.filter(function(c){ return c && c.file && c.title; });
-          if(valid.length) CARTS = valid;
-        }
+      return refreshCarts().then(function(){
         gb = api.create();
         if(!gb){ throw new Error("gb_create returned null"); }
         fbPtr = api.framebuffer(gb);
