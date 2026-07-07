@@ -1254,17 +1254,22 @@
     requestAnimationFrame(dragTick);
   }
 
-  /* runs every frame while dragging: tilt toward the direction of travel,
-     drift back upright once the pointer stops moving */
+  /* runs every frame while dragging. Pendulum feel: the cart always wants
+     to hang upright, and speed swings it toward the direction of travel —
+     the faster it moves, the further from upright it tilts. */
   function dragTick(){
     if(!drag || drag.done) return;
-    var idle = performance.now() - drag.lastT > 90;
-    if(idle){ drag.vx *= 0.8; drag.vy *= 0.8; }
-    var speed = Math.hypot(drag.vx, drag.vy);
-    var moving = !idle && speed > 0.06;
-    var target = moving ? Math.atan2(drag.vx, -drag.vy) * 180 / Math.PI : 0;
+    // no pointermove lately -> velocity bleeds off, cart rights itself
+    if(performance.now() - drag.lastT > 60){ drag.vx *= 0.82; drag.vy *= 0.82; }
+    var speed = Math.hypot(drag.vx, drag.vy); // px/ms
+    var target = 0;
+    if(speed > 0.02){
+      var travel = Math.atan2(drag.vx, -drag.vy) * 180 / Math.PI; // -180..180
+      // full alignment only at flick speed; capped so it never hangs upside down
+      target = Math.max(-120, Math.min(120, travel * Math.min(1, speed / 0.9)));
+    }
     var diff = ((target - drag.rot + 540) % 360) - 180;
-    drag.rot += diff * (moving ? 0.25 : 0.12);
+    drag.rot += diff * 0.18;
     renderDrag();
     requestAnimationFrame(dragTick);
   }
