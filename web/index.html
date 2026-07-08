@@ -988,16 +988,43 @@
     // rom-id -> pack. addr is the WRAM location of the game's current-map
     // byte (wCurMap); resolve() tiers that byte into one of the pack's
     // tracks. Red/Blue and Yellow share map ids, so they share a track set.
-    var RB_DIR = "music/pokemon-rb/";
-    // cave-style dungeons: Mt Moon 59-61, Rock Tunnel 82/232, Victory Road
-    // 108/194/198 (extend as more map ids get verified)
-    var RB_CAVES = [59, 60, 61, 82, 232, 108, 194, 198];
+    var RB_DIR = "music/pokemon-rb/hgss/";
+    // HGSS Kanto pack: per-area tracks keyed by pokered map ids. Where gen 1
+    // shared one theme across areas (Viridian/Pewter/Saffron, Cerulean/
+    // Fuchsia) the shared HGSS track covers all of them. Safari Zone plays
+    // National Park (gen 1 has no park; closest match in spirit).
+    var RB_AREAS = {
+      "pallet-town":     [0],
+      "pewter-city":     [1, 2, 10],                // Viridian/Pewter/Saffron
+      "cerulean-city":   [3, 7],                    // Cerulean/Fuchsia
+      "lavender-town":   [4, 142,143,144,145,146,147,148], // + Pokemon Tower
+      "vermilion-city":  [5],
+      "celadon-city":    [6],
+      "cinnabar-island": [8, 30,31,32, 165,214,215,216], // + Routes 19-21, Mansion
+      "pokemon-league":  [9, 174],                  // Indigo Plateau + lobby
+      "route-1":         [12, 13],                  // Routes 1-2
+      "route-3":         [14,15,16,17,18,19,20,21, 27,28,29, 33], // 3-10, 16-18, 22
+      "route-11":        [22,23,24,25,26],          // Routes 11-15
+      "route-24":        [35, 36],                  // Routes 24-25
+      "route-26":        [34],                      // Route 23 (league approach)
+      "viridian-forest": [51],
+      "mt-moon":         [59, 60, 61],
+      "rock-tunnel":     [82, 232, 197, 159,160,161,162,192, 226,227,228], // + Diglett's/Seafoam/Cerulean Cave
+      "victory-road":    [108, 194, 198],
+      "national-park":   [156, 217,218,219,220,221,222,223,224,225], // Safari Zone
+      "ss-anne":         [95,96,97,98,99,100,101,102,103,104],
+      "pokemon-center":  [41, 58, 64, 68, 81, 89, 133, 141, 154, 171, 182],
+      "pokemon-gym":     [45, 54, 65, 92, 134, 157, 166, 178],
+      "poke-mart":       [42, 56, 67, 91, 150, 152, 172, 180]
+    };
+    var RB_MAP = {};
+    Object.keys(RB_AREAS).forEach(function(name){
+      RB_AREAS[name].forEach(function(id){ RB_MAP[id] = RB_DIR + name + ".mp3"; });
+    });
+    // unmapped ids (houses, gates, labs...) return null: the current track
+    // keeps playing, so stepping indoors doesn't cut the town music
     function rbResolve(map){
-      if(map === 0) return RB_DIR + "pallet.mp3";          // Pallet Town
-      if(map >= 1 && map <= 10) return RB_DIR + "town.mp3"; // cities
-      if(map >= 12 && map <= 36) return RB_DIR + "route.mp3"; // Routes 1-25
-      if(RB_CAVES.indexOf(map) !== -1) return RB_DIR + "cave.mp3";
-      return RB_DIR + "building.mp3";                       // interiors etc.
+      return RB_MAP.hasOwnProperty(map) ? RB_MAP[map] : null;
     }
     var MUSIC_PACKS = {
       "pokemon-blue":   { addr:0xD35E, resolve:rbResolve },
@@ -1046,6 +1073,7 @@
       if(!pack || byte === currentByte) return;
       currentByte = byte;
       var url = pack.resolve(byte);
+      if(url === null) return; // unmapped map: let the current track carry on
       if(url === currentUrl) return;
       if(currentSrc){
         try{ currentSrc.stop(); }catch(err){}
