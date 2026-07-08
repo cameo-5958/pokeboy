@@ -36,5 +36,6 @@ pack, drop the following files into `hgss/`:
 Unmapped maps (houses, gates, labs, Silph Co...) keep the previous track
 playing rather than switching.
 
-Previous pack (Pixabay lofi covers) was removed in this commit; it's in
-git history if ever wanted again.
+The Pixabay lofi covers (pallet/town/route/cave/building.mp3, Pixabay
+Content License, artists feora, vgm yume, lucas cooper) are kept in this
+directory as an alternate pack, currently unused by the resolver.
