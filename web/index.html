@@ -981,13 +981,41 @@
     });
   })();
 
-  /* music-cache refresh button: drops cached tracks and refetches the one
-     for the current area. Touches nothing but music — no reload, and never
-     localStorage (where .sav battery data lives). */
-  document.getElementById("refreshBtn").addEventListener("click", function(){
-    CustomMusic.refresh();
-    AudioSystem.playClick("pill");
-  });
+  /* refresh button. Tap: drop cached music tracks and refetch the current
+     area's — touches nothing but music. Hold ~1s: full app reload for the
+     home-screen bookmark (which has no reload UI): the save is flushed to
+     localStorage first, then the page is refetched past the HTTP cache.
+     Neither path ever clears localStorage, where battery saves live. */
+  (function(){
+    var btn = document.getElementById("refreshBtn");
+    var holdTimer = 0, heldFired = false;
+    function fullReload(){
+      try{ persistSave(); }catch(err){}
+      fetch(location.href, {cache:"reload"}).catch(function(){}).then(function(){
+        location.reload();
+      });
+    }
+    function press(){
+      heldFired = false;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(function(){
+        heldFired = true;
+        AudioSystem.playClick("pill");
+        fullReload();
+      }, 1000);
+    }
+    function release(){
+      clearTimeout(holdTimer);
+      if(heldFired) return;
+      CustomMusic.refresh();
+      AudioSystem.playClick("pill");
+    }
+    btn.addEventListener("pointerdown", press);
+    btn.addEventListener("pointerup", release);
+    btn.addEventListener("pointercancel", function(){ clearTimeout(holdTimer); });
+    btn.addEventListener("pointerleave", function(){ clearTimeout(holdTimer); });
+    btn.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+  })();
 
   /* ---------------- custom music ----------------
      Per-rom soundtrack replacement. For supported roms (matched by cart id)
