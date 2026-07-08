@@ -343,8 +343,8 @@
                0 2px 4px rgba(0,0,0,.45);
   }
 
-  /* ---------- custom music toggle ---------- */
-  #musicBtn{
+  /* ---------- custom music toggle + cache refresh ---------- */
+  #musicBtn, #refreshBtn{
     appearance:none; border:none; outline:none;
     width:26px; height:26px; border-radius:50%;
     flex:none;
@@ -358,7 +358,8 @@
   }
   #musicBtn[hidden]{ display:none; }
   #musicBtn.muted{ color:var(--ink-dim); }
-  #musicBtn:active{
+  #refreshBtn{ color:var(--ink-dim); }
+  #musicBtn:active, #refreshBtn:active{
     box-shadow:inset 0 2px 4px rgba(0,0,0,.65);
   }
 
@@ -512,6 +513,7 @@
       <span class="vol-label">VOLUME</span>
       <input id="volSlider" type="range" min="0" max="100" value="70" aria-label="volume">
       <button id="musicBtn" hidden aria-label="toggle custom music">&#9835;</button>
+      <button id="refreshBtn" aria-label="reload with caches cleared">&#8635;</button>
     </div>
     <div id="speed">
       <span class="vol-label">SPEED</span>
@@ -979,6 +981,14 @@
     });
   })();
 
+  /* music-cache refresh button: drops cached tracks and refetches the one
+     for the current area. Touches nothing but music — no reload, and never
+     localStorage (where .sav battery data lives). */
+  document.getElementById("refreshBtn").addEventListener("click", function(){
+    CustomMusic.refresh();
+    AudioSystem.playClick("pill");
+  });
+
   /* ---------------- custom music ----------------
      Per-rom soundtrack replacement. For supported roms (matched by cart id)
      the core will expose the game's location/music byte; each pack maps that
@@ -1099,7 +1109,8 @@
 
     function loadTrack(url){
       if(trackCache[url]) return Promise.resolve(trackCache[url]);
-      return fetch(url).then(function(resp){
+      // no-cache: revalidate against the server so swapped tracks show up
+      return fetch(url, {cache:"no-cache"}).then(function(resp){
         if(!resp.ok) throw new Error("HTTP " + resp.status);
         return resp.arrayBuffer();
       }).then(function(buf){
@@ -1127,6 +1138,15 @@
       renderBtn();
     }
 
+    /* forget every cached track and refetch the current area's fresh from
+       the server (loadTrack revalidates, so a swapped file comes through) */
+    function refresh(){
+      var byte = currentByte;
+      trackCache = {};
+      stopTrack();
+      if(pack && byte >= 0) setTrack(byte);
+    }
+
     /* per-frame hook: poll the pack's map/music byte and follow changes */
     function update(){
       if(!pack || !api.readMem || !gb) return;
@@ -1152,7 +1172,7 @@
     });
 
     renderBtn();
-    return { attach:attach, detach:detach, update:update, isActive:isActive, overriding:overriding };
+    return { attach:attach, detach:detach, update:update, refresh:refresh, isActive:isActive, overriding:overriding };
   })();
 
   /* ---------------- render + loop ---------------- */
