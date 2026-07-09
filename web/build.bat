@@ -11,15 +11,15 @@ if not exist "%EMSDK%\emsdk_env.bat" (
 )
 call "%EMSDK%\emsdk_env.bat" >nul 2>nul
 
-set CORE=core\gb.cpp core\bus\bus.cpp core\cpu\cpu.cpp core\ppu\ppu.cpp ^
-core\timer\timer.cpp core\apu\apu.cpp core\cart\cart.cpp adapter\gb_api.cpp
+set CORE=gameboy\core\gb.cpp gameboy\core\bus\bus.cpp gameboy\core\cpu\cpu.cpp gameboy\core\ppu\ppu.cpp ^
+gameboy\core\timer\timer.cpp gameboy\core\apu\apu.cpp gameboy\core\cart\cart.cpp gameboy\adapter\gb_api.cpp
 
 set EXPORTS=_gb_create,_gb_destroy,_gb_load_rom,_gb_reset,_gb_run_frame,^
 _gb_framebuffer,_gb_framebuffer_argb,_gb_set_input,_gb_read_audio,^
 _gb_has_battery,_gb_save_ram,_gb_load_save_ram,_gb_rom_title,_gb_read_mem,^
 _gb_set_audio_mask,_malloc,_free
 
-call emcc %CORE% -O2 -std=c++17 -I core -I adapter ^
+call emcc %CORE% -O2 -std=c++17 -I gameboy\core -I gameboy\adapter ^
     -sMODULARIZE=1 -sEXPORT_NAME=createGBCore -sENVIRONMENT=web ^
     -sALLOW_MEMORY_GROWTH=1 ^
     -sEXPORTED_FUNCTIONS=%EXPORTS% ^
