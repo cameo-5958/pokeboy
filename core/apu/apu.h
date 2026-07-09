@@ -12,6 +12,11 @@ struct APU {
     void    write_reg(uint16_t a, uint8_t v);
     void    reset_regs();                           // post-boot defaults applied by Bus
 
+    // Frontend mix mask: bit n = 0 silences channel n+1 in the output mix
+    // (emulation is unaffected). Lets a frontend replace the game's music
+    // while passing through channels currently carrying sound effects.
+    void    set_out_mask(uint8_t m) { out_mask = m & 0x0F; }
+
 private:
     struct Pulse {
         // registers
@@ -57,6 +62,7 @@ private:
     Wave  ch3;
     Noise ch4;
     uint8_t nr50 = 0x77, nr51 = 0xF3;
+    uint8_t out_mask = 0x0F;
     bool power = true;
     uint8_t raw[0x30] = {};                         // last written values, for readback
 
