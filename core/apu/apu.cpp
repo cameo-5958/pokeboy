@@ -144,6 +144,7 @@ void APU::mix_sample() {
     float L = 0, R = 0;
     for (int i = 0; i < 4; i++) {
         if (dig[i] < 0) continue;                    // DAC off contributes 0 analog
+        if (!(out_mask & (1 << i))) continue;        // frontend-muted channel
         float v = dig[i] / 7.5f - 1.0f;
         if (nr51 & (1 << (i + 4))) L += v;
         if (nr51 & (1 << i))      R += v;
