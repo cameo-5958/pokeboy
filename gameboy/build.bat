@@ -3,6 +3,7 @@ rem Builds the Win32 emulator (build\gbemu.exe) and the headless test harness
 rem (build\gbemu_headless.exe) with MSVC. Run from a VS developer prompt, or
 rem let the script locate vcvars64 itself.
 setlocal
+cd /d "%~dp0"
 
 where cl >nul 2>nul
 if errorlevel 1 (
