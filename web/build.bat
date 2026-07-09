@@ -16,7 +16,8 @@ core\timer\timer.cpp core\apu\apu.cpp core\cart\cart.cpp adapter\gb_api.cpp
 
 set EXPORTS=_gb_create,_gb_destroy,_gb_load_rom,_gb_reset,_gb_run_frame,^
 _gb_framebuffer,_gb_framebuffer_argb,_gb_set_input,_gb_read_audio,^
-_gb_has_battery,_gb_save_ram,_gb_load_save_ram,_gb_rom_title,_malloc,_free
+_gb_has_battery,_gb_save_ram,_gb_load_save_ram,_gb_rom_title,_gb_read_mem,^
+_gb_set_audio_mask,_malloc,_free
 
 call emcc %CORE% -O2 -std=c++17 -I core -I adapter ^
     -sMODULARIZE=1 -sEXPORT_NAME=createGBCore -sENVIRONMENT=web ^
