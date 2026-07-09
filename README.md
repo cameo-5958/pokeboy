@@ -1,4 +1,13 @@
-# gb-emu 
+# gm-emu monorepo
+
+```
+gameboy/     C++ Game Boy emulator core + native builds
+web/         web frontend (WASM build of the core)
+pred-patch/  pokered disassembly patch exposing battle AI hooks
+ai/          (reserved)
+```
+
+## gameboy
 
 A small, dependency-free Game Boy (DMG) emulator written in C++17. The core is a
 plain library exposed through a C ABI, with a native Win32 frontend and a
@@ -15,17 +24,17 @@ headless test harness. It's structured so the same core can be bridged to iOS.
 ## Layout
 
 ```
-core/       emulator core
-adapter/    gb_api.h (C ABI over C++ core)
-frontend/   basic windows frontend
-ios/        planned iOS frontend
+gameboy/core/       emulator core
+gameboy/adapter/    gb_api.h (C ABI over C++ core)
+gameboy/frontend/   basic windows frontend
+gameboy/ios/        planned iOS frontend
 
-build.bat   MSVC build script
+gameboy/build.bat   MSVC build script
 ```
 
 ## Building
 
-Requires MSVC (Visual Studio Build Tools). From the project root:
+Requires MSVC (Visual Studio Build Tools). From `gameboy/`:
 
 ```bat
 build.bat
