@@ -52,6 +52,15 @@ int            gb_load_save_ram(gb_handle* gb, const uint8_t* data, size_t len);
 // ROM title from the cartridge header (up to 16 chars + NUL).
 void gb_rom_title(const gb_handle* gb, char out[17]);
 
+// Reads one byte from the emulated address space (game-state peeks, e.g.
+// the current map/music id in WRAM). Safe for RAM; IO reads are live.
+uint8_t gb_read_mem(gb_handle* gb, uint16_t addr);
+
+// Output-mix channel mask: bit n (0-3) = 0 silences APU channel n+1 in the
+// mixed output without affecting emulation. 0x0F (default) = all audible.
+// Used by the custom-music player to mute game music but keep SFX channels.
+void gb_set_audio_mask(gb_handle* gb, uint8_t mask);
+
 #ifdef __cplusplus
 }
 #endif
