@@ -11,6 +11,7 @@ add_library(gbcore
     core/timer/timer.cpp
     core/apu/apu.cpp
     core/cart/cart.cpp
+    core/mod/mod.cpp
     adapter/gb_api.cpp)
 target_include_directories(gbcore PUBLIC core adapter)
 

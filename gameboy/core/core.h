@@ -10,6 +10,7 @@
 #include "joypad/joypad.h"
 #include "apu/apu.h"
 #include "cart/cart.h"
+#include "mod/mod.h"
 
 class GameBoy {
 public:
@@ -33,6 +34,7 @@ public:
     Timer  timer;
     Joypad joypad;
     APU    apu;
+    gbmod::Runtime mods;
     std::unique_ptr<Cartridge> cart;
 private:
     int frame_budget = 0;
