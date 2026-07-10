@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+
+# ROM binaries and user-supplied mod payloads are never committed.
+storage/roms/*.gb
+storage/roms/*.gbc
+storage/mods/*
+!storage/roms/.gitkeep
+!storage/mods/.gitkeep
