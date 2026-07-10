@@ -16,4 +16,6 @@ export const paths = {
   roms: () => path.join(config.storageDir, "roms"),
   mods: () => path.join(config.storageDir, "mods"),
   labels: () => path.join(config.storageDir, "labels"),
+  /** Browser assets used by the React Native emulator WebView. */
+  web: () => path.resolve(__dirname, "..", "..", "web"),
 };

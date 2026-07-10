@@ -29,4 +29,7 @@ export const api = {
   getCartridge: (id: string) => get<Cartridge>(`/api/cartridges/${id}`),
   /** URL to stream a cartridge's ROM bytes. */
   romUrl: (id: string) => `${BASE_URL}/api/cartridges/${id}/rom`,
+  /** Minimal WASM player mounted inside the native Game Boy LCD. */
+  emulatorUrl: (id: string) =>
+    `${BASE_URL}/emulator/embed.html?cartridge=${encodeURIComponent(id)}`,
 };
