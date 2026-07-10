@@ -13,6 +13,10 @@ static `web/` app.
 | `gameboy/` | The native Game Boy emulator core and frontends.                       |
 | `web/`     | Legacy static web emulator (being replaced by `app/`).                 |
 
+The C++ core supports precompiled, dynamically linked ROM/ASM/TypeScript mods.
+See [`gameboy/MODS.md`](gameboy/MODS.md) for the package format, linker ABI, and
+performance contract.
+
 ## Getting started
 
 `app/` and `backend/` are independent Node projects, each with its own `package.json`.
