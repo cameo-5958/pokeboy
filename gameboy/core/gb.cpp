@@ -1,5 +1,6 @@
 #include "core.h"
 #include <algorithm>
+#include <cstring>
 
 bool GameBoy::load_rom(const uint8_t* data, size_t len) {
     cart = Cartridge::create(data, len);           // picks MBC from header byte $0147
@@ -9,6 +10,24 @@ bool GameBoy::load_rom(const uint8_t* data, size_t len) {
     cpu.mods = &mods;
     mods.on_rom_loaded(cart.get());
     return true;
+}
+
+void GameBoy::reset_custom_boot() {
+    cpu = CPU{};
+    cpu.bus = &bus;
+    cpu.sp = 0xFFFE;
+    cpu.pc = 0x0000;
+
+    ppu = PPU{};
+    memset(bus.vram, 0, sizeof(bus.vram));
+    memset(bus.wram, 0, sizeof(bus.wram));
+    memset(bus.oam, 0, sizeof(bus.oam));
+    memset(bus.hram, 0, sizeof(bus.hram));
+    bus.if_reg = 0;
+    bus.ie_reg = 0;
+    bus.boot_rom_bank = 0;
+    bus.boot_rom_enabled = true;
+    frame_budget = 0;
 }
 
 void GameBoy::reset_post_boot() {                  // values: PDF §4.3
@@ -25,6 +44,8 @@ void GameBoy::reset_post_boot() {                  // values: PDF §4.3
     };
     for (auto& r : io) bus.write_io_raw(r.a, r.v);
     bus.boot_rom_enabled = false;
+    bus.boot_rom_bank = 0;
+    frame_budget = 0;
 }
 
 void GameBoy::run_frame() {

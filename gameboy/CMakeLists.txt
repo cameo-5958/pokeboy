@@ -23,6 +23,10 @@ if(BUILD_TESTING)
     add_executable(gbcore_mod_tests tests/mod_tests.cpp)
     target_link_libraries(gbcore_mod_tests PRIVATE gbcore)
     add_test(NAME gbcore_mod_tests COMMAND gbcore_mod_tests)
+
+    add_executable(gbemu_boot_tests tests/boot_tests.cpp)
+    target_link_libraries(gbemu_boot_tests PRIVATE gbcore)
+    add_test(NAME custom_boot_rom COMMAND gbemu_boot_tests)
 endif()
 
 if(WIN32)
