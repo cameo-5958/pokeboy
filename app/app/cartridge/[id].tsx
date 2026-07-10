@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -8,28 +8,21 @@ import {
 } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 
-import { createApi, type Cartridge } from "@/api/client";
-import { useSettings } from "@/settings";
+import { api, type Cartridge } from "@/api/client";
 import { theme } from "@/theme";
 
 export default function CartridgeScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { settings, settingsLoaded } = useSettings();
-  const api = useMemo(
-    () => createApi({ baseUrl: settings.backendUrl, apiKey: settings.apiKey }),
-    [settings.backendUrl, settings.apiKey],
-  );
   const [cart, setCart] = useState<Cartridge | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id || !settingsLoaded) return;
-    setError(null);
+    if (!id) return;
     api
       .getCartridge(id)
       .then(setCart)
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"));
-  }, [id, settingsLoaded, api]);
+  }, [id]);
 
   if (error) {
     return (

@@ -7,10 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
-    "key:new": "tsx scripts/key.ts new",
-    "key:list": "tsx scripts/key.ts list",
-    "key:revoke": "tsx scripts/key.ts revoke"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "cors": "^2.8.5",
