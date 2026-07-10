@@ -17,6 +17,11 @@ target_include_directories(gbcore PUBLIC core adapter)
 add_executable(gbemu_headless frontend/headless.cpp)
 target_link_libraries(gbemu_headless PRIVATE gbcore)
 
+enable_testing()
+add_executable(gbemu_boot_tests tests/boot_tests.cpp)
+target_link_libraries(gbemu_boot_tests PRIVATE gbcore)
+add_test(NAME custom_boot_rom COMMAND gbemu_boot_tests)
+
 if(WIN32)
     add_executable(gbemu WIN32 frontend/win32/main_win32.cpp)
     target_link_libraries(gbemu PRIVATE gbcore user32 gdi32 winmm comdlg32)
