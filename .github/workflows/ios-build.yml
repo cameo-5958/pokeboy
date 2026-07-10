@@ -66,6 +66,48 @@ jobs:
           (cd build && zip -qry app-unsigned.ipa Payload)
           ls -lh build/app-unsigned.ipa
 
+      - name: Publish LiveContainer install
+        env:
+          IPA_HOST_TOKEN: ${{ secrets.IPA_HOST_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$IPA_HOST_TOKEN" ]]; then
+            echo "The IPA_HOST_TOKEN repository secret is not configured." >&2
+            exit 1
+          fi
+
+          ipa="build/app-unsigned.ipa"
+          checksum="$(shasum -a 256 "$ipa" | cut -d ' ' -f 1)"
+          response="$(
+            curl --fail-with-body \
+              --retry 3 \
+              --retry-all-errors \
+              --request PUT \
+              --header "Authorization: Bearer $IPA_HOST_TOKEN" \
+              --header "Content-Type: application/octet-stream" \
+              --header "X-IPA-SHA256: $checksum" \
+              --data-binary "@$ipa" \
+              "https://test.cameo.moe/pokeboy/api/builds/$GITHUB_SHA"
+          )"
+
+          install_url="$(
+            printf '%s' "$response" |
+              node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")); process.stdout.write(r.install_url)'
+          )"
+          ipa_url="$(
+            printf '%s' "$response" |
+              node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")); process.stdout.write(r.ipa_url)'
+          )"
+
+          {
+            echo "### Pokeboy iOS build"
+            echo
+            echo "[Install in LiveContainer]($install_url)"
+            echo
+            echo "[Install page](https://test.cameo.moe/pokeboy/) · [Direct IPA]($ipa_url)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload .ipa artifact
         uses: actions/upload-artifact@v4
         with:
