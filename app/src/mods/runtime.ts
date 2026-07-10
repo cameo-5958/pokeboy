@@ -125,7 +125,7 @@ export class GbModRuntime {
       write8: (address, value) => this.api.write8(this.gb, address & 0xffff, value & 0xff),
     };
     this.callbackPointer = module.addFunction(
-      (gb, handle, importIndex, context) =>
+      (gb, handle, importIndex, context, _user) =>
         this.dispatch(gb, handle, importIndex, context),
       "viiiii",
     );
