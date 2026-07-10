@@ -517,6 +517,7 @@ struct Runtime::Impl {
     uint32_t next_handle = 1;
     HostCallback callback = nullptr;
     void* callback_user = nullptr;
+    bool invoking_host = false;
     std::string error;
 
     Status fail(Status status, std::string message) {
@@ -811,6 +812,8 @@ void Runtime::on_rom_loaded(Cartridge* cartridge) {
 }
 
 Status Runtime::load_symbols(const char* text, size_t len) {
+    if (impl_->invoking_host)
+        return impl_->fail(Status::link_error, "mods cannot be relinked from inside a host callback");
     std::unordered_map<std::string, Address> symbols;
     std::string parse_error;
     Status status = parse_symbol_document(text, len, symbols, parse_error);
@@ -827,6 +830,8 @@ Status Runtime::load_symbols(const char* text, size_t len) {
 Status Runtime::load_package(const uint8_t* data, size_t len, uint32_t* handle) {
     if (!handle) return impl_->fail(Status::invalid_argument, "mod handle output pointer is null");
     *handle = 0;
+    if (impl_->invoking_host)
+        return impl_->fail(Status::link_error, "mods cannot be relinked from inside a host callback");
     if (!impl_->cartridge) return impl_->fail(Status::no_rom, "no ROM is loaded");
     Package package;
     std::string parse_error;
@@ -848,6 +853,8 @@ Status Runtime::load_package(const uint8_t* data, size_t len, uint32_t* handle) 
 }
 
 Status Runtime::unload_package(uint32_t handle) {
+    if (impl_->invoking_host)
+        return impl_->fail(Status::link_error, "mods cannot be relinked from inside a host callback");
     const auto found = std::find_if(impl_->packages.begin(), impl_->packages.end(),
         [handle](const Package& package) { return package.handle == handle; });
     if (found == impl_->packages.end())
@@ -913,6 +920,11 @@ bool Runtime::invoke_host_call(CPU& cpu, uint16_t opcode_address) {
     cpu.pc = static_cast<uint16_t>(cpu.pc + 2); // consume the linked 16-bit trap slot
     CpuContext context{cpu.af, cpu.bc, cpu.de, cpu.hl, cpu.sp, cpu.pc,
                        static_cast<uint8_t>(cpu.ime), static_cast<uint8_t>(cpu.halted)};
+    struct HostInvocation {
+        explicit HostInvocation(bool& active) : active_(active) { active_ = true; }
+        ~HostInvocation() { active_ = false; }
+        bool& active_;
+    } invocation(impl_->invoking_host);
     if (impl_->callback)
         impl_->callback(impl_->callback_user, binding.handle, binding.import_index, context);
     cpu.af = context.af & 0xFFF0;
