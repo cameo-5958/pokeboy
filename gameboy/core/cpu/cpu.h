@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 class Bus;
-namespace gbmod { class Runtime; }
 
 struct CPU {
     union { struct { uint8_t f, a; }; uint16_t af; };   // little-endian pairs
@@ -12,7 +11,6 @@ struct CPU {
     bool ime = false, halted = false;
     int  ei_delay = 0;
     Bus* bus = nullptr;
-    gbmod::Runtime* mods = nullptr;
 
     enum { FZ = 0x80, FN = 0x40, FH = 0x20, FC = 0x10 };
     void set_flag(uint8_t fl, bool on) { f = on ? (f | fl) : (f & ~fl); f &= 0xF0; }
