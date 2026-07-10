@@ -62,6 +62,9 @@ export function createApi(cfg: ApiConfig = {}) {
     getCartridge: (id: string) => get<Cartridge>(`/api/cartridges/${id}`),
     /** URL to stream a cartridge's ROM bytes. */
     romUrl: (id: string) => `${base}/api/cartridges/${id}/rom`,
+    /** Minimal WASM player mounted inside the native Game Boy LCD. */
+    emulatorUrl: (id: string) =>
+      `${base}/emulator/embed.html?cartridge=${encodeURIComponent(id)}`,
     fetchRegistry: () => get<Registry>("/api/registry"),
   };
 }
