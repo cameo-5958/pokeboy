@@ -10,10 +10,12 @@
 #include "joypad/joypad.h"
 #include "apu/apu.h"
 #include "cart/cart.h"
+#include "mod/mod.h"
 
 class GameBoy {
 public:
     bool  load_rom(const uint8_t* data, size_t len);
+    void  reset_custom_boot();                     // executes the bundled boot bytecode at $0000
     void  reset_post_boot();                       // PDF §4.3 — byte-exact
     void  run_frame();                             // exactly 70224 T-cycles
     const uint8_t* framebuffer() const { return ppu.fb; }        // 160*144, 0-3
@@ -33,6 +35,7 @@ public:
     Timer  timer;
     Joypad joypad;
     APU    apu;
+    gbmod::Runtime mods;
     std::unique_ptr<Cartridge> cart;
 private:
     int frame_budget = 0;
