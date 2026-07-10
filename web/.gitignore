@@ -1,4 +1,2 @@
 *.gb
 *.gbc
-# copyrighted game audio: local-only, see music/pokemon-rb/CREDITS.md
-music/pokemon-rb/hgss/*.mp3
