@@ -2,9 +2,13 @@ node_modules/
 dist/
 .env
 
+# Issued device API keys — secrets, never commit.
+data/keys.json
+
 # ROM binaries and user-supplied mod payloads are never committed.
-storage/roms/*.gb
-storage/roms/*.gbc
-storage/mods/*
-!storage/roms/.gitkeep
-!storage/mods/.gitkeep
+roms/*.gb
+roms/*.gbc
+roms/*.rom
+mods/*
+!roms/.gitkeep
+!mods/.gitkeep

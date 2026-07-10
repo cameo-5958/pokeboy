@@ -11,6 +11,7 @@ function toDto(c: CartridgeRecord, origin: string) {
     id: c.id,
     title: c.title,
     file: c.file,
+    version: c.version,
     img: c.img ? `${origin}/labels/${c.img}` : null,
   };
 }
