@@ -59,8 +59,19 @@ function modMetrics(u: Unit) {
   const gap = u(6);
   const stackGap = u(8); // between the browser panel and the count panel
   const countH = u(24);
+  const settingsH = u(26);
   const panelH = pad * 2 + nameH + gap + descH + gap + btnH;
-  return { pad, nameH, descH, btnH, gap, stackGap, countH, height: panelH + stackGap + countH };
+  return {
+    pad,
+    nameH,
+    descH,
+    btnH,
+    gap,
+    stackGap,
+    countH,
+    settingsH,
+    height: panelH + stackGap + countH + stackGap + settingsH,
+  };
 }
 
 export default function EmulatorScreen() {
@@ -155,9 +166,13 @@ export default function EmulatorScreen() {
             Animated.sequence([
               Animated.spring(anim, { toValue: 1, useNativeDriver: false, bounciness: 3, speed: 12 }),
               Animated.timing(anim, { toValue: 0, duration: 190, useNativeDriver: false }),
-            ]).start();
+            ]).start(({ finished }) => {
+              if (finished) playSfx("snap");
+            });
           } else {
-            Animated.timing(anim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
+            Animated.timing(anim, { toValue: 0, duration: 180, useNativeDriver: false }).start(({ finished }) => {
+              if (finished) playSfx("snap");
+            });
           }
         });
       };
@@ -587,6 +602,7 @@ function ModChanger({
   onSet: (id: string, on: boolean) => void;
 }) {
   const [idx, setIdx] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const m = modMetrics(u);
   const width = landscape ? u(170) : cartWidth + u(24);
   const opacity = anim.interpolate({ inputRange: [1, 2], outputRange: [0, 1], extrapolate: "clamp" });
@@ -597,6 +613,10 @@ function ModChanger({
   const scroll = (dir: 1 | -1) => {
     playSfx("dpad");
     setIdx((i) => (i + dir + MODS.length) % MODS.length);
+  };
+  const toggleSettings = () => {
+    playSfx("select");
+    setSettingsOpen((v) => !v);
   };
 
   return (
@@ -650,6 +670,80 @@ function ModChanger({
           {enabled.size}/{MODS.length}
         </Text>
       </View>
+
+      {active ? (
+        <>
+          <View
+            style={[
+              styles.modPanel,
+              { height: m.settingsH, marginTop: m.stackGap, borderRadius: u(8), padding: u(4) },
+            ]}
+          >
+            <Pressable
+              onPress={toggleSettings}
+              style={({ pressed }) => [
+                styles.settingsButton,
+                { flex: 1, borderRadius: u(5) },
+                settingsOpen && styles.settingsButtonOn,
+                pressed && { opacity: 0.62 },
+              ]}
+            >
+              <Text
+                selectable={false}
+                style={[
+                  styles.modName,
+                  styles.settingsButtonText,
+                  { fontSize: u(8), letterSpacing: u(1) },
+                  settingsOpen && styles.settingsButtonTextOn,
+                ]}
+              >
+                SETTINGS
+              </Text>
+            </Pressable>
+          </View>
+          {settingsOpen ? (
+            <View
+              style={[
+                styles.settingsPopup,
+                {
+                  width,
+                  borderRadius: u(10),
+                  padding: u(10),
+                  top: 0,
+                },
+              ]}
+            >
+              <View style={styles.settingsPopupHeader}>
+                <Text selectable={false} style={[styles.modName, { fontSize: u(9), letterSpacing: u(1) }]}>
+                  SETTINGS
+                </Text>
+                <Pressable
+                  onPress={toggleSettings}
+                  style={({ pressed }) => [
+                    styles.settingsClose,
+                    { width: u(20), height: u(20), borderRadius: u(5) },
+                    pressed && { opacity: 0.62 },
+                  ]}
+                >
+                  <Text selectable={false} style={[styles.settingsCloseText, { fontSize: u(10) }]}>
+                    X
+                  </Text>
+                </Pressable>
+              </View>
+              <View style={[styles.settingsPopupRows, { marginTop: u(8), gap: u(7) }]}>
+                {["AUDIO", "SPEED", "DISPLAY"].map((label) => (
+                  <View key={label} style={styles.settingsMockRow}>
+                    <Text selectable={false} style={[styles.settingsMockText, { fontSize: u(7) }]}>
+                      {label}
+                    </Text>
+                    <View style={[styles.settingsMockDash, { width: u(56) }]} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </>
+      ) : null}
     </Animated.View>
   );
 }
@@ -1243,6 +1337,75 @@ const styles = StyleSheet.create({
   },
   modCountValue: {
     color: "#9a1f4c",
+    fontWeight: "800",
+    userSelect: "none",
+  },
+  settingsButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#c8c3b4",
+    borderWidth: 1,
+    borderColor: "#aaa596",
+  },
+  settingsButtonOn: {
+    backgroundColor: "#454550",
+    borderColor: "#33333c",
+  },
+  settingsButtonText: {
+    color: "#4c4a55",
+  },
+  settingsButtonTextOn: {
+    color: "#d6d1c2",
+  },
+  settingsMockRows: {
+    flex: 1,
+    justifyContent: "space-between",
+  },
+  settingsMockRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  settingsMockText: {
+    color: "#6b665a",
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    userSelect: "none",
+  },
+  settingsMockDash: {
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "#aaa596",
+  },
+  settingsPopup: {
+    position: "absolute",
+    left: 0,
+    backgroundColor: "#d8d4c6",
+    borderWidth: 1,
+    borderColor: "#a59f8d",
+    shadowColor: "#5c5647",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.24,
+    shadowRadius: 12,
+    zIndex: 4,
+  },
+  settingsPopupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  settingsPopupRows: {
+    justifyContent: "space-between",
+  },
+  settingsClose: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#c8c3b4",
+    borderWidth: 1,
+    borderColor: "#aaa596",
+  },
+  settingsCloseText: {
+    color: "#4c4a55",
     fontWeight: "800",
     userSelect: "none",
   },

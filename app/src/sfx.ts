@@ -2,7 +2,7 @@
 // It no-ops on platforms without Web Audio (e.g. native), so callers don't need
 // to guard. On native, wire this up to expo-av if real sound is needed there.
 
-type Sfx = "a" | "b" | "dpad" | "start" | "select" | "eject" | "insert" | "modOn" | "modOff";
+type Sfx = "a" | "b" | "dpad" | "start" | "select" | "eject" | "insert" | "snap" | "modOn" | "modOff";
 
 let ctx: any = null;
 let unavailable = false;
@@ -41,6 +41,11 @@ function tone(
   osc.stop(start + dur + 0.02);
 }
 
+function click(ac: any, freq: number, start: number, peak = 0.13) {
+  tone(ac, freq, start, 0.026, "square", peak);
+  tone(ac, freq * 1.5, start + 0.004, 0.018, "triangle", peak * 0.5);
+}
+
 export function playSfx(kind: Sfx) {
   const ac = context();
   if (!ac) return;
@@ -70,8 +75,13 @@ export function playSfx(kind: Sfx) {
       tone(ac, 300, t + 0.06, 0.13, "sawtooth", 0.13);
       break;
     case "insert":
-      tone(ac, 300, t, 0.06, "sawtooth", 0.13);
-      tone(ac, 640, t + 0.06, 0.11, "sawtooth", 0.13);
+      tone(ac, 170, t, 0.045, "triangle", 0.12);
+      click(ac, 760, t + 0.042, 0.12);
+      click(ac, 1140, t + 0.086, 0.1);
+      break;
+    case "snap":
+      click(ac, 980, t, 0.1);
+      tone(ac, 180, t + 0.018, 0.032, "triangle", 0.08);
       break;
     case "modOn":
       tone(ac, 523, t, 0.05, "square", 0.12);
