@@ -1,18 +1,30 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  Image,
+  Modal,
   PanResponder,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type LayoutChangeEvent,
   useWindowDimensions,
 } from "react-native";
+import WebView from "react-native-webview";
 
+import { createApi, type Cartridge as CartridgeInfo } from "@/api/client";
 import { playSfx } from "@/sfx";
+import {
+  diffSection,
+  loadInstalled,
+  saveInstalled,
+  useSettings,
+  type DiffEntry,
+} from "@/settings";
 
 // Native Game Boy screen is 160x144. The LCD keeps that ratio; the emulator
 // mounts its framebuffer into the LCD well later.
@@ -30,6 +42,23 @@ type Unit = (value: number) => number;
 type Translate = Animated.AnimatedInterpolation<number>;
 type AnimValue = Animated.Value;
 type PanHandlers = ReturnType<typeof PanResponder.create>["panHandlers"];
+type InputGroup = "buttons" | "dpad";
+
+const EmulatorContext = createContext<{
+  uri: string | null;
+  webViewRef: { current: WebView | null };
+  setInput: (group: InputGroup, mask: number, held: boolean) => void;
+  settings: { speed: number | "inf"; muted: boolean; volume: number };
+  paused: boolean;
+  mods: readonly string[];
+}>({
+  uri: null,
+  webViewRef: { current: null },
+  setInput: () => undefined,
+  settings: { speed: 1, muted: false, volume: 1 },
+  paused: false,
+  mods: [],
+});
 
 // Real DMG carts are nearly square; the label sticker (where the game image
 // mounts) dominates the front face.
@@ -76,6 +105,16 @@ function modMetrics(u: Unit) {
 
 export default function EmulatorScreen() {
   const { width, height } = useWindowDimensions();
+  // Declare mod state before any derived values, effects, or callbacks. This
+  // also keeps Metro's transformed module clear of temporal-dead-zone access.
+  const [enabledMods, setEnabledMods] = useState<ReadonlySet<string>>(() => new Set());
+  // Backend client bound to the user's saved URL + key, so the cartridge list
+  // and emulator WebView both hit the configured backend.
+  const { settings, settingsLoaded } = useSettings();
+  const api = useMemo(
+    () => createApi({ baseUrl: settings.backendUrl, apiKey: settings.apiKey }),
+    [settings.backendUrl, settings.apiKey],
+  );
   const landscape = width > height;
 
   const bodyWidth = landscape ? width * 0.96 : Math.min(width * 0.92, height * 0.5);
@@ -122,6 +161,53 @@ export default function EmulatorScreen() {
   const [volume, setVolume] = useState(0.72);
   const [muted, setMuted] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(1);
+  const [cartridges, setCartridges] = useState<CartridgeInfo[]>([]);
+  const [cartridgeIdx, setCartridgeIdx] = useState(0);
+  const webViewRef = useRef<WebView | null>(null);
+  const inputRef = useRef({ buttons: 0, dpad: 0 });
+  const cartridge = cartridges[cartridgeIdx] ?? null;
+  const emulatorSettings = {
+    speed: (SPEEDS[speedIdx] === "xINF" ? "inf" : Number(SPEEDS[speedIdx].slice(1))) as number | "inf",
+    muted,
+    volume,
+  };
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    api.listCartridges().then(setCartridges).catch(() => setCartridges([]));
+  }, [api, settingsLoaded]);
+
+  const postToEmulator = useCallback((message: object) => {
+    webViewRef.current?.postMessage(JSON.stringify(message));
+  }, []);
+  const setInput = useCallback((group: InputGroup, mask: number, held: boolean) => {
+    const next = held ? inputRef.current[group] | mask : inputRef.current[group] & ~mask;
+    inputRef.current = { ...inputRef.current, [group]: next };
+    postToEmulator({ type: "input", ...inputRef.current });
+  }, [postToEmulator]);
+
+  useEffect(() => {
+    postToEmulator({
+      type: "settings",
+      ...emulatorSettings,
+    });
+  }, [muted, postToEmulator, speedIdx, volume]);
+
+  useEffect(() => {
+    if (ejected) inputRef.current = { buttons: 0, dpad: 0 };
+    postToEmulator({ type: "paused", value: ejected });
+    if (ejected) postToEmulator({ type: "input", ...inputRef.current });
+  }, [ejected, postToEmulator]);
+
+  useEffect(() => {
+    postToEmulator({ type: "mods", ids: Array.from(enabledMods) });
+  }, [enabledMods, postToEmulator]);
+
+  const selectCartridge = (direction: -1 | 1) => {
+    if (cartridges.length < 2) return;
+    playSfx("select");
+    setCartridgeIdx((current) => (current + direction + cartridges.length) % cartridges.length);
+  };
   const cycleSpeed = () => {
     playSfx("select");
     setSpeedIdx((i) => (i + 1) % SPEEDS.length);
@@ -132,7 +218,6 @@ export default function EmulatorScreen() {
   };
 
   // Enabled mods, by id.
-  const [enabledMods, setEnabledMods] = useState<ReadonlySet<string>>(new Set());
   const setMod = (id: string, on: boolean) => {
     if (enabledMods.has(id) === on) return;
     playSfx(on ? "modOn" : "modOff");
@@ -208,6 +293,16 @@ export default function EmulatorScreen() {
   const onBodyLayout = (e: LayoutChangeEvent) => setBodyTop(e.nativeEvent.layout.y);
 
   return (
+    <EmulatorContext.Provider
+      value={{
+        uri: cartridge ? api.emulatorUrl(cartridge.id) : null,
+        webViewRef,
+        setInput,
+        settings: emulatorSettings,
+        paused: ejected,
+        mods: Array.from(enabledMods),
+      }}
+    >
     <View style={styles.page}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar hidden />
@@ -232,9 +327,10 @@ export default function EmulatorScreen() {
             labelHeight={cart.labelHeight}
             height={cart.height}
             panHandlers={pan.panHandlers}
+            image={cartridge?.img ?? null}
           />
-          <CartridgeArrow u={u} anim={anim} side="left" cartHeight={cart.height} />
-          <CartridgeArrow u={u} anim={anim} side="right" cartHeight={cart.height} />
+          <CartridgeArrow u={u} anim={anim} side="left" cartHeight={cart.height} onPress={() => selectCartridge(-1)} />
+          <CartridgeArrow u={u} anim={anim} side="right" cartHeight={cart.height} onPress={() => selectCartridge(1)} />
           <ModChanger
             u={u}
             anim={anim}
@@ -278,6 +374,7 @@ export default function EmulatorScreen() {
         )}
       </Animated.View>
     </View>
+    </EmulatorContext.Provider>
   );
 }
 
@@ -478,6 +575,7 @@ function Cartridge({
   labelWidth,
   labelHeight,
   panHandlers,
+  image,
 }: {
   u: Unit;
   width: number;
@@ -485,6 +583,7 @@ function Cartridge({
   labelWidth: number;
   labelHeight: number;
   panHandlers: PanHandlers;
+  image: string | null;
 }) {
   return (
     <View
@@ -521,7 +620,11 @@ function Cartridge({
           { width: labelWidth, height: labelHeight, borderRadius: u(5), padding: u(5) },
         ]}
       >
-        <View style={[styles.cartImageReserve, { borderRadius: u(3) }]} />
+        {image ? (
+          <Image source={{ uri: image }} style={[styles.cartImageReserve, { borderRadius: u(3) }]} resizeMode="cover" />
+        ) : (
+          <View style={[styles.cartImageReserve, { borderRadius: u(3) }]} />
+        )}
       </View>
       {/* Edge connector */}
       <View style={[styles.cartBottom, { height: u(12), marginTop: u(8), borderRadius: u(2) }]}>
@@ -540,11 +643,13 @@ function CartridgeArrow({
   anim,
   side,
   cartHeight,
+  onPress,
 }: {
   u: Unit;
   anim: AnimValue;
   side: "left" | "right";
   cartHeight: number;
+  onPress: () => void;
 }) {
   const size = u(34);
   const opacity = anim.interpolate({ inputRange: [1, 2], outputRange: [0, 1], extrapolate: "clamp" });
@@ -562,6 +667,7 @@ function CartridgeArrow({
       ]}
     >
       <Pressable
+        onPress={onPress}
         style={({ pressed }) => [
           styles.cartArrow,
           { width: size, height: size, borderRadius: size / 2 },
@@ -701,50 +807,197 @@ function ModChanger({
               </Text>
             </Pressable>
           </View>
-          {settingsOpen ? (
-            <View
-              style={[
-                styles.settingsPopup,
-                {
-                  width,
-                  borderRadius: u(10),
-                  padding: u(10),
-                  top: 0,
-                },
-              ]}
-            >
-              <View style={styles.settingsPopupHeader}>
-                <Text selectable={false} style={[styles.modName, { fontSize: u(9), letterSpacing: u(1) }]}>
-                  SETTINGS
-                </Text>
-                <Pressable
-                  onPress={toggleSettings}
-                  style={({ pressed }) => [
-                    styles.settingsClose,
-                    { width: u(20), height: u(20), borderRadius: u(5) },
-                    pressed && { opacity: 0.62 },
-                  ]}
-                >
-                  <Text selectable={false} style={[styles.settingsCloseText, { fontSize: u(10) }]}>
-                    X
-                  </Text>
-                </Pressable>
-              </View>
-              <View style={[styles.settingsPopupRows, { marginTop: u(8), gap: u(7) }]}>
-                {["AUDIO", "SPEED", "DISPLAY"].map((label) => (
-                  <View key={label} style={styles.settingsMockRow}>
-                    <Text selectable={false} style={[styles.settingsMockText, { fontSize: u(7) }]}>
-                      {label}
-                    </Text>
-                    <View style={[styles.settingsMockDash, { width: u(56) }]} />
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
+          <SettingsModal open={settingsOpen} onClose={toggleSettings} />
         </>
       ) : null}
     </Animated.View>
+  );
+}
+
+type PullState =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "error"; message: string }
+  | { phase: "done"; changed: DiffEntry[]; total: number; newCount: number; updateCount: number };
+
+// True full-screen settings dialog. Rendered through React Native's Modal so it
+// escapes the widget's transformed layer and dims the whole screen. Holds the
+// locally-persisted backend connection (URL + API key) and the "pull latest"
+// action that syncs the installed ROM/mod manifest with the backend registry.
+function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { width } = useWindowDimensions();
+  const cardWidth = Math.min(width * 0.86, 380);
+  const { settings, updateSettings } = useSettings();
+  const [pull, setPull] = useState<PullState>({ phase: "idle" });
+
+  const pullLatest = async () => {
+    playSfx("select");
+    setPull({ phase: "loading" });
+    try {
+      const api = createApi({ baseUrl: settings.backendUrl, apiKey: settings.apiKey });
+      const registry = await api.fetchRegistry();
+      const installed = await loadInstalled();
+      const romDiff = diffSection(
+        "rom",
+        installed.roms,
+        registry.roms.map((r) => ({ id: r.id, version: r.version, label: r.title })),
+      );
+      const modDiff = diffSection(
+        "mod",
+        installed.mods,
+        registry.mods.map((m) => ({ id: m.id, version: m.version, label: m.name })),
+      );
+      const all = [...romDiff, ...modDiff];
+      const changed = all.filter((e) => e.status !== "current");
+
+      // Pulling installs the registry's current versions as the new baseline.
+      await saveInstalled({
+        roms: Object.fromEntries(registry.roms.map((r) => [r.id, r.version])),
+        mods: Object.fromEntries(registry.mods.map((m) => [m.id, m.version])),
+      });
+
+      setPull({
+        phase: "done",
+        changed,
+        total: all.length,
+        newCount: changed.filter((e) => e.status === "new").length,
+        updateCount: changed.filter((e) => e.status === "update").length,
+      });
+    } catch (e) {
+      setPull({ phase: "error", message: e instanceof Error ? e.message : "Pull failed" });
+    }
+  };
+
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      {/* Backdrop — tapping outside the card closes the dialog. */}
+      <Pressable style={styles.settingsBackdrop} onPress={onClose}>
+        {/* Stop taps on the card itself from bubbling to the backdrop. */}
+        <Pressable style={[styles.settingsCard, { width: cardWidth }]} onPress={() => {}}>
+          <View style={styles.settingsCardHeader}>
+            <Text selectable={false} style={styles.settingsTitle}>
+              SETTINGS
+            </Text>
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={({ pressed }) => [styles.settingsCloseBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Text selectable={false} style={styles.settingsCloseBtnText}>
+                ✕
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.settingsField}>
+            <Text selectable={false} style={styles.settingsFieldLabel}>
+              BACKEND URL
+            </Text>
+            <TextInput
+              value={settings.backendUrl}
+              onChangeText={(t) => updateSettings({ backendUrl: t })}
+              placeholder="http://localhost:4000"
+              placeholderTextColor="#9a958a"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              style={styles.settingsInput}
+            />
+          </View>
+
+          <View style={styles.settingsField}>
+            <Text selectable={false} style={styles.settingsFieldLabel}>
+              BACKEND API KEY
+            </Text>
+            <TextInput
+              value={settings.apiKey}
+              onChangeText={(t) => updateSettings({ apiKey: t })}
+              placeholder="••••••••"
+              placeholderTextColor="#9a958a"
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              style={styles.settingsInput}
+            />
+          </View>
+
+          <View style={styles.settingsSyncSection}>
+            <Pressable
+              onPress={pullLatest}
+              disabled={pull.phase === "loading"}
+              style={({ pressed }) => [
+                styles.pullButton,
+                pull.phase === "loading" && { opacity: 0.6 },
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <Text selectable={false} style={styles.pullButtonText}>
+                {pull.phase === "loading" ? "PULLING…" : "PULL LATEST"}
+              </Text>
+            </Pressable>
+            <PullResult pull={pull} />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// Status readout for the "pull latest" action: comparison summary plus a short
+// list of what changed against the installed manifest.
+function PullResult({ pull }: { pull: PullState }) {
+  if (pull.phase === "idle") {
+    return (
+      <Text selectable={false} style={styles.pullHint}>
+        Compares installed ROM &amp; mods against the backend registry.
+      </Text>
+    );
+  }
+  if (pull.phase === "loading") {
+    return <Text selectable={false} style={styles.pullHint}>Checking registry…</Text>;
+  }
+  if (pull.phase === "error") {
+    return (
+      <Text selectable={false} style={styles.pullError}>
+        {pull.message}
+      </Text>
+    );
+  }
+
+  if (pull.changed.length === 0) {
+    return (
+      <Text selectable={false} style={styles.pullOk}>
+        ✓ Up to date — {pull.total} item{pull.total === 1 ? "" : "s"} installed.
+      </Text>
+    );
+  }
+  return (
+    <View>
+      <Text selectable={false} style={styles.pullOk}>
+        ✓ Pulled {pull.newCount} new, {pull.updateCount} updated.
+      </Text>
+      <View style={styles.pullList}>
+        {pull.changed.map((e) => (
+          <View key={`${e.kind}:${e.id}`} style={styles.pullRow}>
+            <Text
+              selectable={false}
+              style={[
+                styles.pullBadge,
+                e.status === "new" ? styles.pullBadgeNew : styles.pullBadgeUpdate,
+              ]}
+            >
+              {e.status === "new" ? "NEW" : "UPD"}
+            </Text>
+            <Text selectable={false} style={styles.pullItemLabel} numberOfLines={1}>
+              {e.label}
+            </Text>
+            <Text selectable={false} style={styles.pullItemVer}>
+              {e.status === "update" ? `${e.from} → ${e.to}` : `v${e.to}`}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -863,9 +1116,31 @@ function Bezel({
 }
 
 function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
+  const { uri, webViewRef, settings, paused, mods } = useContext(EmulatorContext);
   return (
     <View style={[styles.lcd, { width, height, borderRadius: u(4), borderWidth: u(1.5) }]}>
-      <View style={styles.lcdWell} pointerEvents="none" />
+      {uri ? (
+        <WebView
+          ref={webViewRef}
+          source={{ uri }}
+          style={styles.emulator}
+          pointerEvents="none"
+          scrollEnabled={false}
+          overScrollMode="never"
+          javaScriptEnabled
+          allowsInlineMediaPlayback
+          mediaPlaybackRequiresUserAction={false}
+          onLoad={() => {
+            // A fresh WebView needs the current host state immediately.
+            webViewRef.current?.postMessage(JSON.stringify({ type: "input", buttons: 0, dpad: 0 }));
+            webViewRef.current?.postMessage(JSON.stringify({ type: "settings", ...settings }));
+            webViewRef.current?.postMessage(JSON.stringify({ type: "paused", value: paused }));
+            webViewRef.current?.postMessage(JSON.stringify({ type: "mods", ids: mods }));
+          }}
+        />
+      ) : (
+        <View style={styles.lcdWell} pointerEvents="none" />
+      )}
       <View
         style={[styles.lcdGlare, { top: -u(20), right: -u(28), width: u(120), height: u(64) }]}
         pointerEvents="none"
@@ -905,18 +1180,20 @@ function Dpad({ u, size }: { u: Unit; size: number }) {
         ]}
       />
       {/* Directional press zones */}
-      <DpadZone style={{ left: off, top: 0, width: arm, height: off, borderTopLeftRadius: u(5), borderTopRightRadius: u(5) }} />
-      <DpadZone style={{ left: off, top: size - off, width: arm, height: off, borderBottomLeftRadius: u(5), borderBottomRightRadius: u(5) }} />
-      <DpadZone style={{ top: off, left: 0, height: arm, width: off, borderTopLeftRadius: u(5), borderBottomLeftRadius: u(5) }} />
-      <DpadZone style={{ top: off, left: size - off, height: arm, width: off, borderTopRightRadius: u(5), borderBottomRightRadius: u(5) }} />
+      <DpadZone mask={0x04} style={{ left: off, top: 0, width: arm, height: off, borderTopLeftRadius: u(5), borderTopRightRadius: u(5) }} />
+      <DpadZone mask={0x08} style={{ left: off, top: size - off, width: arm, height: off, borderBottomLeftRadius: u(5), borderBottomRightRadius: u(5) }} />
+      <DpadZone mask={0x02} style={{ top: off, left: 0, height: arm, width: off, borderTopLeftRadius: u(5), borderBottomLeftRadius: u(5) }} />
+      <DpadZone mask={0x01} style={{ top: off, left: size - off, height: arm, width: off, borderTopRightRadius: u(5), borderBottomRightRadius: u(5) }} />
     </View>
   );
 }
 
-function DpadZone({ style }: { style: object }) {
+function DpadZone({ style, mask }: { style: object; mask: number }) {
+  const { setInput } = useContext(EmulatorContext);
   return (
     <Pressable
-      onPress={() => playSfx("dpad")}
+      onPressIn={() => { playSfx("dpad"); setInput("dpad", mask, true); }}
+      onPressOut={() => setInput("dpad", mask, false)}
       style={({ pressed }) => [{ position: "absolute" }, style, pressed && styles.dpadZonePressed]}
     />
   );
@@ -947,9 +1224,12 @@ function FaceButton({
   h: number;
   fontSize: number;
 }) {
+  const { setInput } = useContext(EmulatorContext);
+  const mask = label === "A" ? 0x01 : 0x02;
   return (
     <Pressable
-      onPress={() => playSfx(label === "A" ? "a" : "b")}
+      onPressIn={() => { playSfx(label === "A" ? "a" : "b"); setInput("buttons", mask, true); }}
+      onPressOut={() => setInput("buttons", mask, false)}
       style={({ pressed }) => [
         styles.faceButton,
         { width: w, height: h, borderRadius: h / 2, alignItems: "center", justifyContent: "center" },
@@ -974,9 +1254,15 @@ function PillRow({ u, gap }: { u: Unit; gap?: number }) {
 }
 
 function Pill({ u, label }: { u: Unit; label: string }) {
+  const { setInput } = useContext(EmulatorContext);
+  const mask = label === "START" ? 0x08 : 0x04;
   return (
     <Pressable
-      onPress={() => playSfx(label === "START" ? "start" : "select")}
+      onPressIn={() => {
+        playSfx(label === "START" ? "start" : "select");
+        setInput("buttons", mask, true);
+      }}
+      onPressOut={() => setInput("buttons", mask, false)}
       style={({ pressed }) => [styles.pillGroup, pressed && { opacity: 0.55 }]}
     >
       <View
@@ -1357,56 +1643,156 @@ const styles = StyleSheet.create({
   settingsButtonTextOn: {
     color: "#d6d1c2",
   },
-  settingsMockRows: {
+  settingsBackdrop: {
     flex: 1,
-    justifyContent: "space-between",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(20, 20, 26, 0.6)",
   },
-  settingsMockRow: {
+  settingsCard: {
+    backgroundColor: "#d8d4c6",
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "#a59f8d",
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+  },
+  settingsCardHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 18,
   },
-  settingsMockText: {
-    color: "#6b665a",
+  settingsTitle: {
+    color: "#31316f",
+    fontSize: 18,
     fontWeight: "800",
-    letterSpacing: 0.5,
+    fontStyle: "italic",
+    letterSpacing: 1,
     userSelect: "none",
   },
-  settingsMockDash: {
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: "#aaa596",
-  },
-  settingsPopup: {
-    position: "absolute",
-    left: 0,
-    backgroundColor: "#d8d4c6",
-    borderWidth: 1,
-    borderColor: "#a59f8d",
-    shadowColor: "#5c5647",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.24,
-    shadowRadius: 12,
-    zIndex: 4,
-  },
-  settingsPopupHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  settingsPopupRows: {
-    justifyContent: "space-between",
-  },
-  settingsClose: {
+  settingsCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#c8c3b4",
     borderWidth: 1,
     borderColor: "#aaa596",
   },
-  settingsCloseText: {
+  settingsCloseBtnText: {
     color: "#4c4a55",
+    fontSize: 14,
     fontWeight: "800",
+    userSelect: "none",
+  },
+  settingsField: {
+    marginBottom: 14,
+  },
+  settingsFieldLabel: {
+    color: "#6b665a",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 6,
+    userSelect: "none",
+  },
+  settingsInput: {
+    height: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#aaa596",
+    backgroundColor: "#efece3",
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: "#33333c",
+  },
+  settingsSyncSection: {
+    marginTop: 6,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#c0bbac",
+  },
+  pullButton: {
+    height: 44,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#9a1f4c",
+    borderWidth: 1,
+    borderColor: "#6f153a",
+  },
+  pullButtonText: {
+    color: "#f2d9e2",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+    fontStyle: "italic",
+    userSelect: "none",
+  },
+  pullHint: {
+    marginTop: 10,
+    color: "#6b665a",
+    fontSize: 11,
+    lineHeight: 15,
+    userSelect: "none",
+  },
+  pullError: {
+    marginTop: 10,
+    color: "#a3341f",
+    fontSize: 12,
+    fontWeight: "700",
+    userSelect: "none",
+  },
+  pullOk: {
+    marginTop: 10,
+    color: "#2f6b3a",
+    fontSize: 12,
+    fontWeight: "800",
+    userSelect: "none",
+  },
+  pullList: {
+    marginTop: 8,
+    gap: 5,
+  },
+  pullRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  pullBadge: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    color: "#fff",
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: "hidden",
+    userSelect: "none",
+  },
+  pullBadgeNew: {
+    backgroundColor: "#2f6b3a",
+  },
+  pullBadgeUpdate: {
+    backgroundColor: "#b5761c",
+  },
+  pullItemLabel: {
+    flex: 1,
+    color: "#4c4a55",
+    fontSize: 12,
+    fontWeight: "600",
+    userSelect: "none",
+  },
+  pullItemVer: {
+    color: "#6b665a",
+    fontSize: 10,
+    fontVariant: ["tabular-nums"],
     userSelect: "none",
   },
 
@@ -1446,6 +1832,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "#8fa027",
     borderColor: "#2b2d1a",
+  },
+  emulator: {
+    flex: 1,
+    backgroundColor: "#c8d4a4",
   },
   lcdWell: {
     ...StyleSheet.absoluteFillObject,
