@@ -13,6 +13,7 @@ call "%EMSDK%\emsdk_env.bat" >nul 2>nul
 
 set CORE=gameboy\core\gb.cpp gameboy\core\bus\bus.cpp gameboy\core\cpu\cpu.cpp gameboy\core\ppu\ppu.cpp ^
 gameboy\core\timer\timer.cpp gameboy\core\apu\apu.cpp gameboy\core\cart\cart.cpp gameboy\adapter\gb_api.cpp
+set CORE=%CORE% gameboy\core\mod\mod.cpp
 
 set EXPORTS=_gb_create,_gb_destroy,_gb_load_rom,_gb_reset,_gb_run_frame,^
 _gb_framebuffer,_gb_framebuffer_argb,_gb_set_input,_gb_read_audio,^
