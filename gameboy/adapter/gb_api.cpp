@@ -35,11 +35,11 @@ void       gb_destroy(gb_handle* h)   { delete h; }
 
 int gb_load_rom(gb_handle* h, const uint8_t* data, size_t len) {
     if (!h->gb.load_rom(data, len)) return 0;
-    h->gb.reset_post_boot();
+    h->gb.reset_custom_boot();
     return 1;
 }
 
-void gb_reset(gb_handle* h)     { h->gb.reset_post_boot(); }
+void gb_reset(gb_handle* h)     { h->gb.reset_custom_boot(); }
 void gb_run_frame(gb_handle* h) { h->gb.run_frame(); }
 
 const uint8_t* gb_framebuffer(const gb_handle* h) { return h->gb.framebuffer(); }
