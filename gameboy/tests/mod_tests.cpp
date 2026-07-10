@@ -235,6 +235,7 @@ struct HostState {
     uint32_t handle = 0;
     int calls = 0;
     bool valid = true;
+    gb_mod_status reentrant_status = GB_MOD_OK;
 };
 
 void host_callback(gb_handle* gb, uint32_t handle, uint32_t import_index,
@@ -243,7 +244,8 @@ void host_callback(gb_handle* gb, uint32_t handle, uint32_t import_index,
     state.valid = state.valid && handle == state.handle && import_index == 0 &&
                   context && context->struct_size == sizeof(*context) &&
                   context->pc == 0x0203;
-    ++state.calls;
+    if (state.calls++ == 0)
+        state.reentrant_status = gb_mod_unload(gb, handle);
     context->af = static_cast<uint16_t>((context->af + 0x0100) & 0xFFF0);
     gb_write_mem(gb, 0xC123, 0x5A);
 }
@@ -282,6 +284,7 @@ bool test_link_host_call_and_unload() {
     gb_reset(gb);
     gb_run_frame(gb);
     CHECK(host.calls > 0 && host.valid);
+    CHECK(host.reentrant_status == GB_MOD_LINK_ERROR && gb_mod_count(gb) == 1);
     CHECK(gb_read_mem(gb, 0xC123) == 0x5A);
 
     // A second mod cannot claim the first mod's section/patch bytes.
