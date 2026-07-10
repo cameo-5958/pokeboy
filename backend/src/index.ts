@@ -15,6 +15,8 @@ app.use(express.json());
 
 // Static label images.
 app.use("/labels", express.static(paths.labels()));
+// The app's LCD is a WebView backed by the same WASM build as the web client.
+app.use("/emulator", express.static(paths.web()));
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
