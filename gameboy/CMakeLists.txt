@@ -11,19 +11,16 @@ add_library(gbcore
     core/timer/timer.cpp
     core/apu/apu.cpp
     core/cart/cart.cpp
-    core/mod/mod.cpp
     adapter/gb_api.cpp)
 target_include_directories(gbcore PUBLIC core adapter)
 
 add_executable(gbemu_headless frontend/headless.cpp)
 target_link_libraries(gbemu_headless PRIVATE gbcore)
 
-include(CTest)
-if(BUILD_TESTING)
-    add_executable(gbcore_mod_tests tests/mod_tests.cpp)
-    target_link_libraries(gbcore_mod_tests PRIVATE gbcore)
-    add_test(NAME gbcore_mod_tests COMMAND gbcore_mod_tests)
-endif()
+enable_testing()
+add_executable(gbemu_boot_tests tests/boot_tests.cpp)
+target_link_libraries(gbemu_boot_tests PRIVATE gbcore)
+add_test(NAME custom_boot_rom COMMAND gbemu_boot_tests)
 
 if(WIN32)
     add_executable(gbemu WIN32 frontend/win32/main_win32.cpp)

@@ -1,6 +1,5 @@
 #include "cpu.h"
 #include "bus/bus.h"
-#include "mod/mod.h"
 
 uint8_t  CPU::fetch8()  { return bus->read8(pc++); }
 uint16_t CPU::fetch16() { uint16_t v = bus->read16(pc); pc += 2; return v; }
@@ -139,7 +138,6 @@ bool CPU::handle_interrupts() {
 int CPU::execute_next() {
     if (handle_interrupts()) return 20;
     if (halted) return 4;
-    const uint16_t op_address = pc;
     uint8_t op = fetch8();
     if (op == 0xCB) return exec_cb(fetch8());
 
@@ -247,9 +245,6 @@ int CPU::execute_next() {
         case 0xF3: ime = false; ei_delay = 0; return 4;                  // DI
         case 0xFB: if (!ime && !ei_delay) ei_delay = 2; return 4;        // EI (delayed one instr)
         case 0x76: halted = true; return 4;                              // HALT
-        case 0xD3:                                                       // linked host-call trap
-            if (mods) mods->invoke_host_call(*this, op_address);
-            return 4;
         default:   return 4;      // D3 DB DD E3 E4 EB EC ED F4 FC FD: illegal, treat as NOP
     }
 }

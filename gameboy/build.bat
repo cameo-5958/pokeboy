@@ -21,7 +21,6 @@ if not exist build mkdir build
 
 set CORE=core\gb.cpp core\bus\bus.cpp core\cpu\cpu.cpp core\ppu\ppu.cpp ^
 core\timer\timer.cpp core\apu\apu.cpp core\cart\cart.cpp adapter\gb_api.cpp
-set CORE=%CORE% core\mod\mod.cpp
 set CFLAGS=/nologo /std:c++17 /O2 /EHsc /W3 /I core /I adapter /Fo:build\
 
 cl %CFLAGS% %CORE% frontend\win32\main_win32.cpp /Fe:build\gbemu.exe ^
@@ -31,8 +30,11 @@ if errorlevel 1 exit /b 1
 cl %CFLAGS% %CORE% frontend\headless.cpp /Fe:build\gbemu_headless.exe
 if errorlevel 1 exit /b 1
 
-cl %CFLAGS% %CORE% tests\mod_tests.cpp /Fe:build\gbcore_mod_tests.exe
+cl %CFLAGS% %CORE% tests\boot_tests.cpp /Fe:build\gbemu_boot_tests.exe
+if errorlevel 1 exit /b 1
+
+build\gbemu_boot_tests.exe
 if errorlevel 1 exit /b 1
 
 echo.
-echo Built build\gbemu.exe, build\gbemu_headless.exe, and build\gbcore_mod_tests.exe
+echo Built emulator, headless harness, and custom boot tests
