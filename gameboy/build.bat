@@ -30,5 +30,11 @@ if errorlevel 1 exit /b 1
 cl %CFLAGS% %CORE% frontend\headless.cpp /Fe:build\gbemu_headless.exe
 if errorlevel 1 exit /b 1
 
+cl %CFLAGS% %CORE% tests\boot_tests.cpp /Fe:build\gbemu_boot_tests.exe
+if errorlevel 1 exit /b 1
+
+build\gbemu_boot_tests.exe
+if errorlevel 1 exit /b 1
+
 echo.
-echo Built build\gbemu.exe and build\gbemu_headless.exe
+echo Built emulator, headless harness, and custom boot tests
