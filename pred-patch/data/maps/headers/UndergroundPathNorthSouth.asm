@@ -1,2 +1,0 @@
-	map_header UndergroundPathNorthSouth, UNDERGROUND_PATH_NORTH_SOUTH, UNDERGROUND
-	end_map_header
