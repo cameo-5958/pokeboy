@@ -1,8 +1,9 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  Image,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -11,7 +12,9 @@ import {
   type LayoutChangeEvent,
   useWindowDimensions,
 } from "react-native";
+import WebView from "react-native-webview";
 
+import { api, type Cartridge as CartridgeInfo } from "@/api/client";
 import { playSfx } from "@/sfx";
 
 // Native Game Boy screen is 160x144. The LCD keeps that ratio; the emulator
@@ -30,6 +33,23 @@ type Unit = (value: number) => number;
 type Translate = Animated.AnimatedInterpolation<number>;
 type AnimValue = Animated.Value;
 type PanHandlers = ReturnType<typeof PanResponder.create>["panHandlers"];
+type InputGroup = "buttons" | "dpad";
+
+const EmulatorContext = createContext<{
+  uri: string | null;
+  webViewRef: { current: WebView | null };
+  setInput: (group: InputGroup, mask: number, held: boolean) => void;
+  settings: { speed: number | "inf"; muted: boolean; volume: number };
+  paused: boolean;
+  mods: readonly string[];
+}>({
+  uri: null,
+  webViewRef: { current: null },
+  setInput: () => undefined,
+  settings: { speed: 1, muted: false, volume: 1 },
+  paused: false,
+  mods: [],
+});
 
 // Real DMG carts are nearly square; the label sticker (where the game image
 // mounts) dominates the front face.
@@ -76,6 +96,9 @@ function modMetrics(u: Unit) {
 
 export default function EmulatorScreen() {
   const { width, height } = useWindowDimensions();
+  // Declare mod state before any derived values, effects, or callbacks. This
+  // also keeps Metro's transformed module clear of temporal-dead-zone access.
+  const [enabledMods, setEnabledMods] = useState<ReadonlySet<string>>(() => new Set());
   const landscape = width > height;
 
   const bodyWidth = landscape ? width * 0.96 : Math.min(width * 0.92, height * 0.5);
@@ -122,6 +145,52 @@ export default function EmulatorScreen() {
   const [volume, setVolume] = useState(0.72);
   const [muted, setMuted] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(1);
+  const [cartridges, setCartridges] = useState<CartridgeInfo[]>([]);
+  const [cartridgeIdx, setCartridgeIdx] = useState(0);
+  const webViewRef = useRef<WebView | null>(null);
+  const inputRef = useRef({ buttons: 0, dpad: 0 });
+  const cartridge = cartridges[cartridgeIdx] ?? null;
+  const emulatorSettings = {
+    speed: (SPEEDS[speedIdx] === "xINF" ? "inf" : Number(SPEEDS[speedIdx].slice(1))) as number | "inf",
+    muted,
+    volume,
+  };
+
+  useEffect(() => {
+    api.listCartridges().then(setCartridges).catch(() => setCartridges([]));
+  }, []);
+
+  const postToEmulator = useCallback((message: object) => {
+    webViewRef.current?.postMessage(JSON.stringify(message));
+  }, []);
+  const setInput = useCallback((group: InputGroup, mask: number, held: boolean) => {
+    const next = held ? inputRef.current[group] | mask : inputRef.current[group] & ~mask;
+    inputRef.current = { ...inputRef.current, [group]: next };
+    postToEmulator({ type: "input", ...inputRef.current });
+  }, [postToEmulator]);
+
+  useEffect(() => {
+    postToEmulator({
+      type: "settings",
+      ...emulatorSettings,
+    });
+  }, [muted, postToEmulator, speedIdx, volume]);
+
+  useEffect(() => {
+    if (ejected) inputRef.current = { buttons: 0, dpad: 0 };
+    postToEmulator({ type: "paused", value: ejected });
+    if (ejected) postToEmulator({ type: "input", ...inputRef.current });
+  }, [ejected, postToEmulator]);
+
+  useEffect(() => {
+    postToEmulator({ type: "mods", ids: Array.from(enabledMods) });
+  }, [enabledMods, postToEmulator]);
+
+  const selectCartridge = (direction: -1 | 1) => {
+    if (cartridges.length < 2) return;
+    playSfx("select");
+    setCartridgeIdx((current) => (current + direction + cartridges.length) % cartridges.length);
+  };
   const cycleSpeed = () => {
     playSfx("select");
     setSpeedIdx((i) => (i + 1) % SPEEDS.length);
@@ -132,7 +201,6 @@ export default function EmulatorScreen() {
   };
 
   // Enabled mods, by id.
-  const [enabledMods, setEnabledMods] = useState<ReadonlySet<string>>(new Set());
   const setMod = (id: string, on: boolean) => {
     if (enabledMods.has(id) === on) return;
     playSfx(on ? "modOn" : "modOff");
@@ -208,6 +276,16 @@ export default function EmulatorScreen() {
   const onBodyLayout = (e: LayoutChangeEvent) => setBodyTop(e.nativeEvent.layout.y);
 
   return (
+    <EmulatorContext.Provider
+      value={{
+        uri: cartridge ? api.emulatorUrl(cartridge.id) : null,
+        webViewRef,
+        setInput,
+        settings: emulatorSettings,
+        paused: ejected,
+        mods: Array.from(enabledMods),
+      }}
+    >
     <View style={styles.page}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar hidden />
@@ -232,9 +310,10 @@ export default function EmulatorScreen() {
             labelHeight={cart.labelHeight}
             height={cart.height}
             panHandlers={pan.panHandlers}
+            image={cartridge?.img ?? null}
           />
-          <CartridgeArrow u={u} anim={anim} side="left" cartHeight={cart.height} />
-          <CartridgeArrow u={u} anim={anim} side="right" cartHeight={cart.height} />
+          <CartridgeArrow u={u} anim={anim} side="left" cartHeight={cart.height} onPress={() => selectCartridge(-1)} />
+          <CartridgeArrow u={u} anim={anim} side="right" cartHeight={cart.height} onPress={() => selectCartridge(1)} />
           <ModChanger
             u={u}
             anim={anim}
@@ -278,6 +357,7 @@ export default function EmulatorScreen() {
         )}
       </Animated.View>
     </View>
+    </EmulatorContext.Provider>
   );
 }
 
@@ -478,6 +558,7 @@ function Cartridge({
   labelWidth,
   labelHeight,
   panHandlers,
+  image,
 }: {
   u: Unit;
   width: number;
@@ -485,6 +566,7 @@ function Cartridge({
   labelWidth: number;
   labelHeight: number;
   panHandlers: PanHandlers;
+  image: string | null;
 }) {
   return (
     <View
@@ -521,7 +603,11 @@ function Cartridge({
           { width: labelWidth, height: labelHeight, borderRadius: u(5), padding: u(5) },
         ]}
       >
-        <View style={[styles.cartImageReserve, { borderRadius: u(3) }]} />
+        {image ? (
+          <Image source={{ uri: image }} style={[styles.cartImageReserve, { borderRadius: u(3) }]} resizeMode="cover" />
+        ) : (
+          <View style={[styles.cartImageReserve, { borderRadius: u(3) }]} />
+        )}
       </View>
       {/* Edge connector */}
       <View style={[styles.cartBottom, { height: u(12), marginTop: u(8), borderRadius: u(2) }]}>
@@ -540,11 +626,13 @@ function CartridgeArrow({
   anim,
   side,
   cartHeight,
+  onPress,
 }: {
   u: Unit;
   anim: AnimValue;
   side: "left" | "right";
   cartHeight: number;
+  onPress: () => void;
 }) {
   const size = u(34);
   const opacity = anim.interpolate({ inputRange: [1, 2], outputRange: [0, 1], extrapolate: "clamp" });
@@ -562,6 +650,7 @@ function CartridgeArrow({
       ]}
     >
       <Pressable
+        onPress={onPress}
         style={({ pressed }) => [
           styles.cartArrow,
           { width: size, height: size, borderRadius: size / 2 },
@@ -863,9 +952,31 @@ function Bezel({
 }
 
 function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
+  const { uri, webViewRef, settings, paused, mods } = useContext(EmulatorContext);
   return (
     <View style={[styles.lcd, { width, height, borderRadius: u(4), borderWidth: u(1.5) }]}>
-      <View style={styles.lcdWell} pointerEvents="none" />
+      {uri ? (
+        <WebView
+          ref={webViewRef}
+          source={{ uri }}
+          style={styles.emulator}
+          pointerEvents="none"
+          scrollEnabled={false}
+          overScrollMode="never"
+          javaScriptEnabled
+          allowsInlineMediaPlayback
+          mediaPlaybackRequiresUserAction={false}
+          onLoad={() => {
+            // A fresh WebView needs the current host state immediately.
+            webViewRef.current?.postMessage(JSON.stringify({ type: "input", buttons: 0, dpad: 0 }));
+            webViewRef.current?.postMessage(JSON.stringify({ type: "settings", ...settings }));
+            webViewRef.current?.postMessage(JSON.stringify({ type: "paused", value: paused }));
+            webViewRef.current?.postMessage(JSON.stringify({ type: "mods", ids: mods }));
+          }}
+        />
+      ) : (
+        <View style={styles.lcdWell} pointerEvents="none" />
+      )}
       <View
         style={[styles.lcdGlare, { top: -u(20), right: -u(28), width: u(120), height: u(64) }]}
         pointerEvents="none"
@@ -905,18 +1016,20 @@ function Dpad({ u, size }: { u: Unit; size: number }) {
         ]}
       />
       {/* Directional press zones */}
-      <DpadZone style={{ left: off, top: 0, width: arm, height: off, borderTopLeftRadius: u(5), borderTopRightRadius: u(5) }} />
-      <DpadZone style={{ left: off, top: size - off, width: arm, height: off, borderBottomLeftRadius: u(5), borderBottomRightRadius: u(5) }} />
-      <DpadZone style={{ top: off, left: 0, height: arm, width: off, borderTopLeftRadius: u(5), borderBottomLeftRadius: u(5) }} />
-      <DpadZone style={{ top: off, left: size - off, height: arm, width: off, borderTopRightRadius: u(5), borderBottomRightRadius: u(5) }} />
+      <DpadZone mask={0x04} style={{ left: off, top: 0, width: arm, height: off, borderTopLeftRadius: u(5), borderTopRightRadius: u(5) }} />
+      <DpadZone mask={0x08} style={{ left: off, top: size - off, width: arm, height: off, borderBottomLeftRadius: u(5), borderBottomRightRadius: u(5) }} />
+      <DpadZone mask={0x02} style={{ top: off, left: 0, height: arm, width: off, borderTopLeftRadius: u(5), borderBottomLeftRadius: u(5) }} />
+      <DpadZone mask={0x01} style={{ top: off, left: size - off, height: arm, width: off, borderTopRightRadius: u(5), borderBottomRightRadius: u(5) }} />
     </View>
   );
 }
 
-function DpadZone({ style }: { style: object }) {
+function DpadZone({ style, mask }: { style: object; mask: number }) {
+  const { setInput } = useContext(EmulatorContext);
   return (
     <Pressable
-      onPress={() => playSfx("dpad")}
+      onPressIn={() => { playSfx("dpad"); setInput("dpad", mask, true); }}
+      onPressOut={() => setInput("dpad", mask, false)}
       style={({ pressed }) => [{ position: "absolute" }, style, pressed && styles.dpadZonePressed]}
     />
   );
@@ -947,9 +1060,12 @@ function FaceButton({
   h: number;
   fontSize: number;
 }) {
+  const { setInput } = useContext(EmulatorContext);
+  const mask = label === "A" ? 0x01 : 0x02;
   return (
     <Pressable
-      onPress={() => playSfx(label === "A" ? "a" : "b")}
+      onPressIn={() => { playSfx(label === "A" ? "a" : "b"); setInput("buttons", mask, true); }}
+      onPressOut={() => setInput("buttons", mask, false)}
       style={({ pressed }) => [
         styles.faceButton,
         { width: w, height: h, borderRadius: h / 2, alignItems: "center", justifyContent: "center" },
@@ -974,9 +1090,15 @@ function PillRow({ u, gap }: { u: Unit; gap?: number }) {
 }
 
 function Pill({ u, label }: { u: Unit; label: string }) {
+  const { setInput } = useContext(EmulatorContext);
+  const mask = label === "START" ? 0x08 : 0x04;
   return (
     <Pressable
-      onPress={() => playSfx(label === "START" ? "start" : "select")}
+      onPressIn={() => {
+        playSfx(label === "START" ? "start" : "select");
+        setInput("buttons", mask, true);
+      }}
+      onPressOut={() => setInput("buttons", mask, false)}
       style={({ pressed }) => [styles.pillGroup, pressed && { opacity: 0.55 }]}
     >
       <View
@@ -1446,6 +1568,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: "#8fa027",
     borderColor: "#2b2d1a",
+  },
+  emulator: {
+    flex: 1,
+    backgroundColor: "#c8d4a4",
   },
   lcdWell: {
     ...StyleSheet.absoluteFillObject,
