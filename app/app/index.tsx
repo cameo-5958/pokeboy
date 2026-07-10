@@ -3,16 +3,26 @@ import { StatusBar } from "expo-status-bar";
 import { useRef, useState } from "react";
 import {
   Animated,
+  Modal,
   PanResponder,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type LayoutChangeEvent,
   useWindowDimensions,
 } from "react-native";
 
+import { createApi } from "@/api/client";
 import { playSfx } from "@/sfx";
+import {
+  diffSection,
+  loadInstalled,
+  saveInstalled,
+  useSettings,
+  type DiffEntry,
+} from "@/settings";
 
 // Native Game Boy screen is 160x144. The LCD keeps that ratio; the emulator
 // mounts its framebuffer into the LCD well later.
@@ -701,50 +711,197 @@ function ModChanger({
               </Text>
             </Pressable>
           </View>
-          {settingsOpen ? (
-            <View
-              style={[
-                styles.settingsPopup,
-                {
-                  width,
-                  borderRadius: u(10),
-                  padding: u(10),
-                  top: 0,
-                },
-              ]}
-            >
-              <View style={styles.settingsPopupHeader}>
-                <Text selectable={false} style={[styles.modName, { fontSize: u(9), letterSpacing: u(1) }]}>
-                  SETTINGS
-                </Text>
-                <Pressable
-                  onPress={toggleSettings}
-                  style={({ pressed }) => [
-                    styles.settingsClose,
-                    { width: u(20), height: u(20), borderRadius: u(5) },
-                    pressed && { opacity: 0.62 },
-                  ]}
-                >
-                  <Text selectable={false} style={[styles.settingsCloseText, { fontSize: u(10) }]}>
-                    X
-                  </Text>
-                </Pressable>
-              </View>
-              <View style={[styles.settingsPopupRows, { marginTop: u(8), gap: u(7) }]}>
-                {["AUDIO", "SPEED", "DISPLAY"].map((label) => (
-                  <View key={label} style={styles.settingsMockRow}>
-                    <Text selectable={false} style={[styles.settingsMockText, { fontSize: u(7) }]}>
-                      {label}
-                    </Text>
-                    <View style={[styles.settingsMockDash, { width: u(56) }]} />
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
+          <SettingsModal open={settingsOpen} onClose={toggleSettings} />
         </>
       ) : null}
     </Animated.View>
+  );
+}
+
+type PullState =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "error"; message: string }
+  | { phase: "done"; changed: DiffEntry[]; total: number; newCount: number; updateCount: number };
+
+// True full-screen settings dialog. Rendered through React Native's Modal so it
+// escapes the widget's transformed layer and dims the whole screen. Holds the
+// locally-persisted backend connection (URL + API key) and the "pull latest"
+// action that syncs the installed ROM/mod manifest with the backend registry.
+function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { width } = useWindowDimensions();
+  const cardWidth = Math.min(width * 0.86, 380);
+  const { settings, updateSettings } = useSettings();
+  const [pull, setPull] = useState<PullState>({ phase: "idle" });
+
+  const pullLatest = async () => {
+    playSfx("select");
+    setPull({ phase: "loading" });
+    try {
+      const api = createApi({ baseUrl: settings.backendUrl, apiKey: settings.apiKey });
+      const registry = await api.fetchRegistry();
+      const installed = await loadInstalled();
+      const romDiff = diffSection(
+        "rom",
+        installed.roms,
+        registry.roms.map((r) => ({ id: r.id, version: r.version, label: r.title })),
+      );
+      const modDiff = diffSection(
+        "mod",
+        installed.mods,
+        registry.mods.map((m) => ({ id: m.id, version: m.version, label: m.name })),
+      );
+      const all = [...romDiff, ...modDiff];
+      const changed = all.filter((e) => e.status !== "current");
+
+      // Pulling installs the registry's current versions as the new baseline.
+      await saveInstalled({
+        roms: Object.fromEntries(registry.roms.map((r) => [r.id, r.version])),
+        mods: Object.fromEntries(registry.mods.map((m) => [m.id, m.version])),
+      });
+
+      setPull({
+        phase: "done",
+        changed,
+        total: all.length,
+        newCount: changed.filter((e) => e.status === "new").length,
+        updateCount: changed.filter((e) => e.status === "update").length,
+      });
+    } catch (e) {
+      setPull({ phase: "error", message: e instanceof Error ? e.message : "Pull failed" });
+    }
+  };
+
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      {/* Backdrop — tapping outside the card closes the dialog. */}
+      <Pressable style={styles.settingsBackdrop} onPress={onClose}>
+        {/* Stop taps on the card itself from bubbling to the backdrop. */}
+        <Pressable style={[styles.settingsCard, { width: cardWidth }]} onPress={() => {}}>
+          <View style={styles.settingsCardHeader}>
+            <Text selectable={false} style={styles.settingsTitle}>
+              SETTINGS
+            </Text>
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={({ pressed }) => [styles.settingsCloseBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Text selectable={false} style={styles.settingsCloseBtnText}>
+                ✕
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.settingsField}>
+            <Text selectable={false} style={styles.settingsFieldLabel}>
+              BACKEND URL
+            </Text>
+            <TextInput
+              value={settings.backendUrl}
+              onChangeText={(t) => updateSettings({ backendUrl: t })}
+              placeholder="http://localhost:4000"
+              placeholderTextColor="#9a958a"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              style={styles.settingsInput}
+            />
+          </View>
+
+          <View style={styles.settingsField}>
+            <Text selectable={false} style={styles.settingsFieldLabel}>
+              BACKEND API KEY
+            </Text>
+            <TextInput
+              value={settings.apiKey}
+              onChangeText={(t) => updateSettings({ apiKey: t })}
+              placeholder="••••••••"
+              placeholderTextColor="#9a958a"
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              style={styles.settingsInput}
+            />
+          </View>
+
+          <View style={styles.settingsSyncSection}>
+            <Pressable
+              onPress={pullLatest}
+              disabled={pull.phase === "loading"}
+              style={({ pressed }) => [
+                styles.pullButton,
+                pull.phase === "loading" && { opacity: 0.6 },
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <Text selectable={false} style={styles.pullButtonText}>
+                {pull.phase === "loading" ? "PULLING…" : "PULL LATEST"}
+              </Text>
+            </Pressable>
+            <PullResult pull={pull} />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// Status readout for the "pull latest" action: comparison summary plus a short
+// list of what changed against the installed manifest.
+function PullResult({ pull }: { pull: PullState }) {
+  if (pull.phase === "idle") {
+    return (
+      <Text selectable={false} style={styles.pullHint}>
+        Compares installed ROM &amp; mods against the backend registry.
+      </Text>
+    );
+  }
+  if (pull.phase === "loading") {
+    return <Text selectable={false} style={styles.pullHint}>Checking registry…</Text>;
+  }
+  if (pull.phase === "error") {
+    return (
+      <Text selectable={false} style={styles.pullError}>
+        {pull.message}
+      </Text>
+    );
+  }
+
+  if (pull.changed.length === 0) {
+    return (
+      <Text selectable={false} style={styles.pullOk}>
+        ✓ Up to date — {pull.total} item{pull.total === 1 ? "" : "s"} installed.
+      </Text>
+    );
+  }
+  return (
+    <View>
+      <Text selectable={false} style={styles.pullOk}>
+        ✓ Pulled {pull.newCount} new, {pull.updateCount} updated.
+      </Text>
+      <View style={styles.pullList}>
+        {pull.changed.map((e) => (
+          <View key={`${e.kind}:${e.id}`} style={styles.pullRow}>
+            <Text
+              selectable={false}
+              style={[
+                styles.pullBadge,
+                e.status === "new" ? styles.pullBadgeNew : styles.pullBadgeUpdate,
+              ]}
+            >
+              {e.status === "new" ? "NEW" : "UPD"}
+            </Text>
+            <Text selectable={false} style={styles.pullItemLabel} numberOfLines={1}>
+              {e.label}
+            </Text>
+            <Text selectable={false} style={styles.pullItemVer}>
+              {e.status === "update" ? `${e.from} → ${e.to}` : `v${e.to}`}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -1357,56 +1514,156 @@ const styles = StyleSheet.create({
   settingsButtonTextOn: {
     color: "#d6d1c2",
   },
-  settingsMockRows: {
+  settingsBackdrop: {
     flex: 1,
-    justifyContent: "space-between",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    backgroundColor: "rgba(20, 20, 26, 0.6)",
   },
-  settingsMockRow: {
+  settingsCard: {
+    backgroundColor: "#d8d4c6",
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: "#a59f8d",
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+  },
+  settingsCardHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    marginBottom: 18,
   },
-  settingsMockText: {
-    color: "#6b665a",
+  settingsTitle: {
+    color: "#31316f",
+    fontSize: 18,
     fontWeight: "800",
-    letterSpacing: 0.5,
+    fontStyle: "italic",
+    letterSpacing: 1,
     userSelect: "none",
   },
-  settingsMockDash: {
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: "#aaa596",
-  },
-  settingsPopup: {
-    position: "absolute",
-    left: 0,
-    backgroundColor: "#d8d4c6",
-    borderWidth: 1,
-    borderColor: "#a59f8d",
-    shadowColor: "#5c5647",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.24,
-    shadowRadius: 12,
-    zIndex: 4,
-  },
-  settingsPopupHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  settingsPopupRows: {
-    justifyContent: "space-between",
-  },
-  settingsClose: {
+  settingsCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#c8c3b4",
     borderWidth: 1,
     borderColor: "#aaa596",
   },
-  settingsCloseText: {
+  settingsCloseBtnText: {
     color: "#4c4a55",
+    fontSize: 14,
     fontWeight: "800",
+    userSelect: "none",
+  },
+  settingsField: {
+    marginBottom: 14,
+  },
+  settingsFieldLabel: {
+    color: "#6b665a",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 6,
+    userSelect: "none",
+  },
+  settingsInput: {
+    height: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#aaa596",
+    backgroundColor: "#efece3",
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: "#33333c",
+  },
+  settingsSyncSection: {
+    marginTop: 6,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#c0bbac",
+  },
+  pullButton: {
+    height: 44,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#9a1f4c",
+    borderWidth: 1,
+    borderColor: "#6f153a",
+  },
+  pullButtonText: {
+    color: "#f2d9e2",
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+    fontStyle: "italic",
+    userSelect: "none",
+  },
+  pullHint: {
+    marginTop: 10,
+    color: "#6b665a",
+    fontSize: 11,
+    lineHeight: 15,
+    userSelect: "none",
+  },
+  pullError: {
+    marginTop: 10,
+    color: "#a3341f",
+    fontSize: 12,
+    fontWeight: "700",
+    userSelect: "none",
+  },
+  pullOk: {
+    marginTop: 10,
+    color: "#2f6b3a",
+    fontSize: 12,
+    fontWeight: "800",
+    userSelect: "none",
+  },
+  pullList: {
+    marginTop: 8,
+    gap: 5,
+  },
+  pullRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  pullBadge: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    color: "#fff",
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: "hidden",
+    userSelect: "none",
+  },
+  pullBadgeNew: {
+    backgroundColor: "#2f6b3a",
+  },
+  pullBadgeUpdate: {
+    backgroundColor: "#b5761c",
+  },
+  pullItemLabel: {
+    flex: 1,
+    color: "#4c4a55",
+    fontSize: 12,
+    fontWeight: "600",
+    userSelect: "none",
+  },
+  pullItemVer: {
+    color: "#6b665a",
+    fontSize: 10,
+    fontVariant: ["tabular-nums"],
     userSelect: "none",
   },
 
