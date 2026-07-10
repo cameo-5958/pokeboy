@@ -66,6 +66,13 @@ jobs:
           (cd build && zip -qry app-unsigned.ipa Payload)
           ls -lh build/app-unsigned.ipa
 
+      - name: Upload .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pokeboy-ios-unsigned
+          path: app/build/app-unsigned.ipa
+          if-no-files-found: error
+
       - name: Publish LiveContainer install
         env:
           IPA_HOST_TOKEN: ${{ secrets.IPA_HOST_TOKEN }}
@@ -107,10 +114,3 @@ jobs:
             echo
             echo "[Install page](https://test.cameo.moe/pokeboy/) · [Direct IPA]($ipa_url)"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload .ipa artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pokeboy-ios-unsigned
-          path: app/build/app-unsigned.ipa
-          if-no-files-found: error
