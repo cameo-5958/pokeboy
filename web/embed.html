@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <style>
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#c8d4a4}
+    canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+    #status{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+      padding:12px;color:#344637;font:10px monospace;text-align:center}
+  </style>
+</head>
+<body>
+  <canvas id="screen" width="160" height="144"></canvas>
+  <div id="status">LOADING</div>
+  <script src="gbcore.js"></script>
+  <script src="mod-core.js"></script>
+  <script>
+  (() => {
+    const W=160,H=144,FRAME_MS=1000/59.7275;
+    const palette=new Uint8ClampedArray([
+      200,212,164,255, 143,168,120,255, 78,99,80,255, 28,43,34,255
+    ]);
+    const canvas=document.getElementById('screen');
+    const status=document.getElementById('status');
+    const ctx=canvas.getContext('2d',{alpha:false});
+    const image=ctx.createImageData(W,H);
+    let Module,gb,api,input={buttons:0,dpad:0},speed=1,paused=false,last=performance.now(),carry=0;
+    let cartridgeId='',desiredMods=[],modUpdate=Promise.resolve();
+    const loadedMods=new Map();
+    const modHandlers=new Map();
+    let hostError=null,hostCallback=0;
+    let saveCounter=0;
+
+    function notify(type,detail){
+      window.ReactNativeWebView?.postMessage(JSON.stringify({type,detail}));
+    }
+    function receive(raw){
+      try {
+        const msg=typeof raw==='string'?JSON.parse(raw):raw;
+        if(msg.type==='input'){
+          input=msg;
+          if(gb) api.setInput(gb,input.buttons|0,input.dpad|0);
+        } else if(msg.type==='settings') {
+          speed=msg.speed==='inf'?10:Math.max(.5,Number(msg.speed)||1);
+        } else if(msg.type==='paused') {
+          paused=Boolean(msg.value);
+          last=performance.now(); carry=0;
+        } else if(msg.type==='mods') {
+          desiredMods=Array.isArray(msg.ids)?msg.ids.filter(id=>typeof id==='string'):[];
+          modUpdate=modUpdate.then(reconcileMods).catch(error=>notify('error',error.message));
+        }
+      } catch(error){ notify('error',String(error)); }
+    }
+    document.addEventListener('message',event=>receive(event.data));
+    window.addEventListener('message',event=>receive(event.data));
+
+    function draw(){
+      const src=Module.HEAPU8.subarray(api.framebuffer(gb),api.framebuffer(gb)+W*H);
+      for(let i=0,j=0;i<src.length;i++,j+=4){
+        const p=(src[i]&3)*4;
+        image.data[j]=palette[p]; image.data[j+1]=palette[p+1];
+        image.data[j+2]=palette[p+2]; image.data[j+3]=255;
+      }
+      ctx.putImageData(image,0,0);
+    }
+    function loop(now){
+      carry+=paused?0:Math.min(250,now-last)*speed;
+      last=now;
+      let frames=0;
+      while(carry>=FRAME_MS && frames<10){
+        api.runFrame(gb); carry-=FRAME_MS; frames++;
+        if(hostError){ paused=true; status.style.display='flex'; status.textContent=hostError.message; notify('error',hostError.message); break; }
+      }
+      if(frames) draw();
+      if(frames && ++saveCounter>=300){ saveCounter=0; persistSave(); }
+      requestAnimationFrame(loop);
+    }
+    function copyToHeap(bytes,operation){
+      const ptr=Module._malloc(Math.max(1,bytes.length));
+      try{ Module.HEAPU8.set(bytes,ptr); return operation(ptr); }
+      finally{ Module._free(ptr); }
+    }
+    function modError(status){
+      if(status===0)return;
+      throw new Error(api.modLastError(gb)||('Mod operation failed ('+status+')'));
+    }
+    function cpuContext(pointer){
+      const view=()=>new DataView(Module.HEAPU8.buffer);
+      const cpu={};
+      for(const [name,offset] of Object.entries({af:4,bc:6,de:8,hl:10,sp:12,pc:14})){
+        Object.defineProperty(cpu,name,{get:()=>view().getUint16(pointer+offset,true),set:value=>view().setUint16(pointer+offset,name==='af'?value&0xfff0:value&0xffff,true)});
+      }
+      Object.defineProperty(cpu,'a',{get:()=>cpu.af>>>8,set:value=>{cpu.af=((value&255)<<8)|(cpu.af&240)}});
+      Object.defineProperty(cpu,'ime',{get:()=>view().getUint8(pointer+16)!==0,set:value=>view().setUint8(pointer+16,value?1:0)});
+      Object.defineProperty(cpu,'halted',{get:()=>view().getUint8(pointer+17)!==0,set:value=>view().setUint8(pointer+17,value?1:0)});
+      return cpu;
+    }
+    function persistSave(){
+      if(!gb||!api.hasBattery(gb))return;
+      const lenPtr=Module._malloc(4);
+      try{
+        Module.HEAPU32[lenPtr/4]=0;
+        const ptr=api.saveRam(gb,lenPtr),len=Module.HEAPU32[lenPtr/4];
+        if(!ptr||!len)return;
+        let binary='',bytes=Module.HEAPU8.subarray(ptr,ptr+len);
+        for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+        localStorage.setItem('pokeboy.save.'+cartridgeId,btoa(binary));
+      }finally{Module._free(lenPtr)}
+    }
+    function restoreSave(){
+      const encoded=localStorage.getItem('pokeboy.save.'+cartridgeId);
+      if(!encoded)return;
+      const binary=atob(encoded),bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
+      copyToHeap(bytes,ptr=>api.loadSaveRam(gb,ptr,bytes.length));
+    }
+    function installHostBridge(){
+      hostCallback=Module.addFunction((_gb,handle,index,context)=>{
+        const handler=modHandlers.get(handle)?.[index];
+        if(!handler){hostError=new Error('Missing mod host handler');return}
+        try{
+          handler(cpuContext(context),{
+            read8:address=>api.read8(gb,address&0xffff),
+            write8:(address,value)=>api.write8(gb,address&0xffff,value&255)
+          });
+        }catch(error){hostError=error instanceof Error?error:new Error(String(error))}
+      },'viiiii');
+      api.modSetHost(gb,hostCallback,0);
+    }
+    function resolveHostImports(handle){
+      const handlers=[];
+      const core=window.PokeboyModCore||{};
+      for(let index=0;index<api.modImportCount(gb,handle);index++){
+        const name=api.modImportName(gb,handle,index);
+        if(typeof core[name]!=='function')throw new Error("MOD HOST IMPORT '"+name+"' IS NOT INSTALLED");
+        handlers.push(core[name]);
+      }
+      modHandlers.set(handle,handlers);
+    }
+    async function reconcileMods(){
+      if(!gb)return;
+      const wasPaused=paused; paused=true;
+      try{
+        for(const [id,handle] of loadedMods){
+          if(!desiredMods.includes(id)){ modError(api.modUnload(gb,handle)); loadedMods.delete(id); modHandlers.delete(handle); }
+        }
+        for(const id of desiredMods){
+          if(loadedMods.has(id))continue;
+          const response=await fetch('/api/mods/'+encodeURIComponent(id));
+          if(!response.ok)throw new Error("MOD '"+id+"' NOT INSTALLED");
+          const bytes=new Uint8Array(await response.arrayBuffer());
+          const out=Module._malloc(4);
+          try{
+            Module.HEAPU32[out/4]=0;
+            copyToHeap(bytes,ptr=>modError(api.modLoad(gb,ptr,bytes.length,out)));
+            const handle=Module.HEAPU32[out/4];
+            try{resolveHostImports(handle)}catch(error){api.modUnload(gb,handle);throw error}
+            loadedMods.set(id,handle);
+          }finally{Module._free(out)}
+        }
+        notify('mods',Array.from(loadedMods.keys()));
+      }finally{paused=wasPaused;last=performance.now();carry=0}
+    }
+    async function boot(){
+      Module=await createGBCore({locateFile:file=>file});
+      api={
+        create:Module.cwrap('gb_create','number',[]),
+        loadRom:Module.cwrap('gb_load_rom','number',['number','number','number']),
+        runFrame:Module.cwrap('gb_run_frame',null,['number']),
+        framebuffer:Module.cwrap('gb_framebuffer','number',['number']),
+        setInput:Module.cwrap('gb_set_input',null,['number','number','number']),
+        modSymbols:Module.cwrap('gb_mod_load_symbols','number',['number','number','number']),
+        modLoad:Module.cwrap('gb_mod_load','number',['number','number','number','number']),
+        modUnload:Module.cwrap('gb_mod_unload','number',['number','number']),
+        modLastError:Module.cwrap('gb_mod_last_error','string',['number']),
+        modImportCount:Module.cwrap('gb_mod_import_count','number',['number','number']),
+        modImportName:Module.cwrap('gb_mod_import_name','string',['number','number','number']),
+        modSetHost:Module.cwrap('gb_mod_set_host_callback',null,['number','number','number']),
+        read8:Module.cwrap('gb_read_mem','number',['number','number']),
+        write8:Module.cwrap('gb_write_mem',null,['number','number','number']),
+        hasBattery:Module.cwrap('gb_has_battery','number',['number']),
+        saveRam:Module.cwrap('gb_save_ram','number',['number','number']),
+        loadSaveRam:Module.cwrap('gb_load_save_ram','number',['number','number','number'])
+      };
+      gb=api.create();
+      installHostBridge();
+      cartridgeId=new URLSearchParams(location.search).get('cartridge')||'';
+      if(!cartridgeId) throw new Error('No cartridge selected');
+      const response=await fetch('/api/cartridges/'+encodeURIComponent(cartridgeId)+'/rom');
+      if(!response.ok) throw new Error(response.status===404?'ROM NOT INSTALLED':'ROM LOAD FAILED');
+      const bytes=new Uint8Array(await response.arrayBuffer());
+      const ptr=Module._malloc(bytes.length);
+      Module.HEAPU8.set(bytes,ptr);
+      const ok=api.loadRom(gb,ptr,bytes.length);
+      Module._free(ptr);
+      if(!ok) throw new Error('INVALID ROM');
+      restoreSave();
+      const symbols=await fetch('/api/mods/symbols/'+encodeURIComponent(cartridgeId));
+      if(symbols.ok){
+        const bytes=new TextEncoder().encode(await symbols.text());
+        copyToHeap(bytes,ptr=>modError(api.modSymbols(gb,ptr,bytes.length)));
+      }
+      api.setInput(gb,input.buttons,input.dpad);
+      await reconcileMods();
+      status.style.display='none';
+      notify('ready',cartridgeId);
+      requestAnimationFrame(loop);
+    }
+    boot().catch(error=>{status.textContent=error.message;notify('error',error.message)});
+  })();
+  </script>
+</body>
+</html>

@@ -1,8 +1,49 @@
-// Lightweight retro "blip" sound effects synthesized with the Web Audio API.
-// It no-ops on platforms without Web Audio (e.g. native), so callers don't need
-// to guard. On native, wire this up to expo-av if real sound is needed there.
+// Lightweight retro "blip" sound effects.
+//
+// On web, tones are synthesized live with the Web Audio API (unchanged).
+// On native (iOS/Android), there's no Web Audio API, so the same blips are
+// pre-rendered to WAV assets (see scripts/generate-sfx-assets.js) and played
+// through expo-audio.
+
+import { Platform } from "react-native";
 
 type Sfx = "a" | "b" | "dpad" | "start" | "select" | "eject" | "insert" | "snap" | "modOn" | "modOff";
+
+// ---- native (expo-audio) ----------------------------------------------
+
+const NATIVE_SOURCES: Record<Sfx, number> | null =
+  Platform.OS === "web"
+    ? null
+    : {
+        a: require("../assets/sfx/a.wav"),
+        b: require("../assets/sfx/b.wav"),
+        dpad: require("../assets/sfx/dpad.wav"),
+        start: require("../assets/sfx/start.wav"),
+        select: require("../assets/sfx/select.wav"),
+        eject: require("../assets/sfx/eject.wav"),
+        insert: require("../assets/sfx/insert.wav"),
+        snap: require("../assets/sfx/snap.wav"),
+        modOn: require("../assets/sfx/modOn.wav"),
+        modOff: require("../assets/sfx/modOff.wav"),
+      };
+
+type NativeAudioPlayer = { play(): void; remove(): void };
+let createAudioPlayer: ((source: number) => NativeAudioPlayer) | null = null;
+if (NATIVE_SOURCES) {
+  // Lazily required so a web bundle never has to resolve the native module.
+  ({ createAudioPlayer } = require("expo-audio"));
+}
+
+function playNative(kind: Sfx) {
+  if (!createAudioPlayer || !NATIVE_SOURCES) return;
+  // A fresh player per trigger avoids seekTo() races on rapid repeat taps;
+  // these are short one-shots so the overhead is negligible.
+  const player = createAudioPlayer(NATIVE_SOURCES[kind]);
+  player.play();
+  setTimeout(() => player.remove(), 500);
+}
+
+// ---- web (Web Audio API) ------------------------------------------------
 
 let ctx: any = null;
 let unavailable = false;
@@ -46,7 +87,7 @@ function click(ac: any, freq: number, start: number, peak = 0.13) {
   tone(ac, freq * 1.5, start + 0.004, 0.018, "triangle", peak * 0.5);
 }
 
-export function playSfx(kind: Sfx) {
+function playWeb(kind: Sfx) {
   const ac = context();
   if (!ac) return;
   // Browsers keep the context suspended until a user gesture; presses count.
@@ -91,5 +132,15 @@ export function playSfx(kind: Sfx) {
       tone(ac, 523, t, 0.05, "square", 0.12);
       tone(ac, 349, t + 0.05, 0.08, "square", 0.12);
       break;
+  }
+}
+
+// ---------------------------------------------------------------------
+
+export function playSfx(kind: Sfx) {
+  if (NATIVE_SOURCES) {
+    playNative(kind);
+  } else {
+    playWeb(kind);
   }
 }
