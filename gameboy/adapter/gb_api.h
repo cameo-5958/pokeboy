@@ -10,6 +10,38 @@ extern "C" {
 
 typedef struct gb_handle gb_handle;
 
+// Status values returned by the mod APIs. A detailed message is available
+// through gb_mod_last_error after any non-zero result.
+typedef enum gb_mod_status {
+    GB_MOD_OK = 0,
+    GB_MOD_INVALID_ARGUMENT = 1,
+    GB_MOD_NO_ROM = 2,
+    GB_MOD_BAD_SYMBOLS = 3,
+    GB_MOD_BAD_PACKAGE = 4,
+    GB_MOD_UNSUPPORTED_VERSION = 5,
+    GB_MOD_ROM_MISMATCH = 6,
+    GB_MOD_MISSING_SYMBOL = 7,
+    GB_MOD_CONFLICT = 8,
+    GB_MOD_LINK_ERROR = 9,
+    GB_MOD_NOT_FOUND = 10,
+} gb_mod_status;
+
+// Register state visible to a synchronous host import. The TypeScript host
+// may update any field before returning; AF's low flag nibble is always masked.
+typedef struct gb_mod_cpu_context {
+    uint32_t struct_size;
+    uint16_t af, bc, de, hl, sp, pc;
+    uint8_t ime, halted;
+    uint8_t reserved[2];
+} gb_mod_cpu_context;
+
+typedef void (*gb_mod_host_callback)(
+    gb_handle* gb,
+    uint32_t mod_handle,
+    uint32_t import_index,
+    gb_mod_cpu_context* context,
+    void* user);
+
 // Button bit masks for gb_set_input (1 = held)
 enum {
     GB_BTN_A      = 0x01, GB_BTN_B    = 0x02,
@@ -23,7 +55,7 @@ enum { GB_SCREEN_W = 160, GB_SCREEN_H = 144, GB_AUDIO_RATE = 44100 };
 gb_handle* gb_create(void);
 void       gb_destroy(gb_handle* gb);
 
-// Loads a ROM image (copied internally) and resets to the post-boot state.
+// Loads a ROM image (copied internally) and starts the bundled custom boot ROM.
 // Returns 1 on success, 0 on failure.
 int  gb_load_rom(gb_handle* gb, const uint8_t* data, size_t len);
 void gb_reset(gb_handle* gb);
@@ -55,6 +87,32 @@ void gb_rom_title(const gb_handle* gb, char out[17]);
 // Reads one byte from the emulated address space (game-state peeks, e.g.
 // the current map/music id in WRAM). Safe for RAM; IO reads are live.
 uint8_t gb_read_mem(gb_handle* gb, uint16_t addr);
+void    gb_write_mem(gb_handle* gb, uint16_t addr, uint8_t value);
+
+// Replaces the current ROM symbol document. The accepted form is RGBDS/pret
+// .sym text: one `BB:AAAA SymbolName` record per line. Active mods are relinked
+// atomically; failure leaves both symbols and ROM untouched.
+gb_mod_status gb_mod_load_symbols(gb_handle* gb, const char* text, size_t len);
+
+// Loads/unloads a precompiled .gbmod package. Linking is transactional and may
+// be done between frames without resetting emulated RAM or CPU state.
+gb_mod_status gb_mod_load(gb_handle* gb, const uint8_t* data, size_t len,
+                          uint32_t* out_handle);
+gb_mod_status gb_mod_unload(gb_handle* gb, uint32_t handle);
+size_t        gb_mod_count(const gb_handle* gb);
+
+// Package metadata/import discovery. Returned pointers remain valid until the
+// next mod or ROM mutation on this handle.
+const char*    gb_mod_id(const gb_handle* gb, uint32_t handle);
+const char*    gb_mod_name(const gb_handle* gb, uint32_t handle);
+size_t         gb_mod_import_count(const gb_handle* gb, uint32_t handle);
+const char*    gb_mod_import_name(const gb_handle* gb, uint32_t handle, size_t index);
+const uint8_t* gb_mod_metadata(const gb_handle* gb, uint32_t handle, size_t* len);
+const char*    gb_mod_last_error(const gb_handle* gb);
+
+// Installs the synchronous module-to-host bridge. It is invoked only by a D3
+// trap site emitted and registered by the linker, never by ordinary ROM code.
+void gb_mod_set_host_callback(gb_handle* gb, gb_mod_host_callback callback, void* user);
 
 // Output-mix channel mask: bit n (0-3) = 0 silences APU channel n+1 in the
 // mixed output without affecting emulation. 0x0F (default) = all audible.
