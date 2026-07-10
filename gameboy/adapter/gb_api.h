@@ -23,7 +23,7 @@ enum { GB_SCREEN_W = 160, GB_SCREEN_H = 144, GB_AUDIO_RATE = 44100 };
 gb_handle* gb_create(void);
 void       gb_destroy(gb_handle* gb);
 
-// Loads a ROM image (copied internally) and resets to the post-boot state.
+// Loads a ROM image (copied internally) and starts the bundled custom boot ROM.
 // Returns 1 on success, 0 on failure.
 int  gb_load_rom(gb_handle* gb, const uint8_t* data, size_t len);
 void gb_reset(gb_handle* gb);
