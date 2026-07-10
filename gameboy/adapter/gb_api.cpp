@@ -10,6 +10,8 @@ struct gb_handle {
 
 static_assert(static_cast<int>(gbmod::Status::not_found) == GB_MOD_NOT_FOUND,
               "public and internal mod status values must match");
+static_assert(sizeof(gb_mod_cpu_context) == 20,
+              "TypeScript bridge depends on the stable v1 CPU context layout");
 
 static void dispatch_mod_host_call(void* user, uint32_t mod_handle,
                                    uint32_t import_index, gbmod::CpuContext& core) {
