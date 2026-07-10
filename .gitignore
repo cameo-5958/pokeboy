@@ -8,7 +8,7 @@ build/
 # IDE
 .vscode/
 
-# ROMs, battery saves, soundtrack rips (not redistributable)
+# ROMs, battery saves (not redistributable)
 *.gb
 *.gbc
 *.sav
