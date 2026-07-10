@@ -559,6 +559,11 @@ struct Runtime::Impl {
                 const std::unordered_map<std::string, Address>& symbols,
                 LinkImage& image) {
         if (!cartridge || base_rom.empty()) return fail(Status::no_rom, "no ROM is loaded");
+        if (candidates.empty()) {
+            image.rom = base_rom;
+            image.traps.clear();
+            return Status::ok;
+        }
         const uint32_t base_crc = crc32(base_rom.data(), base_rom.size());
         for (const Package& package : candidates) {
             if (package.target_size && package.target_size != base_rom.size())
