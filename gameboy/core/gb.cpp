@@ -6,11 +6,13 @@ bool GameBoy::load_rom(const uint8_t* data, size_t len) {
     if (!cart) return false;
     bus.attach(cart.get(), &ppu, &timer, &joypad, &apu);
     cpu.bus = &bus;
+    cpu.mods = &mods;
+    mods.on_rom_loaded(cart.get());
     return true;
 }
 
 void GameBoy::reset_post_boot() {                  // values: PDF §4.3
-    cpu = CPU{}; cpu.bus = &bus;
+    cpu = CPU{}; cpu.bus = &bus; cpu.mods = &mods;
     cpu.af = 0x01B0; cpu.bc = 0x0013; cpu.de = 0x00D8; cpu.hl = 0x014D;
     cpu.sp = 0xFFFE; cpu.pc = 0x0100;
     static const struct { uint16_t a; uint8_t v; } io[] = {
