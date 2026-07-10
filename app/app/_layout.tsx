@@ -15,7 +15,7 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: theme.bg },
         }}
       >
-        <Stack.Screen name="index" options={{ title: "Pokeboy" }} />
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="cartridge/[id]" options={{ title: "Cartridge" }} />
       </Stack>
     </SafeAreaProvider>
