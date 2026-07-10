@@ -1,0 +1,4 @@
+[
+  { "id": "pokemon-blue", "title": "Pokémon Blue", "file": "pokemon-blue.gb", "img": "poke-blue.png" },
+  { "id": "pokemon-yellow", "title": "Pokémon Yellow", "file": "pokemon-yellow.gbc", "img": "poke-yellow.png" }
+]
