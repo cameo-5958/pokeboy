@@ -30,6 +30,11 @@ uint8_t MBC1::read_rom(uint16_t a) {
                                  : ((bank_hi << 5) | bank_lo);
     return rom[(bank * 0x4000 + (a & 0x3FFF)) % rom.size()];
 }
+size_t MBC1::mapped_rom_offset(uint16_t a) const {
+    uint32_t bank = (a < 0x4000) ? (mode ? (bank_hi << 5) : 0)
+                                 : ((bank_hi << 5) | bank_lo);
+    return (bank * 0x4000 + (a & 0x3FFF)) % rom.size();
+}
 void MBC1::write_mbc(uint16_t a, uint8_t v) {
     if      (a < 0x2000) ram_on = (v & 0x0F) == 0x0A;
     else if (a < 0x4000) { bank_lo = v & 0x1F; if (!bank_lo) bank_lo = 1; }
@@ -49,6 +54,10 @@ void MBC1::write_ram(uint16_t a, uint8_t v) {
 uint8_t MBC3::read_rom(uint16_t a) {
     uint32_t bank = (a < 0x4000) ? 0 : rom_bank;
     return rom[(bank * 0x4000 + (a & 0x3FFF)) % rom.size()];
+}
+size_t MBC3::mapped_rom_offset(uint16_t a) const {
+    uint32_t bank = (a < 0x4000) ? 0 : rom_bank;
+    return (bank * 0x4000 + (a & 0x3FFF)) % rom.size();
 }
 void MBC3::write_mbc(uint16_t a, uint8_t v) {
     if      (a < 0x2000) ram_on = (v & 0x0F) == 0x0A;
@@ -71,6 +80,10 @@ void MBC3::write_ram(uint16_t a, uint8_t v) {
 uint8_t MBC5::read_rom(uint16_t a) {
     uint32_t bank = (a < 0x4000) ? 0 : rom_bank;    // bank 0 is allowed here
     return rom[(bank * 0x4000 + (a & 0x3FFF)) % rom.size()];
+}
+size_t MBC5::mapped_rom_offset(uint16_t a) const {
+    uint32_t bank = (a < 0x4000) ? 0 : rom_bank;
+    return (bank * 0x4000 + (a & 0x3FFF)) % rom.size();
 }
 void MBC5::write_mbc(uint16_t a, uint8_t v) {
     if      (a < 0x2000) ram_on = (v & 0x0F) == 0x0A;
