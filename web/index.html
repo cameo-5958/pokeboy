@@ -343,23 +343,20 @@
                0 2px 4px rgba(0,0,0,.45);
   }
 
-  /* ---------- custom music toggle + cache refresh ---------- */
-  #musicBtn, #refreshBtn{
+  /* ---------- reload button ---------- */
+  #refreshBtn{
     appearance:none; border:none; outline:none;
     width:26px; height:26px; border-radius:50%;
     flex:none;
     font-size:12px; line-height:1;
-    color:var(--led-amber);
+    color:var(--ink-dim);
     background:radial-gradient(circle at 35% 30%, #55584a, #23251d 78%);
     box-shadow:inset 0 1px 2px rgba(255,255,255,.15), inset 0 -2px 3px rgba(0,0,0,.6),
                0 2px 4px rgba(0,0,0,.45);
     display:flex; align-items:center; justify-content:center;
     font-family:inherit;
   }
-  #musicBtn[hidden]{ display:none; }
-  #musicBtn.muted{ color:var(--ink-dim); }
-  #refreshBtn{ color:var(--ink-dim); }
-  #musicBtn:active, #refreshBtn:active{
+  #refreshBtn:active{
     box-shadow:inset 0 2px 4px rgba(0,0,0,.65);
   }
 
@@ -512,7 +509,6 @@
     <div id="volume">
       <span class="vol-label">VOLUME</span>
       <input id="volSlider" type="range" min="0" max="100" value="70" aria-label="volume">
-      <button id="musicBtn" hidden aria-label="toggle custom music">&#9835;</button>
       <button id="refreshBtn" aria-label="reload with caches cleared">&#8635;</button>
     </div>
     <div id="speed">
@@ -956,16 +952,7 @@
 
     function resume(){ if(ctx && ctx.state === "suspended") return ctx.resume(); return Promise.resolve(); }
 
-    /* dedicated bus for the custom-music player: follows the master volume
-       slider but carries its own gain so it can be muted independently */
-    function musicChannel(){
-      if(!ctx) return null;
-      var g = ctx.createGain();
-      g.connect(master);
-      return { ctx:ctx, gain:g };
-    }
-
-    return { init:init, push:push, resume:resume, playClick:playClick, setVolume:setVolume, musicChannel:musicChannel };
+    return { init:init, push:push, resume:resume, playClick:playClick, setVolume:setVolume };
   })();
 
   /* volume slider */
@@ -981,11 +968,10 @@
     });
   })();
 
-  /* refresh button. Tap: drop cached music tracks and refetch the current
-     area's — touches nothing but music. Hold ~1s: full app reload for the
-     home-screen bookmark (which has no reload UI): the save is flushed to
-     localStorage first, then the page is refetched past the HTTP cache.
-     Neither path ever clears localStorage, where battery saves live. */
+  /* refresh button. Hold ~1s: full app reload for the home-screen bookmark
+     (which has no reload UI): the save is flushed to localStorage first,
+     then the page is refetched past the HTTP cache. Never clears
+     localStorage, where battery saves live. A plain tap does nothing. */
   (function(){
     var btn = document.getElementById("refreshBtn");
     var holdTimer = 0, heldFired = false;
@@ -1007,7 +993,6 @@
     function release(){
       clearTimeout(holdTimer);
       if(heldFired) return;
-      CustomMusic.refresh();
       AudioSystem.playClick("pill");
     }
     btn.addEventListener("pointerdown", press);
@@ -1015,262 +1000,6 @@
     btn.addEventListener("pointercancel", function(){ clearTimeout(holdTimer); });
     btn.addEventListener("pointerleave", function(){ clearTimeout(holdTimer); });
     btn.addEventListener("contextmenu", function(e){ e.preventDefault(); });
-  })();
-
-  /* ---------------- custom music ----------------
-     Per-rom soundtrack replacement, keyed on the SONG the game is playing,
-     not the map: the gen 1 sound engine keeps the current music id in
-     wChannelSoundIDs[0] (0xC026) and its audio bank in wAudioROMBank
-     (0xC0EF), so the title screen, battles, surfing etc. all resolve to
-     their own tracks and nothing plays before the game itself starts music.
-     While a custom track plays, the game keeps producing audio but the core
-     mixes out every APU channel except those the engine currently assigns
-     to a sound effect (wChannelSoundIDs[4..7]), so SFX/cries/jingles stay
-     audible on top of the replacement music. Songs missing from the table
-     fall back to the game's own audio untouched.
-     Gets its own mute button, independent of the master volume slider. */
-  var CustomMusic = (function(){
-    var RB_DIR = "music/pokemon-rb/hgss/";
-    // (audio bank << 8 | song id) -> track. Ids derive from pokered's music
-    // headers: (header addr - SFX_Headers_n) / 3. once: play without looping
-    // (jingles). area: refine by wCurMap through RB_AREA below, because the
-    // game reuses one song across places HGSS gives distinct themes.
-    var S = { // bank 0x02: overworld
-      0x2BA:{u:"pallet-town"},        0x2BD:{u:"pokemon-center", area:1},
-      0x2C0:{u:"pokemon-gym", area:1},0x2C3:{u:"pewter-city"},   // Viridian/Pewter/Saffron
-      0x2C7:{u:"cerulean-city"},      0x2CA:{u:"celadon-city"},  // Cerulean/Fuchsia
-      0x2CD:{u:"cinnabar-island"},    0x2D0:{u:"vermilion-city"},
-      0x2D4:{u:"lavender-town"},      0x2D8:{u:"ss-anne"},
-      0x2DB:{u:"professor-oak"},      0x2DE:{u:"rival-appears"},
-      0x2E1:{u:"hurry-along"},        0x2E5:{u:"safari-zone"},
-      0x2E8:{u:"pokemon-healed", once:1},
-      0x2EB:{u:"route-1"},            0x2EF:{u:"route-3"},
-      0x2F3:{u:"route-11"},           0x2F7:{u:"route-24"},
-      0x2FB:{u:"pokemon-league"},
-      // bank 0x08: battles
-      0x8EA:{u:"battle-gym-leader"},  0x8ED:{u:"battle-trainer"},
-      0x8F0:{u:"battle-wild"},        0x8F3:{u:"battle-champion"},
-      0x8F6:{u:"victory-trainer"},    0x8F9:{u:"victory-wild"},
-      0x8FC:{u:"victory-gym-leader"},
-      // bank 0x1f: everything else
-      0x1FC3:{u:"title-screen"},      0x1FC7:{u:"ending-theme"},
-      0x1FCA:{u:"hall-of-fame"},      0x1FCD:{u:"elm-lab"},          // Oak's lab
-      0x1FD0:{u:"pokemon-lullaby", once:1},                          // Jigglypuff's song
-      0x1FD2:{u:"bicycle"},           0x1FD6:{u:"surf"},
-      0x1FD9:{u:"game-corner"},       0x1FDC:{u:"opening-movie", once:1}, // intro fight
-      0x1FE0:{u:"team-rocket-hq", area:1},   // Dungeon1: Rocket Hideout/Cerulean Cave/Power Plant
-      0x1FE4:{u:"viridian-forest", area:1},  // Dungeon2: forest/Diglett's/Seafoam
-      0x1FE8:{u:"mt-moon", area:1},          // Dungeon3: Mt Moon/Rock Tunnel/Victory Road
-      0x1FEC:{u:"burned-tower"},             // Pokemon Mansion
-      0x1FF0:{u:"sprout-tower", area:1},     // Pokemon Tower
-      0x1FF3:{u:"radio-tower-occupied"},     // Silph Co.
-      0x1FF6:{u:"eyes-meet-rocket"},  0x1FF9:{u:"eyes-meet-girl"},
-      0x1FFC:{u:"eyes-meet-boy"}
-    };
-    // wCurMap overrides, consulted only for area songs: dungeon groups that
-    // share one song, marts vs centers, and the Elite Four rooms (which the
-    // game scores with the gym/dungeon/tower songs).
-    var RB_AREA_LISTS = {
-      "mt-moon":         [59,60,61],
-      "rock-tunnel":     [82,232],
-      "victory-road":    [108,194,198],
-      "viridian-forest": [51],
-      "ice-path":        [159,160,161,162,192],       // Seafoam Islands
-      "union-cave":      [46,85,197, 83, 226,227,228],// Diglett's, Power Plant, Cerulean Cave
-      "safari-zone":     [217,218,219,220,221,222,223,224,225],
-      "poke-mart":       [42,56,67,91,150,152,172,180],
-      "pokemon-league":  [245,246,247]                // Lorelei/Bruno/Agatha rooms
-    };
-    var RB_AREA = {};
-    Object.keys(RB_AREA_LISTS).forEach(function(name){
-      RB_AREA_LISTS[name].forEach(function(id){ RB_AREA[id] = name; });
-    });
-    var MUSIC_PACKS = {
-      "pokemon-blue": { songAddr:0xC026, bankAddr:0xC0EF, mapAddr:0xD35E,
-                        songs:S, areas:RB_AREA, dir:RB_DIR }
-    };
-
-    var btn = document.getElementById("musicBtn");
-    var pack = null;        // active pack for the inserted cart
-    var channel = null;     // { ctx, gain } from AudioSystem
-    var muted = false;
-    var currentKey = -1;    // last (bank<<8|song) resolved
-    var currentMap = -1;    // map used for that resolve (area songs only)
-    var currentUrl = null;  // track url now playing (or being loaded)
-    var currentSrc = null;  // playing AudioBufferSourceNode
-    var trackCache = {};    // url -> AudioBuffer
-    var trackPos = {};      // url -> resume offset in seconds (looping tracks)
-    var lastMask = -1;      // last channel mask sent to the core
-
-    try{ muted = localStorage.getItem("gbemu.music.muted") === "1"; } catch(err){}
-
-    function renderBtn(){
-      btn.hidden = !pack;
-      btn.classList.toggle("muted", muted);
-      btn.innerHTML = muted ? "&#9834;" : "&#9835;";
-    }
-
-    function applyGain(){
-      if(channel) channel.gain.gain.value = muted ? 0 : 1;
-    }
-
-    function ensureChannel(){
-      if(!channel) channel = AudioSystem.musicChannel();
-      if(channel) applyGain();
-      return channel;
-    }
-
-    function applyMask(mask){
-      if(mask === lastMask || !api.setAudioMask || !gb) return;
-      lastMask = mask;
-      api.setAudioMask(gb, mask);
-    }
-
-    function stopSrc(){
-      if(!currentSrc) return;
-      // remember where a looping track was, so coming back (e.g. after a
-      // battle) resumes the area music instead of restarting it
-      if(currentSrc._loops && channel && currentSrc.buffer){
-        var at = (currentSrc._offset + channel.ctx.currentTime - currentSrc._startedAt)
-                 % currentSrc.buffer.duration;
-        trackPos[currentUrl] = at;
-      }
-      try{ currentSrc.stop(); }catch(err){}
-      currentSrc = null;
-    }
-
-    function stopTrack(){
-      stopSrc();
-      currentKey = -1;
-      currentMap = -1;
-      currentUrl = null;
-    }
-
-    /* pick the track for the song the game is playing; area songs are
-       refined by the current map so shared songs keep per-place themes */
-    function resolve(key, map){
-      var s = pack.songs[key];
-      if(!s) return null;                      // unknown song: native audio
-      var name = s.u;
-      if(s.area && pack.areas.hasOwnProperty(map)) name = pack.areas[map];
-      return { url: pack.dir + name + ".mp3", once: !!s.once };
-    }
-
-    function setTrack(key, map){
-      if(!pack) return;
-      if(key === currentKey && map === currentMap) return;
-      currentKey = key;
-      currentMap = map;
-      var t = resolve(key, map);
-      if(t === null){                          // fall back to the game's audio
-        stopSrc();
-        currentUrl = null;
-        return;
-      }
-      if(t.url === currentUrl) return;         // same track: keep playing
-      stopSrc();
-      currentUrl = t.url;
-      if(!ensureChannel()){
-        // audio context not unlocked yet; retry on the next poll
-        currentKey = -1; currentUrl = null;
-        return;
-      }
-      var url = t.url;
-      loadTrack(url).then(function(buf){
-        if(!buf || currentUrl !== url || currentSrc || !channel) return;
-        var src = channel.ctx.createBufferSource();
-        src.buffer = buf;
-        src.loop = !t.once;
-        src._loops = !t.once;
-        src._offset = (!t.once && trackPos[url]) ? trackPos[url] % buf.duration : 0;
-        src._startedAt = channel.ctx.currentTime;
-        src.connect(channel.gain);
-        src.start(0, src._offset);
-        currentSrc = src;
-      });
-    }
-
-    function loadTrack(url){
-      if(trackCache[url]) return Promise.resolve(trackCache[url]);
-      // no-cache: revalidate against the server so swapped tracks show up
-      return fetch(url, {cache:"no-cache"}).then(function(resp){
-        if(!resp.ok) throw new Error("HTTP " + resp.status);
-        return resp.arrayBuffer();
-      }).then(function(buf){
-        return new Promise(function(resolve, reject){
-          channel.ctx.decodeAudioData(buf, resolve, reject);
-        });
-      }).then(function(decoded){
-        trackCache[url] = decoded;
-        return decoded;
-      }).catch(function(err){
-        console.warn("custom music track failed", url, err);
-        return null;
-      });
-    }
-
-    function attach(cart){
-      detach();
-      lastMask = -1;               // a fresh core starts unmasked
-      pack = (cart && cart.id && MUSIC_PACKS[cart.id]) || null;
-      renderBtn();
-    }
-
-    function detach(){
-      stopTrack();
-      trackPos = {};
-      applyMask(0x0F);
-      pack = null;
-      renderBtn();
-    }
-
-    /* forget every cached track and refetch the current one fresh from
-       the server (loadTrack revalidates, so a swapped file comes through) */
-    function refresh(){
-      trackCache = {};
-      trackPos = {};
-      stopTrack();                 // next update() re-resolves and replays
-    }
-
-    /* per-frame hook: follow the game's current song, and keep only the
-       SFX-owned APU channels in the native mix while a track overrides */
-    function update(){
-      if(!pack || !api.readMem || !gb) return;
-      var bank = api.readMem(gb, pack.bankAddr);
-      var song = api.readMem(gb, pack.songAddr);
-      var key = (bank << 8) | song;
-      var map = api.readMem(gb, pack.mapAddr);
-      setTrack(key, map);
-      if(overriding()){
-        var mask = 0;
-        for(var i = 0; i < 4; i++)
-          if(api.readMem(gb, pack.songAddr + 4 + i)) mask |= 1 << i;
-        applyMask(mask);
-      }else{
-        applyMask(0x0F);
-      }
-    }
-
-    function isActive(){
-      return !!(pack && !muted);
-    }
-
-    /* true while a custom track is (or is about to be) audible; the game's
-       music channels are masked out of the native mix for the duration */
-    function overriding(){
-      return !!(pack && !muted && currentUrl);
-    }
-
-    btn.addEventListener("click", function(){
-      muted = !muted;
-      try{ localStorage.setItem("gbemu.music.muted", muted ? "1" : "0"); }catch(err){}
-      applyGain();
-      renderBtn();
-      AudioSystem.playClick("pill");
-    });
-
-    renderBtn();
-    return { attach:attach, detach:detach, update:update, refresh:refresh, isActive:isActive, overriding:overriding };
   })();
 
   /* ---------------- render + loop ---------------- */
@@ -1292,8 +1021,6 @@
     var n = api.readAudio(gb, audioPtr, AUDIO_MAX_FRAMES);
     if(n <= 0) return;
     if(speed !== 1) return; // off-speed: drain the core's buffer but stay silent
-    // native audio always plays; while a custom track overrides, the core's
-    // channel mask (driven by CustomMusic.update) mutes the music channels
     var interleaved = Module.HEAPF32.subarray(audioPtr/4, audioPtr/4 + n*2);
     var L = new Float32Array(n), R = new Float32Array(n);
     for(var i=0;i<n;i++){ L[i] = interleaved[i*2]; R[i] = interleaved[i*2+1]; }
@@ -1333,7 +1060,6 @@
     }
     if(frames > 0){
       renderFrame();
-      CustomMusic.update();
     }
   }
 
@@ -1472,7 +1198,6 @@
     persistSave();
     pauseEmulation();
     currentCart = null;
-    CustomMusic.detach();
     powerDot.classList.remove("playing");
     buttonState = 0; dpadState = 0; syncInput();
     // powered-off LCD
@@ -1495,7 +1220,6 @@
   function insertCart(cart){
     return fetchRomInto(cart.file).then(function(){
       currentCart = cart;
-      CustomMusic.attach(cart);
       cartTitle.textContent = cart.title;
       try{ localStorage.setItem("gbemu.lastCart", cart.file); }catch(err){}
       hasBattery = !!api.hasBattery(gb);
@@ -1693,8 +1417,6 @@
       api.hasBattery = Module.cwrap("gb_has_battery", "number", ["number"]);
       api.saveRam = Module.cwrap("gb_save_ram", "number", ["number","number"]);
       api.loadSaveRam = Module.cwrap("gb_load_save_ram", "number", ["number","number","number"]);
-      api.readMem = Module.cwrap("gb_read_mem", "number", ["number","number"]);
-      api.setAudioMask = Module.cwrap("gb_set_audio_mask", null, ["number","number"]);
 
       return refreshCarts().then(function(){
         gb = api.create();
