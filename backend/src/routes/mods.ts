@@ -1,24 +1,21 @@
-import fs from "node:fs/promises";
 import { Router } from "express";
 
-import { paths } from "../config.js";
+import { readMods } from "../storage.js";
 
 export const modsRouter = Router();
 
-// Lists available mod payloads. Mods are stored as files under storage/mods.
-// This is a stub over the filesystem; a real catalog/metadata store lands later.
+// Lists the mods catalog from the registry. Payload files live under the mods
+// dir; the registry is the source of truth for what's available and its version.
 modsRouter.get("/", async (_req, res, next) => {
   try {
-    let entries: string[] = [];
-    try {
-      entries = await fs.readdir(paths.mods());
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-    }
+    const mods = await readMods();
     res.json(
-      entries
-        .filter((name) => !name.startsWith("."))
-        .map((name) => ({ id: name, name })),
+      mods.map((m) => ({
+        id: m.id,
+        name: m.name,
+        desc: m.desc ?? null,
+        version: m.version,
+      })),
     );
   } catch (e) {
     next(e);
