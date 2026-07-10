@@ -4,17 +4,9 @@
 #include "timer/timer.h"
 #include "joypad/joypad.h"
 #include "apu/apu.h"
-#include "boot/boot_rom.h"
 #include <cstdio>
 
 uint8_t Bus::read8(uint16_t a) {
-    if (boot_rom_enabled && a < 0x8000) {
-        size_t offset = a < CUSTOM_BOOT_FIXED_SIZE
-            ? a
-            : CUSTOM_BOOT_FIXED_SIZE + (size_t)boot_rom_bank * CUSTOM_BOOT_BANK_SIZE
-                + (a - CUSTOM_BOOT_FIXED_SIZE);
-        return offset < CUSTOM_BOOT_ROM_SIZE ? CUSTOM_BOOT_ROM[offset] : 0xFF;
-    }
     if (a < 0x8000) return cart->read_rom(a);
     if (a < 0xA000) return vram[a - 0x8000];       // TODO(M3): return 0xFF in mode 3
     if (a < 0xC000) return cart->read_ram(a);
@@ -54,8 +46,6 @@ uint8_t Bus::read_io(uint16_t a) {
         case 0xFF44: return ppu->ly;    case 0xFF45: return ppu->lyc;
         case 0xFF47: return ppu->bgp;
         case 0xFF48: return ppu->obp0;  case 0xFF49: return ppu->obp1;
-        case 0xFF50: return boot_rom_enabled ? 0 : 1;
-        case 0xFF51: return boot_rom_bank;
         case 0xFF4A: return ppu->wy;    case 0xFF4B: return ppu->wx;
         default:
             if (a >= 0xFF10 && a <= 0xFF3F) return apu->read_reg(a);
@@ -87,8 +77,6 @@ void Bus::write_io(uint16_t a, uint8_t v) {
         case 0xFF47: ppu->bgp  = v; return;
         case 0xFF48: ppu->obp0 = v; return; case 0xFF49: ppu->obp1 = v; return;
         case 0xFF4A: ppu->wy   = v; return; case 0xFF4B: ppu->wx   = v; return;
-        case 0xFF50: if (v) boot_rom_enabled = false; return;
-        case 0xFF51: if (boot_rom_enabled) boot_rom_bank = v; return;
         default:
             if (a >= 0xFF10 && a <= 0xFF3F) { apu->write_reg(a, v); return; }
             io_misc[a - 0xFF00] = v; return;

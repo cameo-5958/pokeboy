@@ -16,8 +16,7 @@ public:
 
     uint8_t vram[0x2000]{}, wram[0x2000]{}, oam[0xA0]{}, hram[0x7F]{};
     uint8_t if_reg = 0, ie_reg = 0;
-    bool    boot_rom_enabled = false;
-    uint8_t boot_rom_bank = 0;                     // custom boot data window at $4000-$7FFF
+    bool    boot_rom_enabled = false;              // we start post-boot
 
     Cartridge* cart{}; PPU* ppu{}; Timer* timer{}; Joypad* joypad{}; APU* apu{};
 private:
