@@ -49,11 +49,24 @@ export function createApi(cfg: ApiConfig = {}) {
     : undefined;
 
   async function get<T>(path: string): Promise<T> {
-    const res = await fetch(`${base}${path}`, { headers });
-    if (!res.ok) {
-      throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+    const cacheKey = `pokeboy.api.v1:${encodeURIComponent(base)}:${path}`;
+    let local: T | undefined;
+    try {
+      const raw = await AsyncStorage.getItem(cacheKey);
+      if (raw) local = JSON.parse(raw) as T;
+    } catch {
+      // A corrupt/unavailable cache must not prevent an API refresh.
     }
-    return (await res.json()) as T;
+    try {
+      const res = await fetch(`${base}${path}`, { headers });
+      if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+      const remote = (await res.json()) as T;
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(remote)).catch(() => {});
+      return remote;
+    } catch (error) {
+      if (local !== undefined) return local;
+      throw error;
+    }
   }
 
   return {
@@ -73,3 +86,4 @@ export function createApi(cfg: ApiConfig = {}) {
     fetchRegistry: () => get<Registry>("/api/registry"),
   };
 }
+import AsyncStorage from "@react-native-async-storage/async-storage";
