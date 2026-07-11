@@ -34,6 +34,7 @@
     const modHandlers=new Map();
     let hostError=null,hostCallback=0;
     let saveDataWaiter=null,saveReady=false,saveNonce=null,mirrorBlocked=false,hasPersisted=false;
+    let telemetry=false,telTimer=0,rafCount=0,frameCount=0;
 
     function notify(type,detail){
       window.ReactNativeWebView?.postMessage(JSON.stringify({type,detail}));
@@ -52,6 +53,12 @@
           volume=Math.max(0,Math.min(1,Number(msg.volume)||0));
           AudioSystem.setVolume(muted?0:volume);
           AudioSystem.resume().catch(()=>{});
+          const tel=Boolean(msg.telemetry);
+          if(tel!==telemetry){
+            telemetry=tel;
+            if(tel){rafCount=0;frameCount=0;telTimer=setInterval(sampleTelemetry,1000)}
+            else{clearInterval(telTimer);telTimer=0;rafCount=0;frameCount=0}
+          }
         } else if(msg.type==='paused') {
           userPaused=Boolean(msg.value);
           if(userPaused){persistSave();pauseEmulation()}else resumeEmulation();
@@ -129,6 +136,37 @@
         notify('payload-source',{key,source:'api'});return new Uint8Array(buffer);
       }finally{db?.close()} // IDBDatabase.close() is a no-op when already closed
     }
+    function evictStoreKeys(db,name,live){
+      return new Promise((resolve,reject)=>{
+        const transaction=db.transaction(name,'readwrite');
+        const store=transaction.objectStore(name);
+        const request=store.getAllKeys();
+        request.onsuccess=()=>{
+          for(const key of request.result)if(!live.has(key))store.delete(key);
+        };
+        request.onerror=()=>reject(request.error);
+        transaction.oncomplete=()=>resolve();
+        transaction.onerror=()=>reject(transaction.error);
+        transaction.onabort=()=>reject(transaction.error);
+      });
+    }
+    async function evictStaleCache(registry){
+      let db=null;
+      try{
+        const roms=registry.roms||[],mods=registry.mods||[];
+        const liveRoms=new Set(roms.map(rom=>rom.id+'@'+rom.version));
+        const livePayloads=new Set([
+          ...mods.map(mod=>'mod:'+mod.id+'@'+mod.version),
+          ...roms.map(rom=>'symbols:'+rom.id+'@'+rom.version)
+        ]);
+        db=await openRomCache();
+        await Promise.all([
+          evictStoreKeys(db,'roms',liveRoms),
+          evictStoreKeys(db,'payloads',livePayloads)
+        ]);
+      }catch(error){notify('cache-error',String(error))}
+      finally{db?.close()}
+    }
     async function cachedRom(id,version){
       const key=id+'@'+version;
       let db=null;
@@ -156,7 +194,7 @@
       }finally{db?.close()} // IDBDatabase.close() is a no-op when already closed
     }
     const AudioSystem=(()=>{
-      let ctx=null,node=null,mode=null,master=null;
+      let ctx=null,node=null,mode=null,master=null,workletBacklog=0;
       const resampler={pos:0,lastL:0,lastR:0};
       const spQueue=[]; // ScriptProcessor fallback: array of {L,R,offset}
       function setVolume(v){ if(master)master.gain.value=v; }
@@ -184,6 +222,7 @@
         "    super();",
         "    this.qL = []; this.qR = []; this.qLen = 0; this.qOff = 0;",
         "    this.port.onmessage = (e) => {",
+        "      if(e.data.stat){ this.port.postMessage({qLen:this.qLen}); return; }", // qLen is already the remaining unplayed count (decremented per consumed sample)
         "      if(e.data.clear){ this.qL.length = 0; this.qR.length = 0; this.qLen = 0; this.qOff = 0; return; }",
         "      this.qL.push(e.data.l); this.qR.push(e.data.r); this.qLen += e.data.l.length;",
         "      if(this.qLen > 44100 * 2){",
@@ -214,6 +253,7 @@
         const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'application/javascript'}));
         return ctx.audioWorklet.addModule(url).then(()=>{
           node=new AudioWorkletNode(ctx,'gb-processor',{outputChannelCount:[2]});
+          node.port.onmessage=e=>{if(typeof e.data.qLen==='number')workletBacklog=e.data.qLen}; // stat replies only; worklet posts nothing else
           node.connect(master);
           mode='worklet';
         });
@@ -277,7 +317,13 @@
       // resume for any non-running, non-closed state (WebKit has a nonstandard 'interrupted')
       function resume(){ return ctx&&ctx.state!=='running'&&ctx.state!=='closed'?ctx.resume():Promise.resolve(); }
       function suspend(){ return ctx&&ctx.state==='running'?ctx.suspend():Promise.resolve(); }
-      return {init,push,resume,suspend,setVolume,clear};
+      function stats(){ // sampler-only: worklet backlog is the previous stat reply (one-sample lag)
+        let backlogFrames=0;
+        if(mode==='worklet'){node.port.postMessage({stat:true});backlogFrames=workletBacklog}
+        else if(mode==='scriptprocessor'){for(let i=0;i<spQueue.length;i++)backlogFrames+=spQueue[i].L.length-spQueue[i].offset}
+        return{state:ctx?ctx.state:'none',mode:mode||'none',backlogFrames,sampleRate:ctx?ctx.sampleRate:0};
+      }
+      return {init,push,resume,suspend,setVolume,clear,stats};
     })();
     function pumpAudio(){
       if(!audioPtr)return;
@@ -334,6 +380,7 @@
     }
     function loop(t){
       rafId=requestAnimationFrame(loop);
+      rafCount++; // free; read/reset only by the 1 Hz telemetry sampler
       if(!lastT)lastT=t;
       let dt=t-lastT;
       lastT=t;
@@ -359,7 +406,23 @@
         status.style.display='flex'; status.textContent=hostError.message;
         notify('error',hostError.message);
       }
+      frameCount+=frames; // free; read/reset only by the 1 Hz telemetry sampler
       if(frames) draw();
+    }
+    function sampleTelemetry(){
+      const snap={
+        t:Date.now(),
+        rafFps:rafCount,
+        emuFps:frameCount,
+        speed:speed===Infinity?'inf':speed,
+        accMs:Math.round(acc),
+        running,
+        audio:AudioSystem.stats(),
+        wasmHeapBytes:Module?Module.HEAPU8.length:0,
+        jsHeapBytes:performance.memory?performance.memory.usedJSHeapSize:null
+      };
+      rafCount=0;frameCount=0;
+      notify('telemetry',snap);
     }
     function copyToHeap(bytes,operation){
       const ptr=Module._malloc(Math.max(1,bytes.length));
@@ -545,6 +608,7 @@
       requestOptions=apiKey?{headers:{'x-api-key':apiKey}}:{};
       if(!cartridgeId) throw new Error('No cartridge selected');
       const registry=await localFirstJson('registry','/api/registry');
+      void evictStaleCache(registry);
       modVersions=new Map((registry.mods||[]).map(mod=>[mod.id,mod.version]));
       const bytes=await cachedRom(cartridgeId,cartridgeVersion);
       const ptr=Module._malloc(bytes.length);
