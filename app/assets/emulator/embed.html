@@ -13,10 +13,20 @@
 <body>
   <canvas id="screen" width="160" height="144"></canvas>
   <div id="status">LOADING</div>
-  <script src="gbcore.js"></script>
-  <script src="mod-core.js"></script>
   <script>
-  (() => {
+  (async () => {
+    const runtime=window.PokeboyRuntime;
+    if(!runtime)throw new Error('Native emulator configuration is missing');
+    function loadScript(uri){
+      return new Promise((resolve,reject)=>{
+        const script=document.createElement('script');
+        script.src=uri;script.onload=resolve;script.onerror=()=>reject(new Error('Unable to load bundled emulator script'));
+        document.head.appendChild(script);
+      });
+    }
+    await loadScript(runtime.gbcoreUri);
+    await loadScript(runtime.modCoreUri);
+    const apiUrl=path=>runtime.backendUrl+path;
     const W=160,H=144,FRAME_MS=1000/59.7275,MAX_CATCHUP_FRAMES=4,AUDIO_MAX_FRAMES=4096;
     const palette=new Uint8ClampedArray([
       200,212,164,255, 143,168,120,255, 78,99,80,255, 28,43,34,255
@@ -103,7 +113,7 @@
       });
     }
     async function fetchRom(id){
-      const response=await fetch('/api/cartridges/'+encodeURIComponent(id)+'/rom',requestOptions);
+      const response=await fetch(apiUrl('/api/cartridges/'+encodeURIComponent(id)+'/rom'),requestOptions);
       if(!response.ok)throw new Error(response.status===404?'ROM NOT INSTALLED':'ROM LOAD FAILED');
       return response.arrayBuffer();
     }
@@ -117,7 +127,7 @@
         });
       }catch(error){db?.close();db=null;notify('cache-error',String(error))}
       try{
-        const response=await fetch(path,requestOptions);
+        const response=await fetch(apiUrl(path),requestOptions);
         if(!response.ok)throw new Error('API request failed ('+response.status+')');
         const remote=await response.json();
         if(db)try{
@@ -142,7 +152,7 @@
           });
           if(local){notify('payload-source',{key,source:'local'});return new Uint8Array(local)}
         }catch(error){db?.close();db=null;notify('cache-error',String(error))}
-        const response=await fetch(path,requestOptions);
+        const response=await fetch(apiUrl(path),requestOptions);
         if(!response.ok)throw new Error(missingMessage);
         const buffer=await response.arrayBuffer();
         if(db)try{
@@ -634,7 +644,7 @@
     }
     async function boot(){
       bootStage='wasm-initialize';
-      Module=await createGBCore({locateFile:file=>file});
+      Module=await createGBCore({locateFile:file=>file.endsWith('.wasm')?runtime.wasmUri:file});
       bootStage='api-bindings';
       api={
         create:Module.cwrap('gb_create','number',[]),
@@ -663,10 +673,9 @@
       bootStage='host-bridge';
       installHostBridge();
       bootStage='request-configuration';
-      const query=new URLSearchParams(location.search);
-      cartridgeId=query.get('cartridge')||'';
-      cartridgeVersion=query.get('version')||'0';
-      const apiKey=new URLSearchParams(location.hash.slice(1)).get('apiKey')||'';
+      cartridgeId=runtime.cartridgeId||'';
+      cartridgeVersion=runtime.cartridgeVersion||'0';
+      const apiKey=runtime.apiKey||'';
       requestOptions=apiKey?{headers:{'x-api-key':apiKey}}:{};
       if(!cartridgeId) throw new Error('No cartridge selected');
       bootStage='registry-load';

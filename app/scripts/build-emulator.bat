@@ -1,8 +1,10 @@
 @echo off
-rem Builds the WebAssembly core (web\gbcore.js + web\gbcore.wasm) with
+rem Builds the WebAssembly core bundled by the native app. The generated JS is
+rem stored as .bin so Metro treats it as an asset instead of executing it in
+rem the React Native JavaScript context.
 rem Emscripten. Requires emsdk installed at %EMSDK% (default C:\Users\kunru\tools\emsdk).
 setlocal
-cd /d "%~dp0.."
+cd /d "%~dp0..\.."
 
 if "%EMSDK%"=="" set EMSDK=C:\Users\kunru\tools\emsdk
 if not exist "%EMSDK%\emsdk_env.bat" (
@@ -23,20 +25,16 @@ _gb_mod_unload,_gb_mod_count,_gb_mod_id,_gb_mod_name,_gb_mod_import_count,^
 _gb_mod_import_name,_gb_mod_metadata,_gb_mod_last_error,_gb_mod_set_host_callback,^
 _malloc,_free
 
+if not exist app\assets\emulator mkdir app\assets\emulator
 call emcc %CORE% -O2 -std=c++17 -I gameboy\core -I gameboy\adapter ^
     -sMODULARIZE=1 -sEXPORT_NAME=createGBCore -sENVIRONMENT=web ^
     -sALLOW_MEMORY_GROWTH=1 ^
     -sALLOW_TABLE_GROWTH=1 ^
     -sEXPORTED_FUNCTIONS=%EXPORTS% ^
     -sEXPORTED_RUNTIME_METHODS=cwrap,ccall,addFunction,removeFunction,HEAPU8,HEAPF32,HEAPU32 ^
-    -o web\gbcore.js
+    -o app\assets\emulator\gbcore.js
 if errorlevel 1 exit /b 1
-
-if not exist web\roms mkdir web\roms
-if exist "Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb" (
-    copy /y "Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb" web\roms\pokemon-red.gb >nul
-    echo Copied ROM to web\roms\pokemon-red.gb
-)
+move /y app\assets\emulator\gbcore.js app\assets\emulator\gbcore.bin >nul
 
 echo.
-echo Built web\gbcore.js and web\gbcore.wasm
+echo Built app\assets\emulator\gbcore.bin and app\assets\emulator\gbcore.wasm

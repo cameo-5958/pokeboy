@@ -48,6 +48,4 @@ export const paths = {
   roms: () => config.romsDir,
   mods: () => config.modsDir,
   labels: () => config.labelsDir,
-  /** Browser assets used by the React Native emulator WebView. */
-  web: () => path.resolve(__dirname, "..", "..", "web"),
 };
