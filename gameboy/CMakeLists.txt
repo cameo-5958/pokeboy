@@ -27,6 +27,11 @@ if(BUILD_TESTING)
     add_executable(gbemu_boot_tests tests/boot_tests.cpp)
     target_link_libraries(gbemu_boot_tests PRIVATE gbcore)
     add_test(NAME custom_boot_rom COMMAND gbemu_boot_tests)
+
+    # Manual integration harness for compiled packages that require a local,
+    # uncommitted ROM: mod_package_tests rom.gb symbols.sym package.gbmod
+    add_executable(gbcore_mod_package_tests tests/mod_package_tests.cpp)
+    target_link_libraries(gbcore_mod_package_tests PRIVATE gbcore)
 endif()
 
 if(WIN32)

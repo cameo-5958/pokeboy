@@ -15,7 +15,9 @@ frontends register the same C callback ABI; the WASM frontend can use
    symbol document and all active mods.
 2. Load that ROM's RGBDS/pret `.sym` document with `gb_mod_load_symbols`.
    Records use the standard `BB:AAAA SymbolName` form. Blank lines and `;`
-   comments are accepted.
+   comments are accepted. Non-ROM records at `$8000-$ffff` are accepted and
+   ignored, as are numeric constant records, so an unfiltered RGBDS `.sym`
+   file can be loaded directly.
 3. Register a synchronous host callback with `gb_mod_set_host_callback`, or
    create a `GbModRuntime` in TypeScript.
 4. Pass each compiled `.gbmod` payload to `gb_mod_load`. The loader returns a
@@ -213,6 +215,55 @@ Relocation types are:
 
 The fixture builders in `tests/mod_tests.cpp` are executable examples of v1
 package construction and link behavior.
+
+## Lightweight compiler
+
+`tools/compile_mod.py` turns a JSON manifest into a `.gbmod` v1 package. It is
+a single Python standard-library script: no install step and no dependencies.
+
+```sh
+python tools/compile_mod.py my-mod.json
+# or choose the output path
+python tools/compile_mod.py my-mod.json build/my-mod.gbmod
+```
+
+Paths are relative to the manifest. Byte payloads may be whitespace-separated
+hex strings or `{ "file": "code.bin" }`. Numeric fields accept JSON numbers or
+strings such as `"0x4000"`. Supplying `targetRom` computes both target CRC32 and
+size, avoiding hard-coded identity values.
+
+```json
+{
+  "id": "hello-world",
+  "name": "Hello World",
+  "targetRom": "pokemon-red.gb",
+  "metadata": { "version": "1.0.0", "author": "Example" },
+  "imports": ["hello.tick"],
+  "sections": [
+    { "name": "code", "placement": "append", "alignment": 16,
+      "data": { "file": "code.bin" } }
+  ],
+  "patches": [
+    { "symbol": "Hook", "expected": "00 00 00", "data": "cd 00 00" }
+  ],
+  "symbols": [
+    { "name": "Entry", "section": "code", "offset": 0 }
+  ],
+  "relocations": [
+    { "target": "section", "in": "code", "offset": 1,
+      "type": "host16", "reference": "host", "name": "hello.tick" },
+    { "target": "patch", "in": "0", "offset": 1,
+      "type": "call16", "reference": "module", "name": "Entry" }
+  ]
+}
+```
+
+Section placement is `fixed`, `symbol`, or `append`. A section `fill` enables
+fill verification. A patch uses `symbol`, or `bank` plus `address`; patch
+relocation targets use their zero-based index as a string. Relocation types and
+reference kinds use the lowercase names from the tables above (`rom`, `module`,
+or `host`). The compiler validates names, ranges, alignment, payload sizes, and
+cross-references before writing output.
 
 ## Mod configuration metadata
 
