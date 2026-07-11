@@ -63,8 +63,13 @@ export function createApi(cfg: ApiConfig = {}) {
     /** URL to stream a cartridge's ROM bytes. */
     romUrl: (id: string) => `${base}/api/cartridges/${id}/rom`,
     /** Minimal WASM player mounted inside the native Game Boy LCD. */
-    emulatorUrl: (id: string) =>
-      `${base}/emulator/embed.html?cartridge=${encodeURIComponent(id)}`,
+    emulatorUrl: (id: string, version = "0") => {
+      const query = `cartridge=${encodeURIComponent(id)}&version=${encodeURIComponent(version)}`;
+      // Keep the key in the fragment: fragments are available to the embedded
+      // page but are not sent in the HTTP request or typical server logs.
+      const key = cfg.apiKey ? `#apiKey=${encodeURIComponent(cfg.apiKey)}` : "";
+      return `${base}/emulator/embed.html?${query}${key}`;
+    },
     fetchRegistry: () => get<Registry>("/api/registry"),
   };
 }
