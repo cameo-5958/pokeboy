@@ -27,9 +27,6 @@ app.use(express.json({ limit: "1mb" }));
 
 // Static label images.
 app.use("/labels", express.static(paths.labels()));
-// The app's LCD is a WebView backed by the same WASM build as the web client.
-app.use("/emulator", express.static(paths.web()));
-
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // Key management. Mounted before the data-key guard so a fresh device can be
