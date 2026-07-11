@@ -275,15 +275,31 @@ Status parse_symbol_document(const char* text, size_t len,
             return Status::bad_symbols;
         }
         const size_t colon = location.find(':');
-        if (colon == std::string::npos || location.find(':', colon + 1) != std::string::npos) {
+        if (colon == std::string::npos) {
+            // RGBDS also emits numeric constant records as `VALUE Name`.
+            // They are not addresses and cannot participate in ROM linking.
+            uint32_t constant;
+            if (parse_hex(location, constant)) continue;
+            error = "invalid RGBDS address on symbol line " + std::to_string(line_number);
+            return Status::bad_symbols;
+        }
+        if (location.find(':', colon + 1) != std::string::npos) {
             error = "invalid RGBDS address on symbol line " + std::to_string(line_number);
             return Status::bad_symbols;
         }
         uint32_t bank, address;
         Address resolved;
         if (!parse_hex(location.substr(0, colon), bank) || bank > 0x1FF ||
-            !parse_hex(location.substr(colon + 1), address) || address > 0xFFFF ||
-            !make_address(static_cast<uint16_t>(bank), static_cast<uint16_t>(address), resolved)) {
+            !parse_hex(location.substr(colon + 1), address) || address > 0xFFFF) {
+            error = "out-of-range RGBDS address on symbol line " + std::to_string(line_number);
+            return Status::bad_symbols;
+        }
+        // A normal RGBDS .sym file also contains VRAM, SRAM, WRAM, OAM, and
+        // HRAM labels. They are valid records but cannot anchor ROM patches or
+        // sections, so accept and ignore them instead of rejecting the entire
+        // document.
+        if (address >= 0x8000) continue;
+        if (!make_address(static_cast<uint16_t>(bank), static_cast<uint16_t>(address), resolved)) {
             error = "out-of-range RGBDS address on symbol line " + std::to_string(line_number);
             return Status::bad_symbols;
         }
