@@ -51,6 +51,7 @@ const EmulatorContext = createContext<{
   settings: { speed: number | "inf"; muted: boolean; volume: number };
   paused: boolean;
   mods: readonly string[];
+  sync: () => void;
 }>({
   uri: null,
   webViewRef: { current: null },
@@ -58,6 +59,7 @@ const EmulatorContext = createContext<{
   settings: { speed: 1, muted: false, volume: 1 },
   paused: false,
   mods: [],
+  sync: () => undefined,
 });
 
 // Real DMG carts are nearly square; the label sticker (where the game image
@@ -205,6 +207,13 @@ export default function EmulatorScreen() {
     postToEmulator({ type: "mods", ids: Array.from(enabledMods) });
   }, [enabledMods, postToEmulator]);
 
+  const syncEmulator = useCallback(() => {
+    postToEmulator({ type: "input", ...inputRef.current });
+    postToEmulator({ type: "settings", ...emulatorSettings });
+    postToEmulator({ type: "paused", value: ejected });
+    postToEmulator({ type: "mods", ids: Array.from(enabledMods) });
+  }, [ejected, enabledMods, muted, postToEmulator, speedIdx, volume]);
+
   const selectCartridge = (direction: -1 | 1) => {
     if (cartridges.length < 2) return;
     playSfx("select");
@@ -303,6 +312,7 @@ export default function EmulatorScreen() {
         settings: emulatorSettings,
         paused: ejected,
         mods: Array.from(enabledMods),
+        sync: syncEmulator,
       }}
     >
     <View style={styles.page}>
@@ -1183,7 +1193,7 @@ function Bezel({
 }
 
 function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
-  const { uri, webViewRef, settings, paused, mods } = useContext(EmulatorContext);
+  const { uri, webViewRef, sync } = useContext(EmulatorContext);
   return (
     <View style={[styles.lcd, { width, height, borderRadius: u(4), borderWidth: u(1.5) }]}>
       {uri ? (
@@ -1197,12 +1207,14 @@ function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
           javaScriptEnabled
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
-          onLoad={() => {
-            // A fresh WebView needs the current host state immediately.
-            webViewRef.current?.postMessage(JSON.stringify({ type: "input", buttons: 0, dpad: 0 }));
-            webViewRef.current?.postMessage(JSON.stringify({ type: "settings", ...settings }));
-            webViewRef.current?.postMessage(JSON.stringify({ type: "paused", value: paused }));
-            webViewRef.current?.postMessage(JSON.stringify({ type: "mods", ids: mods }));
+          onLoad={sync}
+          onMessage={(event) => {
+            try {
+              const message = JSON.parse(event.nativeEvent.data) as { type?: string };
+              if (message.type === "ready") sync();
+            } catch {
+              // Ignore non-protocol console messages from the embedded page.
+            }
           }}
         />
       ) : (
