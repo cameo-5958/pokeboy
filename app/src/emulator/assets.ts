@@ -1,4 +1,4 @@
-import { Asset } from "expo-asset";
+import resolveAssetSource from "react-native/Libraries/Image/resolveAssetSource";
 
 import documentModule from "../../assets/emulator/embed.html";
 import coreModule from "../../assets/emulator/gbcore.bin";
@@ -13,32 +13,25 @@ export type EmulatorAssets = {
   readAccessUri: string;
 };
 
-let pending: Promise<EmulatorAssets> | null = null;
-
-function usableUri(asset: Asset): string {
-  const uri = asset.localUri ?? asset.uri;
-  if (!uri) throw new Error(`Bundled emulator asset ${asset.name} has no URI`);
+function resolveUri(moduleId: number, name: string): string {
+  const source = resolveAssetSource(moduleId);
+  if (!source) throw new Error(`Bundled emulator asset ${name} is not in the asset registry`);
+  const uri = source.uri;
+  if (!uri) throw new Error(`Bundled emulator asset ${name} has no URI`);
   return uri;
 }
 
-/** Resolves the emulator files copied into the native application bundle. */
-export function loadEmulatorAssets(): Promise<EmulatorAssets> {
-  if (pending) return pending;
-  pending = (async () => {
-    const [document, gbcore, wasm, modCore] = await Asset.loadAsync([
-      documentModule,
-      coreModule,
-      wasmModule,
-      modCoreModule,
-    ]);
-    const documentUri = usableUri(document);
-    return {
-      documentUri,
-      gbcoreUri: usableUri(gbcore),
-      wasmUri: usableUri(wasm),
-      modCoreUri: usableUri(modCore),
-      readAccessUri: documentUri.slice(0, documentUri.lastIndexOf("/") + 1),
-    };
-  })();
-  return pending;
+let cached: EmulatorAssets | null = null;
+
+export function loadEmulatorAssets(): EmulatorAssets {
+  if (cached) return cached;
+  const documentUri = resolveUri(documentModule, "embed.html");
+  cached = {
+    documentUri,
+    gbcoreUri: resolveUri(coreModule, "gbcore.bin"),
+    wasmUri: resolveUri(wasmModule, "gbcore.wasm"),
+    modCoreUri: resolveUri(modCoreModule, "mod-core.bin"),
+    readAccessUri: documentUri.slice(0, documentUri.lastIndexOf("/") + 1),
+  };
+  return cached;
 }
