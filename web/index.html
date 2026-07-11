@@ -564,7 +564,7 @@
   var DPAD = { RIGHT:0x01, LEFT:0x02, UP:0x04, DOWN:0x08 };
   var SAVE_INTERVAL_MS = 10000;
   // cartridge library: overridden by carts.json if present
-  var CARTS = [{ id:"pokemon-blue", file:"pokemon-blue.gb", title:"Pokémon Blue" }];
+  var CARTS = [{ id:"pokemon-red", file:"pokemon-red.gb", title:"Pokémon Red" }];
   var currentCart = null;
   function saveKey(){
     return "gbemu.save." + currentCart.file.replace(/\.gb$/i, "");
