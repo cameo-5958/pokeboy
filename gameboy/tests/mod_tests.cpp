@@ -63,10 +63,18 @@ size_t append(std::vector<uint8_t>& target, const std::vector<uint8_t>& value) {
 
 std::vector<uint8_t> make_rom() {
     std::vector<uint8_t> rom(4 * 0x4000, 0xFF);
-    // Unmodded loop: NOP, NOP, NOP, JR $0100. The patch replaces the NOPs
-    // with CALL ModuleEntry while preserving the loop.
-    rom[0x100] = 0x00; rom[0x101] = 0x00; rom[0x102] = 0x00;
-    rom[0x103] = 0x18; rom[0x104] = 0xFB;
+    // Standard header entry jumps to an unmodded loop at $0150. The patch
+    // replaces the loop's NOPs with CALL ModuleEntry.
+    rom[0x100] = 0x00; rom[0x101] = 0xC3; rom[0x102] = 0x50; rom[0x103] = 0x01;
+    rom[0x150] = 0x00; rom[0x151] = 0x00; rom[0x152] = 0x00;
+    rom[0x153] = 0x18; rom[0x154] = 0xFB;
+    static const uint8_t logo[] = {
+        0xce,0xed,0x66,0x66,0xcc,0x0d,0x00,0x0b,0x03,0x73,0x00,0x83,
+        0x00,0x0c,0x00,0x0d,0x00,0x08,0x11,0x1f,0x88,0x89,0x00,0x0e,
+        0xdc,0xcc,0x6e,0xe6,0xdd,0xdd,0xd9,0x99,0xbb,0xbb,0x67,0x63,
+        0x6e,0x0e,0xec,0xcc,0xdd,0xdc,0x99,0x9f,0xbb,0xb9,0x33,0x3e,
+    };
+    std::memcpy(rom.data() + 0x104, logo, sizeof(logo));
     rom[0x147] = 0x01; // MBC1
     rom[0x148] = 0x01; // four banks
     rom[0x149] = 0x00;
@@ -255,9 +263,10 @@ bool test_link_host_call_and_unload() {
     gb_handle* gb = gb_create();
     CHECK(gb != nullptr);
     CHECK(gb_load_rom(gb, rom.data(), rom.size()) == 1);
-    const char symbols[] = "00:0100 Hook\n00:0200 ModulePointer\n";
+    gb_write_mem(gb, 0xff50, 1); // inspect cartridge ROM, not the custom boot overlay
+    const char symbols[] = "00:0150 Hook\n00:0200 ModulePointer\n";
     CHECK(gb_mod_load_symbols(gb, symbols, sizeof(symbols) - 1) == GB_MOD_OK);
-    CHECK(gb_read_mem(gb, 0x100) == rom[0x100]);
+    CHECK(gb_read_mem(gb, 0x150) == rom[0x150]);
 
     const std::vector<uint8_t> package = make_linked_package(rom, "fixture-one");
     uint32_t handle = 0;
@@ -274,14 +283,14 @@ bool test_link_host_call_and_unload() {
     const uint8_t* metadata = gb_mod_metadata(gb, handle, &metadata_size);
     CHECK(metadata_size == 2 && metadata[0] == '{' && metadata[1] == '}');
 
-    CHECK(gb_read_mem(gb, 0x100) == 0xCD);
-    CHECK(gb_read_mem(gb, 0x101) == 0x00 && gb_read_mem(gb, 0x102) == 0x02);
+    CHECK(gb_read_mem(gb, 0x150) == 0xCD);
+    CHECK(gb_read_mem(gb, 0x151) == 0x00 && gb_read_mem(gb, 0x152) == 0x02);
     CHECK(gb_read_mem(gb, 0x0200) == 0xD3 && gb_read_mem(gb, 0x0203) == 0xC9);
-    CHECK(gb_read_mem(gb, 0x0204) == 0x00 && gb_read_mem(gb, 0x0205) == 0x01);
+    CHECK(gb_read_mem(gb, 0x0204) == 0x50 && gb_read_mem(gb, 0x0205) == 0x01);
 
     HostState host{handle};
     gb_mod_set_host_callback(gb, host_callback, &host);
-    gb_reset(gb);
+    gb_reset_post_boot(gb);
     gb_run_frame(gb);
     CHECK(host.calls > 0 && host.valid);
     CHECK(host.reentrant_status == GB_MOD_LINK_ERROR && gb_mod_count(gb) == 1);
@@ -292,23 +301,23 @@ bool test_link_host_call_and_unload() {
     uint32_t conflict_handle = 123;
     CHECK(gb_mod_load(gb, conflict.data(), conflict.size(), &conflict_handle) == GB_MOD_CONFLICT);
     CHECK(conflict_handle == 0 && gb_mod_count(gb) == 1);
-    CHECK(gb_read_mem(gb, 0x100) == 0xCD);
+    CHECK(gb_read_mem(gb, 0x150) == 0xCD);
 
     // Failed symbol replacement is also transactional.
     const char incomplete_symbols[] = "00:0200 ModulePointer\n";
     CHECK(gb_mod_load_symbols(gb, incomplete_symbols, sizeof(incomplete_symbols) - 1) ==
           GB_MOD_MISSING_SYMBOL);
-    CHECK(gb_read_mem(gb, 0x100) == 0xCD);
+    CHECK(gb_read_mem(gb, 0x150) == 0xCD);
     const char invalid_symbols[] = "not a symbol line\n";
     CHECK(gb_mod_load_symbols(gb, invalid_symbols, sizeof(invalid_symbols) - 1) ==
           GB_MOD_BAD_SYMBOLS);
-    CHECK(gb_read_mem(gb, 0x100) == 0xCD);
+    CHECK(gb_read_mem(gb, 0x150) == 0xCD);
 
     CHECK(gb_mod_unload(gb, handle) == GB_MOD_OK);
     CHECK(gb_mod_count(gb) == 0);
-    CHECK(gb_read_mem(gb, 0x100) == 0x00);
+    CHECK(gb_read_mem(gb, 0x150) == 0x00);
     const int calls_before = host.calls;
-    gb_reset(gb);
+    gb_reset_post_boot(gb);
     gb_run_frame(gb);
     CHECK(host.calls == calls_before); // the unlinked D3 trap cannot fire
     CHECK(gb_mod_unload(gb, handle) == GB_MOD_NOT_FOUND);
@@ -330,6 +339,7 @@ bool test_appended_section_and_far_pointer() {
     const std::vector<uint8_t> rom = make_rom();
     gb_handle* gb = gb_create();
     CHECK(gb_load_rom(gb, rom.data(), rom.size()) == 1);
+    gb_write_mem(gb, 0xff50, 1); // inspect cartridge ROM, not the custom boot overlay
     const char symbols[] = "00:0100 Hook\n00:0200 ModulePointer\n";
     CHECK(gb_mod_load_symbols(gb, symbols, sizeof(symbols) - 1) == GB_MOD_OK);
     const std::vector<uint8_t> package = make_append_package(rom);
@@ -350,11 +360,26 @@ bool test_appended_section_and_far_pointer() {
     return true;
 }
 
+bool test_full_rgbds_symbol_records() {
+    const std::vector<uint8_t> rom = make_rom();
+    gb_handle* gb = gb_create();
+    CHECK(gb_load_rom(gb, rom.data(), rom.size()) == 1);
+    gb_write_mem(gb, 0xff50, 1); // inspect cartridge ROM, not the custom boot overlay
+    const char symbols[] =
+        "00:0100 Hook\n"
+        "00:8000 vChars0\n00:c000 wShadowOAM\n00:ff80 hPushOAM\n"
+        "01 CELADONPOKECENTER_NURSE\n";
+    CHECK(gb_mod_load_symbols(gb, symbols, sizeof(symbols) - 1) == GB_MOD_OK);
+    gb_destroy(gb);
+    return true;
+}
+
 } // namespace
 
 int main() {
     if (!test_link_host_call_and_unload()) return 1;
     if (!test_appended_section_and_far_pointer()) return 1;
+    if (!test_full_rgbds_symbol_records()) return 1;
     std::puts("mod linker tests passed");
     return 0;
 }
