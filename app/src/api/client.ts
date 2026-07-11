@@ -49,11 +49,24 @@ export function createApi(cfg: ApiConfig = {}) {
     : undefined;
 
   async function get<T>(path: string): Promise<T> {
-    const res = await fetch(`${base}${path}`, { headers });
-    if (!res.ok) {
-      throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+    const cacheKey = `pokeboy.api.v1:${encodeURIComponent(base)}:${path}`;
+    let local: T | undefined;
+    try {
+      const raw = await AsyncStorage.getItem(cacheKey);
+      if (raw) local = JSON.parse(raw) as T;
+    } catch {
+      // A corrupt/unavailable cache must not prevent an API refresh.
     }
-    return (await res.json()) as T;
+    try {
+      const res = await fetch(`${base}${path}`, { headers });
+      if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+      const remote = (await res.json()) as T;
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(remote)).catch(() => {});
+      return remote;
+    } catch (error) {
+      if (local !== undefined) return local;
+      throw error;
+    }
   }
 
   return {
@@ -63,8 +76,14 @@ export function createApi(cfg: ApiConfig = {}) {
     /** URL to stream a cartridge's ROM bytes. */
     romUrl: (id: string) => `${base}/api/cartridges/${id}/rom`,
     /** Minimal WASM player mounted inside the native Game Boy LCD. */
-    emulatorUrl: (id: string) =>
-      `${base}/emulator/embed.html?cartridge=${encodeURIComponent(id)}`,
+    emulatorUrl: (id: string, version = "0") => {
+      const query = `cartridge=${encodeURIComponent(id)}&version=${encodeURIComponent(version)}`;
+      // Keep the key in the fragment: fragments are available to the embedded
+      // page but are not sent in the HTTP request or typical server logs.
+      const key = cfg.apiKey ? `#apiKey=${encodeURIComponent(cfg.apiKey)}` : "";
+      return `${base}/emulator/embed.html?${query}${key}`;
+    },
     fetchRegistry: () => get<Registry>("/api/registry"),
   };
 }
+import AsyncStorage from "@react-native-async-storage/async-storage";
