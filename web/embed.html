@@ -65,6 +65,10 @@
         } else if(msg.type==='mods') {
           desiredMods=Array.isArray(msg.ids)?msg.ids.filter(id=>typeof id==='string'):[];
           modUpdate=modUpdate.then(reconcileMods).catch(error=>notify('error',error.message));
+        } else if(msg.type==='dev-frame') {
+          // Dev mode: hand the host a PNG of the LCD framebuffer (an OS
+          // screenshot can't capture the WebView surface).
+          notify('dev-frame',{nonce:msg.nonce,png:canvas.toDataURL('image/png')});
         } else if(msg.type==='save-data' && msg.id===cartridgeId && saveNonce && msg.nonce===saveNonce) {
           saveNonce=null;
           if(saveDataWaiter){const resolve=saveDataWaiter;saveDataWaiter=null;resolve(msg)}
