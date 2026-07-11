@@ -85,16 +85,18 @@ function modMetrics(u: Unit) {
   const nameH = u(18); // name row, flanked by the scroll arrows
   const descH = u(24); // two lines of description
   const btnH = u(22); // YES / NO row
+  const configH = u(22); // per-mod CONFIG button below the YES / NO row
   const gap = u(6);
   const stackGap = u(8); // between the browser panel and the count panel
   const countH = u(24);
   const settingsH = u(26);
-  const panelH = pad * 2 + nameH + gap + descH + gap + btnH;
+  const panelH = pad * 2 + nameH + gap + descH + gap + btnH + gap + configH;
   return {
     pad,
     nameH,
     descH,
     btnH,
+    configH,
     gap,
     stackGap,
     countH,
@@ -709,6 +711,7 @@ function ModChanger({
 }) {
   const [idx, setIdx] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
   const m = modMetrics(u);
   const width = landscape ? u(170) : cartWidth + u(24);
   const opacity = anim.interpolate({ inputRange: [1, 2], outputRange: [0, 1], extrapolate: "clamp" });
@@ -723,6 +726,10 @@ function ModChanger({
   const toggleSettings = () => {
     playSfx("select");
     setSettingsOpen((v) => !v);
+  };
+  const toggleConfig = () => {
+    playSfx("select");
+    setConfigOpen((v) => !v);
   };
 
   return (
@@ -759,7 +766,24 @@ function ModChanger({
           <ModChoice u={u} h={m.btnH} label="YES" active={on} onPress={() => onSet(mod.id, true)} />
           <ModChoice u={u} h={m.btnH} label="NO" active={!on} onPress={() => onSet(mod.id, false)} />
         </View>
+        <Pressable
+          onPress={toggleConfig}
+          style={({ pressed }) => [
+            styles.settingsButton,
+            { height: m.configH, borderRadius: u(5), marginTop: m.gap },
+            pressed && { opacity: 0.62 },
+          ]}
+        >
+          <Text
+            selectable={false}
+            style={[styles.modName, styles.settingsButtonText, { fontSize: u(8), letterSpacing: u(1) }]}
+          >
+            CONFIG
+          </Text>
+        </Pressable>
       </View>
+
+      {active ? <ModConfigModal open={configOpen} mod={mod} onClose={toggleConfig} /> : null}
 
       {/* Panel 2: enabled count */}
       <View
@@ -998,6 +1022,49 @@ function PullResult({ pull }: { pull: PullState }) {
         ))}
       </View>
     </View>
+  );
+}
+
+// Per-mod configuration pop-up. Same full-screen Modal treatment as the
+// settings dialog. Placeholder body for now — each mod's actual config
+// controls get wired in here later.
+function ModConfigModal({
+  open,
+  mod,
+  onClose,
+}: {
+  open: boolean;
+  mod: (typeof MODS)[number];
+  onClose: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const cardWidth = Math.min(width * 0.86, 380);
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      {/* Backdrop — tapping outside the card closes the dialog. */}
+      <Pressable style={styles.settingsBackdrop} onPress={onClose}>
+        {/* Stop taps on the card itself from bubbling to the backdrop. */}
+        <Pressable style={[styles.settingsCard, { width: cardWidth }]} onPress={() => {}}>
+          <View style={styles.settingsCardHeader}>
+            <Text selectable={false} style={styles.settingsTitle}>
+              {mod.name} CONFIG
+            </Text>
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={({ pressed }) => [styles.settingsCloseBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Text selectable={false} style={styles.settingsCloseBtnText}>
+                ✕
+              </Text>
+            </Pressable>
+          </View>
+          <Text selectable={false} style={styles.modConfigPlaceholder}>
+            No options for this mod yet.
+          </Text>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1642,6 +1709,11 @@ const styles = StyleSheet.create({
   },
   settingsButtonTextOn: {
     color: "#d6d1c2",
+  },
+  modConfigPlaceholder: {
+    color: "#6b665a",
+    fontWeight: "600",
+    userSelect: "none",
   },
   settingsBackdrop: {
     flex: 1,
