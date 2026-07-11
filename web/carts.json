@@ -1,4 +1,3 @@
 [
-  { "id": "pokemon-blue", "file": "pokemon-blue.gb", "title": "Pokémon Blue", "img": "labels/poke-blue.png" },
-  { "id": "pokemon-yellow", "file": "pokemon-yellow.gbc", "title": "Pokémon Yellow", "img": "labels/poke-yellow.png" }
+  { "id": "pokemon-red", "file": "pokemon-red.gb", "title": "Pokémon Red", "img": "labels/poke-red.png" }
 ]
