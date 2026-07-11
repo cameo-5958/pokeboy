@@ -27,6 +27,7 @@
     const image=ctx.createImageData(W,H);
     let Module,gb,api,input={buttons:0,dpad:0},speed=1,paused=false,last=performance.now(),carry=0;
     let cartridgeId='',cartridgeVersion='',desiredMods=[],modUpdate=Promise.resolve(),requestOptions={};
+    let modVersions=new Map();
     let audioContext=null,audioNode=null,audioPtr=0,muted=false,volume=1;
     const loadedMods=new Map();
     const modHandlers=new Map();
@@ -58,8 +59,12 @@
     }
     function openRomCache(){
       return new Promise((resolve,reject)=>{
-        const request=indexedDB.open('pokeboy',1);
-        request.onupgradeneeded=()=>request.result.createObjectStore('roms');
+        const request=indexedDB.open('pokeboy',2);
+        request.onupgradeneeded=()=>{
+          for(const name of ['roms','payloads','metadata']){
+            if(!request.result.objectStoreNames.contains(name))request.result.createObjectStore(name);
+          }
+        };
         request.onsuccess=()=>resolve(request.result);
         request.onerror=()=>reject(request.error);
       });
@@ -68,6 +73,51 @@
       const response=await fetch('/api/cartridges/'+encodeURIComponent(id)+'/rom',requestOptions);
       if(!response.ok)throw new Error(response.status===404?'ROM NOT INSTALLED':'ROM LOAD FAILED');
       return response.arrayBuffer();
+    }
+    async function localFirstJson(key,path){
+      let db=null,local=null;
+      try{
+        db=await openRomCache();
+        local=await new Promise((resolve,reject)=>{
+          const request=db.transaction('metadata').objectStore('metadata').get(key);
+          request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+        });
+      }catch(error){db?.close();db=null;notify('cache-error',String(error))}
+      try{
+        const response=await fetch(path,requestOptions);
+        if(!response.ok)throw new Error('API request failed ('+response.status+')');
+        const remote=await response.json();
+        if(db)try{
+          await new Promise((resolve,reject)=>{
+            const request=db.transaction('metadata','readwrite').objectStore('metadata').put(remote,key);
+            request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);
+          });
+        }catch(error){notify('cache-error',String(error))}
+        db?.close();return remote;
+      }catch(error){
+        db?.close();if(local!==null)return local;throw error;
+      }
+    }
+    async function localFirstPayload(key,path,missingMessage){
+      let db=null;
+      try{
+        db=await openRomCache();
+        const local=await new Promise((resolve,reject)=>{
+          const request=db.transaction('payloads').objectStore('payloads').get(key);
+          request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+        });
+        if(local){db.close();notify('payload-source',{key,source:'local'});return new Uint8Array(local)}
+      }catch(error){db?.close();db=null;notify('cache-error',String(error))}
+      const response=await fetch(path,requestOptions);
+      if(!response.ok)throw new Error(missingMessage);
+      const buffer=await response.arrayBuffer();
+      if(db)try{
+        await new Promise((resolve,reject)=>{
+          const request=db.transaction('payloads','readwrite').objectStore('payloads').put(buffer,key);
+          request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);
+        });
+      }catch(error){notify('cache-error',String(error))}finally{db.close()}
+      notify('payload-source',{key,source:'api'});return new Uint8Array(buffer);
     }
     async function cachedRom(id,version){
       const key=id+'@'+version;
@@ -205,9 +255,12 @@
         }
         for(const id of desiredMods){
           if(loadedMods.has(id))continue;
-          const response=await fetch('/api/mods/'+encodeURIComponent(id),requestOptions);
-          if(!response.ok)throw new Error("MOD '"+id+"' NOT INSTALLED");
-          const bytes=new Uint8Array(await response.arrayBuffer());
+          const version=modVersions.get(id)||'0';
+          const bytes=await localFirstPayload(
+            'mod:'+id+'@'+version,
+            '/api/mods/'+encodeURIComponent(id),
+            "MOD '"+id+"' NOT INSTALLED"
+          );
           const out=Module._malloc(4);
           try{
             Module.HEAPU32[out/4]=0;
@@ -251,6 +304,8 @@
       const apiKey=new URLSearchParams(location.hash.slice(1)).get('apiKey')||'';
       requestOptions=apiKey?{headers:{'x-api-key':apiKey}}:{};
       if(!cartridgeId) throw new Error('No cartridge selected');
+      const registry=await localFirstJson('registry','/api/registry');
+      modVersions=new Map((registry.mods||[]).map(mod=>[mod.id,mod.version]));
       const bytes=await cachedRom(cartridgeId,cartridgeVersion);
       const ptr=Module._malloc(bytes.length);
       Module.HEAPU8.set(bytes,ptr);
@@ -258,11 +313,14 @@
       Module._free(ptr);
       if(!ok) throw new Error('INVALID ROM');
       restoreSave();
-      const symbols=await fetch('/api/mods/symbols/'+encodeURIComponent(cartridgeId),requestOptions);
-      if(symbols.ok){
-        const bytes=new TextEncoder().encode(await symbols.text());
+      try{
+        const bytes=await localFirstPayload(
+          'symbols:'+cartridgeId+'@'+cartridgeVersion,
+          '/api/mods/symbols/'+encodeURIComponent(cartridgeId),
+          'SYMBOLS NOT INSTALLED'
+        );
         copyToHeap(bytes,ptr=>modError(api.modSymbols(gb,ptr,bytes.length)));
-      }
+      }catch(error){if(error.message!=='SYMBOLS NOT INSTALLED')throw error}
       api.setInput(gb,input.buttons,input.dpad);
       await reconcileMods();
       status.style.display='none';
