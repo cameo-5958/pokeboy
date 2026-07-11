@@ -35,6 +35,14 @@ export type Registry = { roms: RegistryRom[]; mods: RegistryMod[] };
 
 export type ApiConfig = { baseUrl?: string; apiKey?: string };
 
+/** Remote-control command queued by the backend's dev MCP tools. */
+export type DevCommand =
+  | { id: string; kind: "screenshot" }
+  | { id: string; kind: "press"; buttons: number; dpad: number; holdMs: number };
+
+/** A payload plus whether it came from the network (`fresh`) or the local cache. */
+export type FetchResult<T> = { data: T; fresh: boolean };
+
 export type Api = ReturnType<typeof createApi>;
 
 /** Opt-in telemetry payload — a batch of buffered snapshots/events for one device+session. */
@@ -57,7 +65,7 @@ export function createApi(cfg: ApiConfig = {}) {
     ? { "x-api-key": cfg.apiKey }
     : undefined;
 
-  async function get<T>(path: string): Promise<T> {
+  async function getWithMeta<T>(path: string): Promise<FetchResult<T>> {
     const cacheKey = `pokeboy.api.v1:${encodeURIComponent(base)}:${path}`;
     let local: T | undefined;
     try {
@@ -71,16 +79,21 @@ export function createApi(cfg: ApiConfig = {}) {
       if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
       const remote = (await res.json()) as T;
       await AsyncStorage.setItem(cacheKey, JSON.stringify(remote)).catch(() => {});
-      return remote;
+      return { data: remote, fresh: true };
     } catch (error) {
-      if (local !== undefined) return local;
+      if (local !== undefined) return { data: local, fresh: false };
       throw error;
     }
   }
 
+  async function get<T>(path: string): Promise<T> {
+    return (await getWithMeta<T>(path)).data;
+  }
+
   return {
     baseUrl: base,
-    listCartridges: () => get<Cartridge[]>("/api/cartridges"),
+    /** Local-first: `fresh: false` means the payload came from the offline cache. */
+    listCartridges: () => getWithMeta<Cartridge[]>("/api/cartridges"),
     getCartridge: (id: string) => get<Cartridge>(`/api/cartridges/${id}`),
     /** URL to stream a cartridge's ROM bytes. */
     romUrl: (id: string) => `${base}/api/cartridges/${id}/rom`,
@@ -93,6 +106,25 @@ export function createApi(cfg: ApiConfig = {}) {
       return `${base}/emulator/embed.html?${query}${key}`;
     },
     fetchRegistry: () => get<Registry>("/api/registry"),
+    /** Dev mode: fetch (and clear) the remote-control commands queued for this device. */
+    pollDevCommands: async (deviceId: string): Promise<DevCommand[]> => {
+      const res = await fetch(
+        `${base}/api/dev/commands?device=${encodeURIComponent(deviceId)}`,
+        { headers },
+      );
+      if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+      const body = (await res.json()) as { commands?: DevCommand[] };
+      return Array.isArray(body.commands) ? body.commands : [];
+    },
+    /** Dev mode: report a command's outcome (press ack or screenshot PNG). */
+    postDevResult: async (body: { id: string; ok: boolean; error?: string; png?: string }) => {
+      const res = await fetch(`${base}/api/dev/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+    },
     /** Fire-and-forget telemetry upload; callers should swallow rejections. */
     postTelemetry: async (body: unknown): Promise<void> => {
       const res = await fetch(`${base}/api/telemetry`, {

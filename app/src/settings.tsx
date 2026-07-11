@@ -25,6 +25,9 @@ export type Settings = {
   apiKey: string;
   /** Opt-in: stream emulator vitals (fps, audio, heap) to the backend. */
   telemetry: boolean;
+  /** Opt-in: poll the backend for remote-control commands (button presses,
+   * LCD screenshots) issued through the dev MCP server. */
+  devMode: boolean;
 };
 
 /** id → installed version, for ROMs and mods respectively. */
@@ -40,6 +43,7 @@ const DEFAULT_SETTINGS: Settings = {
   backendUrl: process.env.EXPO_PUBLIC_API_URL ?? "",
   apiKey: "",
   telemetry: false,
+  devMode: false,
 };
 
 export const EMPTY_MANIFEST: InstalledManifest = { roms: {}, mods: {} };
