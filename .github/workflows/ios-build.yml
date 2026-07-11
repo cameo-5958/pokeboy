@@ -6,6 +6,8 @@ name: iOS build (unsigned)
 on:
   push:
     branches: [main]
+    paths:
+      - "app/**"
 
 jobs:
   build:
