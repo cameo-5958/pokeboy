@@ -6,6 +6,7 @@ import { hasKeys, isValidKey } from "./keys.js";
 import { startMcpServer } from "./mcp.js";
 import { pruneOrphans, watchRegistryForPrune } from "./prune.js";
 import { cartridgesRouter } from "./routes/cartridges.js";
+import { devRouter } from "./routes/dev.js";
 import { keysRouter } from "./routes/keys.js";
 import { modsRouter } from "./routes/mods.js";
 import { registryRouter } from "./routes/registry.js";
@@ -13,8 +14,16 @@ import { telemetryRouter } from "./routes/telemetry.js";
 
 const app = express();
 
+// nginx terminates TLS on this host and proxies over loopback. Trusting the
+// loopback proxy makes req.protocol honor X-Forwarded-Proto, so absolute URLs
+// built from requests (label images, ROM links) come out https:// instead of
+// http:// — which iOS ATS refuses to fetch. Direct (non-proxied) requests,
+// e.g. via the tailnet IP, are unaffected.
+app.set("trust proxy", "loopback");
+
 app.use(cors());
-app.use(express.json());
+// 1mb: dev-mode screenshot results carry a base64 PNG of the 160x144 LCD.
+app.use(express.json({ limit: "1mb" }));
 
 // Static label images.
 app.use("/labels", express.static(paths.labels()));
@@ -44,6 +53,7 @@ app.use("/api/registry", registryRouter);
 app.use("/api/cartridges", cartridgesRouter);
 app.use("/api/mods", modsRouter);
 app.use("/api/telemetry", telemetryRouter);
+app.use("/api/dev", devRouter);
 
 // Centralized error handler.
 app.use(
