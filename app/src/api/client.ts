@@ -1,3 +1,5 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 /**
  * Client for the pokeboy backend. The base URL and API key are supplied at
  * runtime from the user's saved settings (see `createApi`); `DEFAULT_BASE_URL`
@@ -97,14 +99,6 @@ export function createApi(cfg: ApiConfig = {}) {
     getCartridge: (id: string) => get<Cartridge>(`/api/cartridges/${id}`),
     /** URL to stream a cartridge's ROM bytes. */
     romUrl: (id: string) => `${base}/api/cartridges/${id}/rom`,
-    /** Minimal WASM player mounted inside the native Game Boy LCD. */
-    emulatorUrl: (id: string, version = "0") => {
-      const query = `cartridge=${encodeURIComponent(id)}&version=${encodeURIComponent(version)}`;
-      // Keep the key in the fragment: fragments are available to the embedded
-      // page but are not sent in the HTTP request or typical server logs.
-      const key = cfg.apiKey ? `#apiKey=${encodeURIComponent(cfg.apiKey)}` : "";
-      return `${base}/emulator/embed.html?${query}${key}`;
-    },
     fetchRegistry: () => get<Registry>("/api/registry"),
     /** Dev mode: fetch (and clear) the remote-control commands queued for this device. */
     pollDevCommands: async (deviceId: string): Promise<DevCommand[]> => {
@@ -136,4 +130,3 @@ export function createApi(cfg: ApiConfig = {}) {
     },
   };
 }
-import AsyncStorage from "@react-native-async-storage/async-storage";

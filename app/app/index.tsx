@@ -1,5 +1,7 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import type { EmulatorAssets } from "@/emulator/assets";
+import { loadEmulatorAssets } from "@/emulator/assets";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -70,13 +72,12 @@ function genId(): string {
 type TelemetryEvent = { t: number; kind: string; detail: unknown };
 
 type Unit = (value: number) => number;
-type Translate = Animated.AnimatedInterpolation<number>;
 type AnimValue = Animated.Value;
 type PanHandlers = ReturnType<typeof PanResponder.create>["panHandlers"];
 type InputGroup = "buttons" | "dpad";
 
 const EmulatorContext = createContext<{
-  uri: string | null;
+  emulator: { uri: string; injected: string; readAccessUri: string; key: string } | null;
   webViewRef: { current: WebView | null };
   onMessage: (event: WebViewMessageEvent) => void;
   setInput: (group: InputGroup, mask: number, held: boolean) => void;
@@ -84,7 +85,7 @@ const EmulatorContext = createContext<{
   paused: boolean;
   mods: readonly string[];
 }>({
-  uri: null,
+  emulator: null,
   webViewRef: { current: null },
   onMessage: () => undefined,
   setInput: () => undefined,
@@ -206,6 +207,7 @@ export default function EmulatorScreen() {
   const refreshedLabelUrlsRef = useRef(new Set<string>());
   const mountedRef = useRef(true);
   const webViewRef = useRef<WebView | null>(null);
+  const [emulatorAssets, setEmulatorAssets] = useState<EmulatorAssets | null>(null);
   const inputRef = useRef({ buttons: 0, dpad: 0 });
   const cartridge = cartridges[cartridgeIdx] ?? null;
   // Latest cartridge id, readable from the flush interval without adding
@@ -223,6 +225,11 @@ export default function EmulatorScreen() {
 
   useEffect(() => {
     mountedRef.current = true;
+    loadEmulatorAssets().then((assets) => {
+      if (mountedRef.current) setEmulatorAssets(assets);
+    }).catch((error) => {
+      console.error("Unable to load bundled emulator assets", error);
+    });
     return () => {
       mountedRef.current = false;
     };
@@ -636,14 +643,31 @@ export default function EmulatorScreen() {
 
   const onBodyLayout = (e: LayoutChangeEvent) => setBodyTop(e.nativeEvent.layout.y);
 
-  const emulatorUri = useMemo(
-    () => (cartridge ? api.emulatorUrl(cartridge.id, cartridge.version) : null),
-    [api, cartridge?.id, cartridge?.version],
+  const emulator = useMemo(
+    () => {
+      if (!cartridge || !emulatorAssets) return null;
+      const config = {
+        backendUrl: api.baseUrl,
+        apiKey: settings.apiKey,
+        cartridgeId: cartridge.id,
+        cartridgeVersion: cartridge.version ?? "0",
+        gbcoreUri: emulatorAssets.gbcoreUri,
+        wasmUri: emulatorAssets.wasmUri,
+        modCoreUri: emulatorAssets.modCoreUri,
+      };
+      return {
+        uri: emulatorAssets.documentUri,
+        injected: `window.PokeboyRuntime=${JSON.stringify(config)};true;`,
+        readAccessUri: emulatorAssets.readAccessUri,
+        key: `${cartridge.id}@${cartridge.version ?? "0"}`,
+      };
+    },
+    [api.baseUrl, cartridge, emulatorAssets, settings.apiKey],
   );
   const modsList = useMemo(() => Array.from(enabledMods), [enabledMods]);
   const emulatorContextValue = useMemo(
     () => ({
-      uri: lcdDead ? null : emulatorUri,
+      emulator: lcdDead ? null : emulator,
       webViewRef,
       onMessage,
       setInput,
@@ -651,7 +675,7 @@ export default function EmulatorScreen() {
       paused: ejected,
       mods: modsList,
     }),
-    [emulatorUri, lcdDead, webViewRef, onMessage, setInput, emulatorSettings, ejected, modsList],
+    [emulator, lcdDead, webViewRef, onMessage, setInput, emulatorSettings, ejected, modsList],
   );
 
   return (
@@ -1572,7 +1596,7 @@ function Bezel({
 }
 
 function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
-  const { uri, webViewRef, onMessage, settings, paused, mods } = useContext(EmulatorContext);
+  const { emulator, webViewRef, onMessage, settings, paused, mods } = useContext(EmulatorContext);
   const onLoad = useCallback(() => {
     // A fresh WebView needs the current host state immediately.
     webViewRef.current?.postMessage(JSON.stringify({ type: "input", buttons: 0, dpad: 0 }));
@@ -1582,10 +1606,13 @@ function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
   }, [webViewRef, settings, paused, mods]);
   return (
     <View style={[styles.lcd, { width, height, borderRadius: u(4), borderWidth: u(1.5) }]}>
-      {uri ? (
+      {emulator ? (
         <WebView
+          key={emulator.key}
           ref={webViewRef}
-          source={{ uri }}
+          source={{ uri: emulator.uri }}
+          injectedJavaScriptBeforeContentLoaded={emulator.injected}
+          allowingReadAccessToURL={emulator.readAccessUri}
           style={styles.emulator}
           pointerEvents="none"
           scrollEnabled={false}
