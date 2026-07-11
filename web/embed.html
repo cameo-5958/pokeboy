@@ -17,7 +17,7 @@
   <script src="mod-core.js"></script>
   <script>
   (() => {
-    const W=160,H=144,FRAME_MS=1000/59.7275;
+    const W=160,H=144,FRAME_MS=1000/59.7275,MAX_CATCHUP_FRAMES=5;
     const palette=new Uint8ClampedArray([
       200,212,164,255, 143,168,120,255, 78,99,80,255, 28,43,34,255
     ]);
@@ -25,10 +25,14 @@
     const status=document.getElementById('status');
     const ctx=canvas.getContext('2d',{alpha:false});
     const image=ctx.createImageData(W,H);
-    let Module,gb,api,input={buttons:0,dpad:0},speed=1,paused=false,last=performance.now(),carry=0;
+    let Module,gb,api,input={buttons:0,dpad:0},speed=1,paused=true,last=0,carry=0;
     let cartridgeId='',cartridgeVersion='',desiredMods=[],modUpdate=Promise.resolve(),requestOptions={};
     let modVersions=new Map();
+    const AUDIO_READ_FRAMES=2048,AUDIO_RING_FRAMES=32768;
     let audioContext=null,audioNode=null,audioPtr=0,muted=false,volume=1;
+    let audioLeft=new Float32Array(AUDIO_RING_FRAMES),audioRight=new Float32Array(AUDIO_RING_FRAMES);
+    let audioRead=0,audioWrite=0,audioCount=0;
+    let running=false,started=false,rafId=0,disposed=false;
     const loadedMods=new Map();
     const modHandlers=new Map();
     let hostError=null,hostCallback=0;
@@ -44,13 +48,12 @@
           input=msg;
           if(gb) api.setInput(gb,input.buttons|0,input.dpad|0);
         } else if(msg.type==='settings') {
-          speed=msg.speed==='inf'?10:Math.max(.5,Number(msg.speed)||1);
+          speed=msg.speed==='inf'?Infinity:Math.max(.5,Number(msg.speed)||1);
           muted=Boolean(msg.muted);
           volume=Math.max(0,Math.min(1,Number(msg.volume)||0));
-          if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
         } else if(msg.type==='paused') {
           paused=Boolean(msg.value);
-          last=performance.now(); carry=0;
+          if(paused)pauseEmulation();else resumeEmulation();
         } else if(msg.type==='mods') {
           desiredMods=Array.isArray(msg.ids)?msg.ids.filter(id=>typeof id==='string'):[];
           modUpdate=modUpdate.then(reconcileMods).catch(error=>notify('error',error.message));
@@ -143,20 +146,22 @@
       }finally{db.close()}
       notify('rom-source','api');return new Uint8Array(buffer);
     }
-    function startAudio(){
+    function ensureAudioOutput(){
+      if(audioContext||disposed)return;
       const AudioContext=window.AudioContext||window.webkitAudioContext;
       if(!AudioContext)return;
       audioContext=new AudioContext({sampleRate:44100});
-      const capacity=2048;
-      audioPtr=Module._malloc(capacity*2*4);
-      audioNode=audioContext.createScriptProcessor(capacity,0,2);
+      audioNode=audioContext.createScriptProcessor(2048,0,2);
       audioNode.onaudioprocess=event=>{
         const left=event.outputBuffer.getChannelData(0),right=event.outputBuffer.getChannelData(1);
         left.fill(0);right.fill(0);
-        if(!gb||paused||muted)return;
-        const count=api.readAudio(gb,audioPtr,capacity);
-        const samples=Module.HEAPF32.subarray(audioPtr/4,audioPtr/4+count*2);
-        for(let i=0;i<count;i++){left[i]=samples[i*2]*volume;right[i]=samples[i*2+1]*volume}
+        if(paused||muted)return;
+        const count=Math.min(left.length,audioCount);
+        for(let i=0;i<count;i++){
+          left[i]=audioLeft[audioRead]*volume;right[i]=audioRight[audioRead]*volume;
+          audioRead=(audioRead+1)%AUDIO_RING_FRAMES;
+        }
+        audioCount-=count;
       };
       audioNode.connect(audioContext.destination);
       audioContext.resume().catch(()=>{});
@@ -174,16 +179,47 @@
       ctx.putImageData(image,0,0);
     }
     function loop(now){
-      carry+=paused?0:Math.min(250,now-last)*speed;
-      last=now;
+      if(!running||disposed)return;
+      rafId=requestAnimationFrame(loop);
+      if(!last)last=now;
       let frames=0;
-      while(carry>=FRAME_MS && frames<10){
-        api.runFrame(gb); carry-=FRAME_MS; frames++;
-        if(hostError){ paused=true; status.style.display='flex'; status.textContent=hostError.message; notify('error',hostError.message); break; }
+      const dt=Math.min(250,now-last);last=now;
+      if(speed===Infinity){
+        const budget=performance.now()+11;
+        while(performance.now()<budget){api.runFrame(gb);pumpAudio();frames++}
+        carry=0;
+      }else{
+        carry+=dt*speed;
+        const cap=Math.max(MAX_CATCHUP_FRAMES,Math.ceil(speed)+2);
+        while(carry>=FRAME_MS&&frames<cap){api.runFrame(gb);pumpAudio();carry-=FRAME_MS;frames++}
+        if(carry>FRAME_MS*cap)carry=FRAME_MS*cap;
+      }
+      if(hostError){
+        paused=true;pauseEmulation();status.style.display='flex';status.textContent=hostError.message;notify('error',hostError.message);
       }
       if(frames) draw();
       if(frames && ++saveCounter>=300){ saveCounter=0; persistSave(); }
-      requestAnimationFrame(loop);
+    }
+    function pumpAudio(){
+      const count=api.readAudio(gb,audioPtr,AUDIO_READ_FRAMES);
+      if(count<=0||speed!==1||muted||!audioContext||audioContext.state!=='running')return;
+      const heap=Module.HEAPF32,base=audioPtr/4;
+      for(let i=0;i<count;i++){
+        if(audioCount===AUDIO_RING_FRAMES){audioRead=(audioRead+1)%AUDIO_RING_FRAMES;audioCount--}
+        audioLeft[audioWrite]=heap[base+i*2];audioRight[audioWrite]=heap[base+i*2+1];
+        audioWrite=(audioWrite+1)%AUDIO_RING_FRAMES;audioCount++;
+      }
+    }
+    function clearAudio(){audioRead=0;audioWrite=0;audioCount=0}
+    function pauseEmulation(){
+      if(running){running=false;cancelAnimationFrame(rafId)}
+      last=0;carry=0;clearAudio();persistSave();
+      audioContext?.suspend().catch(()=>{});
+    }
+    function resumeEmulation(){
+      if(paused||running||!started||disposed)return;
+      ensureAudioOutput();audioContext?.resume().catch(()=>{});
+      running=true;last=0;carry=0;rafId=requestAnimationFrame(loop);
     }
     function copyToHeap(bytes,operation){
       const ptr=Module._malloc(Math.max(1,bytes.length));
@@ -277,6 +313,7 @@
       Module=await createGBCore({locateFile:file=>file});
       api={
         create:Module.cwrap('gb_create','number',[]),
+        destroy:Module.cwrap('gb_destroy',null,['number']),
         loadRom:Module.cwrap('gb_load_rom','number',['number','number','number']),
         runFrame:Module.cwrap('gb_run_frame',null,['number']),
         framebuffer:Module.cwrap('gb_framebuffer','number',['number']),
@@ -296,7 +333,7 @@
         loadSaveRam:Module.cwrap('gb_load_save_ram','number',['number','number','number'])
       };
       gb=api.create();
-      startAudio();
+      audioPtr=Module._malloc(AUDIO_READ_FRAMES*2*4);
       installHostBridge();
       const query=new URLSearchParams(location.search);
       cartridgeId=query.get('cartridge')||'';
@@ -324,9 +361,26 @@
       api.setInput(gb,input.buttons,input.dpad);
       await reconcileMods();
       status.style.display='none';
+      started=true;
       notify('ready',cartridgeId);
-      requestAnimationFrame(loop);
+      resumeEmulation();
     }
+    function dispose(){
+      if(disposed)return;
+      pauseEmulation();disposed=true;
+      audioNode?.disconnect();if(audioNode)audioNode.onaudioprocess=null;
+      audioContext?.close().catch(()=>{});
+      if(Module&&audioPtr)Module._free(audioPtr);
+      if(Module&&gb&&hostCallback){api.modSetHost(gb,0,0);Module.removeFunction(hostCallback)}
+      if(api&&gb&&api.destroy)api.destroy(gb);
+      audioPtr=0;gb=0;hostCallback=0;
+    }
+    window.addEventListener('pagehide',dispose);
+    window.addEventListener('beforeunload',dispose);
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState==='hidden')pauseEmulation();
+      else if(!paused)resumeEmulation();
+    });
     boot().catch(error=>{status.textContent=error.message;notify('error',error.message)});
   })();
   </script>

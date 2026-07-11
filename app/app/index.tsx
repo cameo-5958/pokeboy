@@ -154,12 +154,12 @@ export default function EmulatorScreen() {
   const bodyDrop = Math.max(0, cart.height + settle + clearance - parkDelta);
 
   // 0 = inserted, 1 = cartridge popped out, 2 = console dropped down.
-  const anim = useRef(new Animated.Value(0)).current;
-  const ejectedRef = useRef(false);
+  const anim = useRef(new Animated.Value(2)).current;
+  const ejectedRef = useRef(true);
   const startVal = useRef(0);
   // State mirror of ejectedRef so the mod panel can gate its touch handling
   // (it sits at opacity 0 while the cartridge is seated).
-  const [ejected, setEjected] = useState(false);
+  const [ejected, setEjected] = useState(true);
   const [volume, setVolume] = useState(0.72);
   const [muted, setMuted] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(1);
