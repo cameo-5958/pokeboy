@@ -26,7 +26,8 @@
     const ctx=canvas.getContext('2d',{alpha:false});
     const image=ctx.createImageData(W,H);
     let Module,gb,api,input={buttons:0,dpad:0},speed=1,paused=false,last=performance.now(),carry=0;
-    let cartridgeId='',desiredMods=[],modUpdate=Promise.resolve();
+    let cartridgeId='',cartridgeVersion='',desiredMods=[],modUpdate=Promise.resolve(),requestOptions={};
+    let audioContext=null,audioNode=null,audioPtr=0,muted=false,volume=1;
     const loadedMods=new Map();
     const modHandlers=new Map();
     let hostError=null,hostCallback=0;
@@ -43,6 +44,9 @@
           if(gb) api.setInput(gb,input.buttons|0,input.dpad|0);
         } else if(msg.type==='settings') {
           speed=msg.speed==='inf'?10:Math.max(.5,Number(msg.speed)||1);
+          muted=Boolean(msg.muted);
+          volume=Math.max(0,Math.min(1,Number(msg.volume)||0));
+          if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
         } else if(msg.type==='paused') {
           paused=Boolean(msg.value);
           last=performance.now(); carry=0;
@@ -51,6 +55,61 @@
           modUpdate=modUpdate.then(reconcileMods).catch(error=>notify('error',error.message));
         }
       } catch(error){ notify('error',String(error)); }
+    }
+    function openRomCache(){
+      return new Promise((resolve,reject)=>{
+        const request=indexedDB.open('pokeboy',1);
+        request.onupgradeneeded=()=>request.result.createObjectStore('roms');
+        request.onsuccess=()=>resolve(request.result);
+        request.onerror=()=>reject(request.error);
+      });
+    }
+    async function fetchRom(id){
+      const response=await fetch('/api/cartridges/'+encodeURIComponent(id)+'/rom',requestOptions);
+      if(!response.ok)throw new Error(response.status===404?'ROM NOT INSTALLED':'ROM LOAD FAILED');
+      return response.arrayBuffer();
+    }
+    async function cachedRom(id,version){
+      const key=id+'@'+version;
+      let db=null;
+      try{
+        db=await openRomCache();
+        const local=await new Promise((resolve,reject)=>{
+          const request=db.transaction('roms').objectStore('roms').get(key);
+          request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+        });
+        if(local){db.close();notify('rom-source','local');return new Uint8Array(local)}
+      }catch(error){
+        db?.close();db=null;notify('cache-error',String(error));
+      }
+      const buffer=await fetchRom(id);
+      if(db)try{
+        await new Promise((resolve,reject)=>{
+          const request=db.transaction('roms','readwrite').objectStore('roms').put(buffer,key);
+          request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);
+        });
+      }catch(error){
+        notify('cache-error',String(error));
+      }finally{db.close()}
+      notify('rom-source','api');return new Uint8Array(buffer);
+    }
+    function startAudio(){
+      const AudioContext=window.AudioContext||window.webkitAudioContext;
+      if(!AudioContext)return;
+      audioContext=new AudioContext({sampleRate:44100});
+      const capacity=2048;
+      audioPtr=Module._malloc(capacity*2*4);
+      audioNode=audioContext.createScriptProcessor(capacity,0,2);
+      audioNode.onaudioprocess=event=>{
+        const left=event.outputBuffer.getChannelData(0),right=event.outputBuffer.getChannelData(1);
+        left.fill(0);right.fill(0);
+        if(!gb||paused||muted)return;
+        const count=api.readAudio(gb,audioPtr,capacity);
+        const samples=Module.HEAPF32.subarray(audioPtr/4,audioPtr/4+count*2);
+        for(let i=0;i<count;i++){left[i]=samples[i*2]*volume;right[i]=samples[i*2+1]*volume}
+      };
+      audioNode.connect(audioContext.destination);
+      audioContext.resume().catch(()=>{});
     }
     document.addEventListener('message',event=>receive(event.data));
     window.addEventListener('message',event=>receive(event.data));
@@ -146,7 +205,7 @@
         }
         for(const id of desiredMods){
           if(loadedMods.has(id))continue;
-          const response=await fetch('/api/mods/'+encodeURIComponent(id));
+          const response=await fetch('/api/mods/'+encodeURIComponent(id),requestOptions);
           if(!response.ok)throw new Error("MOD '"+id+"' NOT INSTALLED");
           const bytes=new Uint8Array(await response.arrayBuffer());
           const out=Module._malloc(4);
@@ -169,6 +228,7 @@
         runFrame:Module.cwrap('gb_run_frame',null,['number']),
         framebuffer:Module.cwrap('gb_framebuffer','number',['number']),
         setInput:Module.cwrap('gb_set_input',null,['number','number','number']),
+        readAudio:Module.cwrap('gb_read_audio','number',['number','number','number']),
         modSymbols:Module.cwrap('gb_mod_load_symbols','number',['number','number','number']),
         modLoad:Module.cwrap('gb_mod_load','number',['number','number','number','number']),
         modUnload:Module.cwrap('gb_mod_unload','number',['number','number']),
@@ -183,19 +243,22 @@
         loadSaveRam:Module.cwrap('gb_load_save_ram','number',['number','number','number'])
       };
       gb=api.create();
+      startAudio();
       installHostBridge();
-      cartridgeId=new URLSearchParams(location.search).get('cartridge')||'';
+      const query=new URLSearchParams(location.search);
+      cartridgeId=query.get('cartridge')||'';
+      cartridgeVersion=query.get('version')||'0';
+      const apiKey=new URLSearchParams(location.hash.slice(1)).get('apiKey')||'';
+      requestOptions=apiKey?{headers:{'x-api-key':apiKey}}:{};
       if(!cartridgeId) throw new Error('No cartridge selected');
-      const response=await fetch('/api/cartridges/'+encodeURIComponent(cartridgeId)+'/rom');
-      if(!response.ok) throw new Error(response.status===404?'ROM NOT INSTALLED':'ROM LOAD FAILED');
-      const bytes=new Uint8Array(await response.arrayBuffer());
+      const bytes=await cachedRom(cartridgeId,cartridgeVersion);
       const ptr=Module._malloc(bytes.length);
       Module.HEAPU8.set(bytes,ptr);
       const ok=api.loadRom(gb,ptr,bytes.length);
       Module._free(ptr);
       if(!ok) throw new Error('INVALID ROM');
       restoreSave();
-      const symbols=await fetch('/api/mods/symbols/'+encodeURIComponent(cartridgeId));
+      const symbols=await fetch('/api/mods/symbols/'+encodeURIComponent(cartridgeId),requestOptions);
       if(symbols.ok){
         const bytes=new TextEncoder().encode(await symbols.text());
         copyToHeap(bytes,ptr=>modError(api.modSymbols(gb,ptr,bytes.length)));
