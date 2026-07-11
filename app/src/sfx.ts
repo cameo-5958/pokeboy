@@ -27,20 +27,39 @@ const NATIVE_SOURCES: Record<Sfx, number> | null =
         modOff: require("../assets/sfx/modOff.wav"),
       };
 
-type NativeAudioPlayer = { play(): void; remove(): void };
+type NativeAudioPlayer = { play(): void; seekTo(seconds: number): void | Promise<void> };
 let createAudioPlayer: ((source: number) => NativeAudioPlayer) | null = null;
 if (NATIVE_SOURCES) {
   // Lazily required so a web bundle never has to resolve the native module.
   ({ createAudioPlayer } = require("expo-audio"));
 }
 
+// Reused players, a small round-robin pool per effect. Creating a fresh native
+// player on every press leaks/exhausts iOS audio resources under rapid input,
+// which eventually makes creation throw on each press. Two players per kind
+// lets rapid repeat taps overlap without a seekTo() race on a playing player.
+const POOL_SIZE = 2;
+const pools = new Map<Sfx, NativeAudioPlayer[]>();
+const poolNext = new Map<Sfx, number>();
+
 function playNative(kind: Sfx) {
   if (!createAudioPlayer || !NATIVE_SOURCES) return;
-  // A fresh player per trigger avoids seekTo() races on rapid repeat taps;
-  // these are short one-shots so the overhead is negligible.
-  const player = createAudioPlayer(NATIVE_SOURCES[kind]);
+  let pool = pools.get(kind);
+  if (!pool) {
+    pool = [];
+    pools.set(kind, pool);
+  }
+  let player: NativeAudioPlayer;
+  if (pool.length < POOL_SIZE) {
+    player = createAudioPlayer(NATIVE_SOURCES[kind]);
+    pool.push(player);
+  } else {
+    const i = (poolNext.get(kind) ?? 0) % pool.length;
+    poolNext.set(kind, i + 1);
+    player = pool[i];
+    void Promise.resolve(player.seekTo(0)).catch(() => {});
+  }
   player.play();
-  setTimeout(() => player.remove(), 500);
 }
 
 // ---- web (Web Audio API) ------------------------------------------------
@@ -138,9 +157,13 @@ function playWeb(kind: Sfx) {
 // ---------------------------------------------------------------------
 
 export function playSfx(kind: Sfx) {
-  if (NATIVE_SOURCES) {
-    playNative(kind);
-  } else {
-    playWeb(kind);
-  }
+  // Sound is best-effort garnish: a broken audio stack must never throw into
+  // a button handler and take game input down with it.
+  try {
+    if (NATIVE_SOURCES) {
+      playNative(kind);
+    } else {
+      playWeb(kind);
+    }
+  } catch {}
 }
