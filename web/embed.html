@@ -42,7 +42,11 @@
     }
     function errorDetail(error,stage=bootStage){
       const value=error instanceof Error?error:new Error(String(error));
-      return {message:value.message,name:value.name||'Error',stack:value.stack||null,stage};
+      const detail={message:value.message,name:value.name||'Error',stack:value.stack||null,stage};
+      for(const key of ['operation','status','decodeError']){
+        if(value[key]!==undefined)detail[key]=value[key];
+      }
+      return detail;
     }
     function reportError(error,stage){
       const detail=errorDetail(error,stage);
@@ -443,9 +447,48 @@
       try{ Module.HEAPU8.set(bytes,ptr); return operation(ptr); }
       finally{ Module._free(ptr); }
     }
-    function modError(status){
+    function decodeCString(pointer){
+      if(!pointer)return '';
+      const heap=Module.HEAPU8;
+      if(pointer<0||pointer>=heap.length)throw new RangeError('Invalid C string pointer');
+      const bytes=[];
+      for(let cursor=pointer;cursor<heap.length;cursor++){
+        const byte=heap[cursor];
+        if(byte===0)break;
+        bytes.push(byte);
+      }
+      let result='';
+      for(let i=0;i<bytes.length;){
+        const first=bytes[i++];
+        if(first<0x80){result+=String.fromCharCode(first);continue}
+        let codePoint,continuations;
+        if((first&0xe0)===0xc0){codePoint=first&0x1f;continuations=1}
+        else if((first&0xf0)===0xe0){codePoint=first&0x0f;continuations=2}
+        else if((first&0xf8)===0xf0){codePoint=first&7;continuations=3}
+        else{result+='\ufffd';continue}
+        if(i+continuations>bytes.length){result+='\ufffd';break}
+        let valid=true;
+        for(let j=0;j<continuations;j++){
+          const next=bytes[i+j];
+          if((next&0xc0)!==0x80){valid=false;break}
+          codePoint=(codePoint<<6)|(next&0x3f);
+        }
+        if(!valid){result+='\ufffd';continue}
+        i+=continuations;
+        result+=codePoint<=0xffff?String.fromCharCode(codePoint):String.fromCodePoint(codePoint);
+      }
+      return result;
+    }
+    function modError(status,operation='mod operation'){
       if(status===0)return;
-      throw new Error(api.modLastError(gb)||('Mod operation failed ('+status+')'));
+      let message='',decodeError=null;
+      try{message=decodeCString(api.modLastError(gb))}
+      catch(error){decodeError=error instanceof Error?error.message:String(error)}
+      const failure=new Error(message||(operation+' failed ('+status+')'));
+      failure.operation=operation;
+      failure.status=status;
+      failure.decodeError=decodeError;
+      throw failure;
     }
     function cpuContext(pointer){
       const view=()=>new DataView(Module.HEAPU8.buffer);
@@ -603,7 +646,7 @@
         modSymbols:Module.cwrap('gb_mod_load_symbols','number',['number','number','number']),
         modLoad:Module.cwrap('gb_mod_load','number',['number','number','number','number']),
         modUnload:Module.cwrap('gb_mod_unload','number',['number','number']),
-        modLastError:Module.cwrap('gb_mod_last_error','string',['number']),
+        modLastError:Module.cwrap('gb_mod_last_error','number',['number']),
         modImportCount:Module.cwrap('gb_mod_import_count','number',['number','number']),
         modImportName:Module.cwrap('gb_mod_import_name','string',['number','number','number']),
         modSetHost:Module.cwrap('gb_mod_set_host_callback',null,['number','number','number']),
@@ -647,7 +690,7 @@
           '/api/mods/symbols/'+encodeURIComponent(cartridgeId),
           'SYMBOLS NOT INSTALLED'
         );
-        copyToHeap(bytes,ptr=>modError(api.modSymbols(gb,ptr,bytes.length)));
+        copyToHeap(bytes,ptr=>modError(api.modSymbols(gb,ptr,bytes.length),'gb_mod_load_symbols'));
       }catch(error){if(error.message!=='SYMBOLS NOT INSTALLED')throw error}
       api.setInput(gb,input.buttons,input.dpad);
       bootStage='mods-reconcile';
