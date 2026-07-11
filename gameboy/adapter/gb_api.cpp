@@ -40,6 +40,7 @@ int gb_load_rom(gb_handle* h, const uint8_t* data, size_t len) {
 }
 
 void gb_reset(gb_handle* h)     { h->gb.reset_custom_boot(); }
+void gb_reset_post_boot(gb_handle* h) { h->gb.reset_post_boot(); }
 void gb_run_frame(gb_handle* h) { h->gb.run_frame(); }
 
 const uint8_t* gb_framebuffer(const gb_handle* h) { return h->gb.framebuffer(); }
