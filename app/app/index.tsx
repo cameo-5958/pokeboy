@@ -1,5 +1,6 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -14,7 +15,7 @@ import {
   type LayoutChangeEvent,
   useWindowDimensions,
 } from "react-native";
-import WebView from "react-native-webview";
+import WebView, { type WebViewMessageEvent } from "react-native-webview";
 
 import { createApi, type Cartridge as CartridgeInfo } from "@/api/client";
 import { playSfx } from "@/sfx";
@@ -47,6 +48,7 @@ type InputGroup = "buttons" | "dpad";
 const EmulatorContext = createContext<{
   uri: string | null;
   webViewRef: { current: WebView | null };
+  onMessage: (event: WebViewMessageEvent) => void;
   setInput: (group: InputGroup, mask: number, held: boolean) => void;
   settings: { speed: number | "inf"; muted: boolean; volume: number };
   paused: boolean;
@@ -54,6 +56,7 @@ const EmulatorContext = createContext<{
 }>({
   uri: null,
   webViewRef: { current: null },
+  onMessage: () => undefined,
   setInput: () => undefined,
   settings: { speed: 1, muted: false, volume: 1 },
   paused: false,
@@ -166,11 +169,14 @@ export default function EmulatorScreen() {
   const webViewRef = useRef<WebView | null>(null);
   const inputRef = useRef({ buttons: 0, dpad: 0 });
   const cartridge = cartridges[cartridgeIdx] ?? null;
-  const emulatorSettings = {
-    speed: (SPEEDS[speedIdx] === "xINF" ? "inf" : Number(SPEEDS[speedIdx].slice(1))) as number | "inf",
-    muted,
-    volume,
-  };
+  const emulatorSettings = useMemo(
+    () => ({
+      speed: (SPEEDS[speedIdx] === "xINF" ? "inf" : Number(SPEEDS[speedIdx].slice(1))) as number | "inf",
+      muted,
+      volume,
+    }),
+    [speedIdx, muted, volume],
+  );
 
   useEffect(() => {
     if (!settingsLoaded) return;
@@ -180,6 +186,48 @@ export default function EmulatorScreen() {
   const postToEmulator = useCallback((message: object) => {
     webViewRef.current?.postMessage(JSON.stringify(message));
   }, []);
+  const onMessage = useCallback((event: WebViewMessageEvent) => {
+    let message: { type?: unknown; detail?: unknown };
+    try {
+      message = JSON.parse(event.nativeEvent.data);
+    } catch {
+      return;
+    }
+    const detail = message?.detail;
+    if (message?.type === "save") {
+      if (!detail || typeof detail !== "object") return;
+      const { id, ts, data } = detail as { id?: unknown; ts?: unknown; data?: unknown };
+      if (typeof id !== "string" || typeof ts !== "number" || !Number.isFinite(ts) || ts < 0 || typeof data !== "string") return;
+      AsyncStorage.setItem(`pokeboy.sav.${id}`, JSON.stringify({ v: 1, ts, data })).catch(() => {});
+    } else if (message?.type === "save-request") {
+      if (!detail || typeof detail !== "object") return;
+      const { id, nonce } = detail as { id?: unknown; nonce?: unknown };
+      if (typeof id !== "string") return;
+      AsyncStorage.getItem(`pokeboy.sav.${id}`)
+        .then((raw) => {
+          let save: { ts: number; data: string } | null = null;
+          try {
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed?.v === 1 && typeof parsed.ts === "number" && Number.isFinite(parsed.ts) && parsed.ts >= 0 && typeof parsed.data === "string") {
+              save = { ts: parsed.ts, data: parsed.data };
+            }
+          } catch {}
+          postToEmulator({ type: "save-data", id, nonce, ts: save?.ts ?? 0, data: save?.data ?? null });
+        })
+        .catch(() => postToEmulator({ type: "save-data", id, nonce, ts: 0, data: null }));
+    } else if (message?.type === "save-corrupt") {
+      console.warn("Pokeboy save corrupt", detail);
+    } else if (message?.type === "error" || message?.type === "cache-error") {
+      console.warn(`Pokeboy ${message.type}`, detail);
+    } else if (
+      message?.type === "ready" ||
+      message?.type === "mods" ||
+      message?.type === "rom-source" ||
+      message?.type === "payload-source"
+    ) {
+      console.log(`Pokeboy ${message.type}`, detail);
+    }
+  }, [postToEmulator]);
   const setInput = useCallback((group: InputGroup, mask: number, held: boolean) => {
     const next = held ? inputRef.current[group] | mask : inputRef.current[group] & ~mask;
     inputRef.current = { ...inputRef.current, [group]: next };
@@ -292,17 +340,26 @@ export default function EmulatorScreen() {
 
   const onBodyLayout = (e: LayoutChangeEvent) => setBodyTop(e.nativeEvent.layout.y);
 
+  const emulatorUri = useMemo(
+    () => (cartridge ? api.emulatorUrl(cartridge.id, cartridge.version) : null),
+    [api, cartridge?.id, cartridge?.version],
+  );
+  const modsList = useMemo(() => Array.from(enabledMods), [enabledMods]);
+  const emulatorContextValue = useMemo(
+    () => ({
+      uri: emulatorUri,
+      webViewRef,
+      onMessage,
+      setInput,
+      settings: emulatorSettings,
+      paused: ejected,
+      mods: modsList,
+    }),
+    [emulatorUri, webViewRef, onMessage, setInput, emulatorSettings, ejected, modsList],
+  );
+
   return (
-    <EmulatorContext.Provider
-      value={{
-        uri: cartridge ? api.emulatorUrl(cartridge.id, cartridge.version) : null,
-        webViewRef,
-        setInput,
-        settings: emulatorSettings,
-        paused: ejected,
-        mods: Array.from(enabledMods),
-      }}
-    >
+    <EmulatorContext.Provider value={emulatorContextValue}>
     <View style={styles.page}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar hidden />
@@ -1116,7 +1173,14 @@ function Bezel({
 }
 
 function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
-  const { uri, webViewRef, settings, paused, mods } = useContext(EmulatorContext);
+  const { uri, webViewRef, onMessage, settings, paused, mods } = useContext(EmulatorContext);
+  const onLoad = useCallback(() => {
+    // A fresh WebView needs the current host state immediately.
+    webViewRef.current?.postMessage(JSON.stringify({ type: "input", buttons: 0, dpad: 0 }));
+    webViewRef.current?.postMessage(JSON.stringify({ type: "settings", ...settings }));
+    webViewRef.current?.postMessage(JSON.stringify({ type: "paused", value: paused }));
+    webViewRef.current?.postMessage(JSON.stringify({ type: "mods", ids: mods }));
+  }, [webViewRef, settings, paused, mods]);
   return (
     <View style={[styles.lcd, { width, height, borderRadius: u(4), borderWidth: u(1.5) }]}>
       {uri ? (
@@ -1130,13 +1194,11 @@ function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
           javaScriptEnabled
           allowsInlineMediaPlayback
           mediaPlaybackRequiresUserAction={false}
-          onLoad={() => {
-            // A fresh WebView needs the current host state immediately.
-            webViewRef.current?.postMessage(JSON.stringify({ type: "input", buttons: 0, dpad: 0 }));
-            webViewRef.current?.postMessage(JSON.stringify({ type: "settings", ...settings }));
-            webViewRef.current?.postMessage(JSON.stringify({ type: "paused", value: paused }));
-            webViewRef.current?.postMessage(JSON.stringify({ type: "mods", ids: mods }));
-          }}
+          onMessage={onMessage}
+          onLoad={onLoad}
+          // Android/iOS can kill the WebView's content process under memory
+          // pressure; reload and let onLoad replay the host state.
+          onContentProcessDidTerminate={() => webViewRef.current?.reload()}
         />
       ) : (
         <View style={styles.lcdWell} pointerEvents="none" />
