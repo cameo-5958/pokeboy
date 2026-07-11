@@ -46,6 +46,8 @@ const DEVICE_ID_KEY = "pokeboy.device-id.v1";
 const TELEMETRY_FLUSH_MS = 5000;
 const LCD_DRAIN_MS = 300;
 const LABEL_CACHE_PREFIX = "pokeboy.label.v1:";
+const CARTRIDGE_RETRY_MS = 15000;
+const DEV_POLL_MS = 750;
 
 function blobToDataUri(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -116,16 +118,18 @@ function modMetrics(u: Unit) {
   const nameH = u(18); // name row, flanked by the scroll arrows
   const descH = u(24); // two lines of description
   const btnH = u(22); // YES / NO row
+  const configH = u(22); // per-mod CONFIG button below the YES / NO row
   const gap = u(6);
   const stackGap = u(8); // between the browser panel and the count panel
   const countH = u(24);
   const settingsH = u(26);
-  const panelH = pad * 2 + nameH + gap + descH + gap + btnH;
+  const panelH = pad * 2 + nameH + gap + descH + gap + btnH + gap + configH;
   return {
     pad,
     nameH,
     descH,
     btnH,
+    configH,
     gap,
     stackGap,
     countH,
@@ -254,9 +258,36 @@ export default function EmulatorScreen() {
     [speedIdx, muted, volume, settings.telemetry],
   );
 
+  // The list is local-first, so a launch while the backend is unreachable
+  // (e.g. VPN not up yet) resolves from the offline cache — which can include
+  // cartridges since removed server-side. Keep retrying, and re-check when the
+  // app foregrounds, until a fresh response replaces any stale entries.
   useEffect(() => {
     if (!settingsLoaded) return;
-    api.listCartridges().then(setCartridges).catch(() => setCartridges([]));
+    let alive = true;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const load = async () => {
+      try {
+        const { data, fresh } = await api.listCartridges();
+        if (!alive) return;
+        setCartridges(data);
+        setCartridgeIdx((i) => Math.min(i, Math.max(0, data.length - 1)));
+        if (!fresh) retry = setTimeout(load, CARTRIDGE_RETRY_MS);
+      } catch {
+        if (!alive) return;
+        setCartridges([]);
+        retry = setTimeout(load, CARTRIDGE_RETRY_MS);
+      }
+    };
+    load();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") load();
+    });
+    return () => {
+      alive = false;
+      if (retry) clearTimeout(retry);
+      subscription.remove();
+    };
   }, [api, settingsLoaded]);
 
   const labelUrls = useMemo(
@@ -297,13 +328,29 @@ export default function EmulatorScreen() {
             previous[url] === dataUri ? previous : { ...previous, [url]: dataUri },
           );
         })
-        .catch(() => {});
+        .catch((error) => {
+          // Un-mark the URL so the next cartridge-list refresh retries it
+          // (a launch-time failure would otherwise hide labels all session).
+          requestedLabelUrlsRef.current.delete(url);
+          console.warn("Pokeboy label fetch failed", url, error);
+        });
     }
   }, [labelUrls]);
 
   const postToEmulator = useCallback((message: object) => {
     webViewRef.current?.postMessage(JSON.stringify(message));
   }, []);
+  // Dev-mode remote presses overlay the user's physical input; the emulator
+  // always receives the OR of both so neither source can drop the other's held
+  // buttons.
+  const devInputRef = useRef({ buttons: 0, dpad: 0 });
+  const sendMergedInput = useCallback(() => {
+    postToEmulator({
+      type: "input",
+      buttons: inputRef.current.buttons | devInputRef.current.buttons,
+      dpad: inputRef.current.dpad | devInputRef.current.dpad,
+    });
+  }, [postToEmulator]);
   const onMessage = useCallback((event: WebViewMessageEvent) => {
     let message: { type?: unknown; detail?: unknown };
     try {
@@ -345,6 +392,11 @@ export default function EmulatorScreen() {
       }
     } else if (message?.type === "telemetry") {
       if (settings.telemetry) telemetrySnapshotsRef.current.push(detail);
+    } else if (message?.type === "dev-frame") {
+      if (!detail || typeof detail !== "object") return;
+      const { nonce, png } = detail as { nonce?: unknown; png?: unknown };
+      if (typeof nonce !== "string" || typeof png !== "string") return;
+      api.postDevResult({ id: nonce, ok: true, png }).catch(() => {});
     } else if (
       message?.type === "ready" ||
       message?.type === "mods" ||
@@ -353,12 +405,12 @@ export default function EmulatorScreen() {
     ) {
       console.log(`Pokeboy ${message.type}`, detail);
     }
-  }, [postToEmulator, settings.telemetry]);
+  }, [postToEmulator, settings.telemetry, api]);
   const setInput = useCallback((group: InputGroup, mask: number, held: boolean) => {
     const next = held ? inputRef.current[group] | mask : inputRef.current[group] & ~mask;
     inputRef.current = { ...inputRef.current, [group]: next };
-    postToEmulator({ type: "input", ...inputRef.current });
-  }, [postToEmulator]);
+    sendMergedInput();
+  }, [sendMergedInput]);
 
   useEffect(() => {
     postToEmulator({
@@ -368,9 +420,12 @@ export default function EmulatorScreen() {
   }, [emulatorSettings, postToEmulator]);
 
   useEffect(() => {
-    if (ejected) inputRef.current = { buttons: 0, dpad: 0 };
+    if (ejected) {
+      inputRef.current = { buttons: 0, dpad: 0 };
+      devInputRef.current = { buttons: 0, dpad: 0 };
+    }
     postToEmulator({ type: "paused", value: ejected });
-    if (ejected) postToEmulator({ type: "input", ...inputRef.current });
+    if (ejected) sendMergedInput();
     if (!ejected) return;
 
     const drainTimer = setTimeout(() => {
@@ -382,7 +437,7 @@ export default function EmulatorScreen() {
       clearTimeout(drainTimer);
       if (lcdDrainTimerRef.current === drainTimer) lcdDrainTimerRef.current = null;
     };
-  }, [ejected, postToEmulator]);
+  }, [ejected, postToEmulator, sendMergedInput]);
 
   useEffect(() => {
     postToEmulator({ type: "mods", ids: Array.from(enabledMods) });
@@ -424,6 +479,67 @@ export default function EmulatorScreen() {
       telemetryEventsRef.current = [];
     };
   }, [settings.telemetry, api]);
+
+  // Dev mode: poll the backend for remote-control commands (MCP-issued button
+  // presses and LCD screenshot requests) while the toggle is on.
+  useEffect(() => {
+    if (!settings.devMode) return;
+    let alive = true;
+    const pressTimers = new Set<ReturnType<typeof setTimeout>>();
+
+    const applyPress = (cmd: { buttons: number; dpad: number; holdMs: number }) => {
+      devInputRef.current = {
+        buttons: devInputRef.current.buttons | cmd.buttons,
+        dpad: devInputRef.current.dpad | cmd.dpad,
+      };
+      sendMergedInput();
+      const timer = setTimeout(() => {
+        pressTimers.delete(timer);
+        devInputRef.current = {
+          buttons: devInputRef.current.buttons & ~cmd.buttons,
+          dpad: devInputRef.current.dpad & ~cmd.dpad,
+        };
+        sendMergedInput();
+      }, Math.min(Math.max(cmd.holdMs, 16), 5000));
+      pressTimers.add(timer);
+    };
+
+    const tick = async () => {
+      const deviceId = deviceIdRef.current;
+      if (!deviceId) return;
+      let commands;
+      try {
+        commands = await api.pollDevCommands(deviceId);
+      } catch {
+        return; // backend unreachable — try again next tick
+      }
+      if (!alive) return;
+      for (const cmd of commands) {
+        if (cmd.kind === "press") {
+          applyPress(cmd);
+          api.postDevResult({ id: cmd.id, ok: true }).catch(() => {});
+        } else if (cmd.kind === "screenshot") {
+          if (webViewRef.current && !lcdDead) {
+            // The embed replies with a dev-frame message; onMessage forwards
+            // the PNG to the backend. Its dispatch timeout covers a dead page.
+            postToEmulator({ type: "dev-frame", nonce: cmd.id });
+          } else {
+            api.postDevResult({ id: cmd.id, ok: false, error: "Emulator not running" }).catch(() => {});
+          }
+        }
+      }
+    };
+
+    const interval = setInterval(tick, DEV_POLL_MS);
+    void tick();
+    return () => {
+      alive = false;
+      clearInterval(interval);
+      for (const timer of pressTimers) clearTimeout(timer);
+      devInputRef.current = { buttons: 0, dpad: 0 };
+      sendMergedInput();
+    };
+  }, [settings.devMode, api, lcdDead, postToEmulator, sendMergedInput]);
 
   const selectCartridge = (direction: -1 | 1) => {
     if (cartridges.length < 2) return;
@@ -945,6 +1061,7 @@ function ModChanger({
 }) {
   const [idx, setIdx] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
   const m = modMetrics(u);
   const width = landscape ? u(170) : cartWidth + u(24);
   const opacity = anim.interpolate({ inputRange: [1, 2], outputRange: [0, 1], extrapolate: "clamp" });
@@ -959,6 +1076,10 @@ function ModChanger({
   const toggleSettings = () => {
     playSfx("select");
     setSettingsOpen((v) => !v);
+  };
+  const toggleConfig = () => {
+    playSfx("select");
+    setConfigOpen((v) => !v);
   };
 
   return (
@@ -995,7 +1116,24 @@ function ModChanger({
           <ModChoice u={u} h={m.btnH} label="YES" active={on} onPress={() => onSet(mod.id, true)} />
           <ModChoice u={u} h={m.btnH} label="NO" active={!on} onPress={() => onSet(mod.id, false)} />
         </View>
+        <Pressable
+          onPress={toggleConfig}
+          style={({ pressed }) => [
+            styles.settingsButton,
+            { height: m.configH, borderRadius: u(5), marginTop: m.gap },
+            pressed && { opacity: 0.62 },
+          ]}
+        >
+          <Text
+            selectable={false}
+            style={[styles.modName, styles.settingsButtonText, { fontSize: u(8), letterSpacing: u(1) }]}
+          >
+            CONFIG
+          </Text>
+        </Pressable>
       </View>
+
+      {active ? <ModConfigModal open={configOpen} mod={mod} onClose={toggleConfig} /> : null}
 
       {/* Panel 2: enabled count */}
       <View
@@ -1176,6 +1314,25 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
             </View>
           </View>
 
+          <View style={styles.settingsField}>
+            <View style={styles.settingsToggleRow}>
+              <View style={{ flex: 1 }}>
+                <Text selectable={false} style={styles.settingsFieldLabel}>
+                  DEV MODE
+                </Text>
+                <Text selectable={false} style={styles.settingsToggleHint}>
+                  Allow remote button presses &amp; LCD screenshots
+                </Text>
+              </View>
+              <Switch
+                value={settings.devMode}
+                onValueChange={(v) => updateSettings({ devMode: v })}
+                trackColor={{ false: "#aaa596", true: "#9a1f4c" }}
+                thumbColor="#d8d4c6"
+              />
+            </View>
+          </View>
+
           <View style={styles.settingsSyncSection}>
             <Pressable
               onPress={pullLatest}
@@ -1253,6 +1410,49 @@ function PullResult({ pull }: { pull: PullState }) {
         ))}
       </View>
     </View>
+  );
+}
+
+// Per-mod configuration pop-up. Same full-screen Modal treatment as the
+// settings dialog. Placeholder body for now — each mod's actual config
+// controls get wired in here later.
+function ModConfigModal({
+  open,
+  mod,
+  onClose,
+}: {
+  open: boolean;
+  mod: (typeof MODS)[number];
+  onClose: () => void;
+}) {
+  const { width } = useWindowDimensions();
+  const cardWidth = Math.min(width * 0.86, 380);
+  return (
+    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
+      {/* Backdrop — tapping outside the card closes the dialog. */}
+      <Pressable style={styles.settingsBackdrop} onPress={onClose}>
+        {/* Stop taps on the card itself from bubbling to the backdrop. */}
+        <Pressable style={[styles.settingsCard, { width: cardWidth }]} onPress={() => {}}>
+          <View style={styles.settingsCardHeader}>
+            <Text selectable={false} style={styles.settingsTitle}>
+              {mod.name} CONFIG
+            </Text>
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={({ pressed }) => [styles.settingsCloseBtn, pressed && { opacity: 0.6 }]}
+            >
+              <Text selectable={false} style={styles.settingsCloseBtnText}>
+                ✕
+              </Text>
+            </Pressable>
+          </View>
+          <Text selectable={false} style={styles.modConfigPlaceholder}>
+            No options for this mod yet.
+          </Text>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -1452,7 +1652,7 @@ function DpadZone({ style, mask }: { style: object; mask: number }) {
   const { setInput } = useContext(EmulatorContext);
   return (
     <Pressable
-      onPressIn={() => { playSfx("dpad"); setInput("dpad", mask, true); }}
+      onPressIn={() => { setInput("dpad", mask, true); playSfx("dpad"); }}
       onPressOut={() => setInput("dpad", mask, false)}
       style={({ pressed }) => [{ position: "absolute" }, style, pressed && styles.dpadZonePressed]}
     />
@@ -1488,7 +1688,7 @@ function FaceButton({
   const mask = label === "A" ? 0x01 : 0x02;
   return (
     <Pressable
-      onPressIn={() => { playSfx(label === "A" ? "a" : "b"); setInput("buttons", mask, true); }}
+      onPressIn={() => { setInput("buttons", mask, true); playSfx(label === "A" ? "a" : "b"); }}
       onPressOut={() => setInput("buttons", mask, false)}
       style={({ pressed }) => [
         styles.faceButton,
@@ -1519,8 +1719,8 @@ function Pill({ u, label }: { u: Unit; label: string }) {
   return (
     <Pressable
       onPressIn={() => {
-        playSfx(label === "START" ? "start" : "select");
         setInput("buttons", mask, true);
+        playSfx(label === "START" ? "start" : "select");
       }}
       onPressOut={() => setInput("buttons", mask, false)}
       style={({ pressed }) => [styles.pillGroup, pressed && { opacity: 0.55 }]}
@@ -1902,6 +2102,11 @@ const styles = StyleSheet.create({
   },
   settingsButtonTextOn: {
     color: "#d6d1c2",
+  },
+  modConfigPlaceholder: {
+    color: "#6b665a",
+    fontWeight: "600",
+    userSelect: "none",
   },
   settingsBackdrop: {
     flex: 1,

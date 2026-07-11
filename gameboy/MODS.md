@@ -134,6 +134,8 @@ terminated UTF-8 string. `0xffffffff` is the optional-string sentinel.
 
 Metadata is intentionally opaque to the C++ linker. JSON is recommended for
 frontend-facing version, dependency, author, permission, and configuration data.
+The configuration portion of that JSON is specified in
+[Mod configuration metadata](#mod-configuration-metadata).
 
 ### Import record (8 bytes)
 
@@ -211,6 +213,71 @@ Relocation types are:
 
 The fixture builders in `tests/mod_tests.cpp` are executable examples of v1
 package construction and link behavior.
+
+## Mod configuration metadata
+
+A mod that exposes user-tweakable settings declares them in the package's
+opaque metadata blob as JSON. The linker never reads this; it is a contract
+between the mod author and the frontend, which renders each mod's CONFIG
+pop-up from the declaration and persists the chosen values per mod id.
+
+The metadata object's `config` field is an ordered array of setting
+descriptors. A mod with no `config` field (or an empty array) has no options,
+and the frontend shows a "no options" placeholder.
+
+```json
+{
+  "name": "Turbo CPU",
+  "version": "1.2.0",
+  "config": [
+    { "key": "boot_enabled", "label": "ON AT BOOT", "type": "toggle",
+      "default": true },
+    { "key": "multiplier", "label": "SPEED", "type": "enum", "default": "x2",
+      "options": [
+        { "value": "x2", "label": "DOUBLE" },
+        { "value": "x4", "label": "QUAD" }
+      ] },
+    { "key": "threshold", "label": "TRIGGER THRESHOLD", "type": "int",
+      "default": 8, "min": 0, "max": 255, "step": 1 }
+  ]
+}
+```
+
+### Setting descriptor
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `key` | yes | Stable identifier, unique within the mod. `[a-z0-9_]+`. Persisted values are stored against `key`, so renaming one discards the saved value. |
+| `label` | yes | Short display name for the CONFIG pop-up. Uppercase by convention, to match the UI. |
+| `type` | yes | `toggle`, `enum`, or `int` (below). |
+| `default` | yes | Value used until the user changes the setting, and the fallback when a saved value fails validation. Must itself be valid for the descriptor. |
+| `description` | no | One or two sentences shown under the control. |
+
+Per-type fields:
+
+- `toggle` — boolean on/off. No extra fields; `default` is `true` or `false`.
+- `enum` — one choice from a fixed list. `options` is a non-empty array of
+  `{ "value": string, "label": string }` (or bare strings, which serve as both
+  value and label). `default` must be one of the values.
+- `int` — integer in an inclusive range. `min` and `max` are required;
+  optional `step` (default `1`) must evenly divide `max - min`. Descriptors
+  should stay within what the mod can actually consume — typically a byte,
+  since values commonly travel through registers or WRAM.
+
+Unknown descriptor fields are ignored, so authors may carry extra data.
+A descriptor with an unknown `type` renders read-only as its default and the
+saved value, if any, is preserved untouched.
+
+### Reading values at runtime
+
+Settings storage is frontend state; linked Game Boy code never sees the JSON.
+A mod that needs a value at runtime declares an ordinary host import (e.g.
+`turbo.get_config`) and reads the current values through the host-call ABI —
+registers in, registers out, or staged through WRAM. The frontend binding for
+that import closes over the mod's saved settings, so a value change takes
+effect on the next host call without relinking. Values a mod only needs at
+link time (fill bytes, patch variants) are not config settings; ship them as
+separate packages instead.
 
 ## Performance contract
 

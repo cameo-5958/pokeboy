@@ -5,6 +5,7 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 
+import { dispatch, listDevices, liveDevices } from "./dev.js";
 import { getEvents, getSeries, listSessions } from "./telemetry.js";
 
 const DEFAULT_BIND = "100.65.93.90";
@@ -71,7 +72,104 @@ function createTelemetryMcpServer(): McpServer {
     },
   );
 
+  registerDevTools(server);
+
   return server;
+}
+
+// Bit masks matching the app/emulator input protocol.
+const BUTTON_MASKS: Record<string, { group: "buttons" | "dpad"; mask: number }> = {
+  a: { group: "buttons", mask: 0x01 },
+  b: { group: "buttons", mask: 0x02 },
+  select: { group: "buttons", mask: 0x04 },
+  start: { group: "buttons", mask: 0x08 },
+  right: { group: "dpad", mask: 0x01 },
+  left: { group: "dpad", mask: 0x02 },
+  up: { group: "dpad", mask: 0x04 },
+  down: { group: "dpad", mask: 0x08 },
+};
+
+const BUTTON_NAMES = Object.keys(BUTTON_MASKS) as [string, ...string[]];
+
+/** Pick the target device: explicit id, or the only one live, else explain. */
+function resolveDevice(deviceId: string | undefined): { device?: string; error?: string } {
+  if (deviceId) return { device: deviceId };
+  const live = liveDevices();
+  if (live.length === 1) return { device: live[0] };
+  if (live.length === 0) {
+    return { error: "No device is polling for dev commands. Toggle DEV MODE on in the app settings." };
+  }
+  return { error: `Multiple live devices; pass device_id. Live: ${live.join(", ")}` };
+}
+
+/**
+ * Dev-mode remote control (opt-in DEV MODE toggle in the app): press emulator
+ * buttons and capture the LCD framebuffer of a connected device.
+ */
+function registerDevTools(server: McpServer): void {
+  server.registerTool(
+    "dev_status",
+    { description: "List devices that have polled for dev-mode commands (DEV MODE toggle)." },
+    async () => jsonContent(listDevices()),
+  );
+
+  server.registerTool(
+    "dev_press",
+    {
+      description:
+        "Press one or more Game Boy buttons on a dev-mode device (a, b, start, select, up, down, left, right), holding for hold_ms (default 150).",
+      inputSchema: {
+        buttons: z.array(z.enum(BUTTON_NAMES)).min(1),
+        hold_ms: z.number().int().min(16).max(5000).optional(),
+        device_id: z.string().min(1).optional(),
+      },
+    },
+    async ({ buttons, hold_ms, device_id }) => {
+      const { device, error } = resolveDevice(device_id);
+      if (!device) return { ...jsonContent({ error }), isError: true };
+      let buttonMask = 0;
+      let dpadMask = 0;
+      for (const name of buttons) {
+        const { group, mask } = BUTTON_MASKS[name];
+        if (group === "buttons") buttonMask |= mask;
+        else dpadMask |= mask;
+      }
+      const result = await dispatch(device, {
+        kind: "press",
+        buttons: buttonMask,
+        dpad: dpadMask,
+        holdMs: hold_ms ?? 150,
+      });
+      if (!result.ok) return { ...jsonContent({ error: result.error }), isError: true };
+      return jsonContent({ pressed: buttons, holdMs: hold_ms ?? 150, device });
+    },
+  );
+
+  server.registerTool(
+    "dev_screenshot",
+    {
+      description:
+        "Capture the current 160x144 emulator LCD frame from a dev-mode device as a PNG.",
+      inputSchema: { device_id: z.string().min(1).optional() },
+    },
+    async ({ device_id }) => {
+      const { device, error } = resolveDevice(device_id);
+      if (!device) return { ...jsonContent({ error }), isError: true };
+      const result = await dispatch(device, { kind: "screenshot" });
+      const prefix = "data:image/png;base64,";
+      if (!result.ok || !result.png?.startsWith(prefix)) {
+        return {
+          ...jsonContent({ error: result.error ?? "Device returned no frame" }),
+          isError: true,
+        };
+      }
+      return {
+        content: [
+          { type: "image" as const, data: result.png.slice(prefix.length), mimeType: "image/png" as const },
+        ],
+      };
+    },
+  );
 }
 
 export function startMcpServer(): HttpServer {
