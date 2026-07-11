@@ -37,6 +37,15 @@ export type ApiConfig = { baseUrl?: string; apiKey?: string };
 
 export type Api = ReturnType<typeof createApi>;
 
+/** Opt-in telemetry payload — a batch of buffered snapshots/events for one device+session. */
+export interface TelemetryPayload {
+  device: { id: string; os: string };
+  session: string;
+  cartridge: string | null;
+  snapshots: unknown[];
+  events: unknown[];
+}
+
 /**
  * Builds a backend client bound to a given base URL + API key. Callers pass the
  * user's saved settings so every request hits the configured backend and sends
@@ -84,6 +93,15 @@ export function createApi(cfg: ApiConfig = {}) {
       return `${base}/emulator/embed.html?${query}${key}`;
     },
     fetchRegistry: () => get<Registry>("/api/registry"),
+    /** Fire-and-forget telemetry upload; callers should swallow rejections. */
+    postTelemetry: async (body: unknown): Promise<void> => {
+      const res = await fetch(`${base}/api/telemetry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+    },
   };
 }
 import AsyncStorage from "@react-native-async-storage/async-storage";

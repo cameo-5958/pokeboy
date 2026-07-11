@@ -4,11 +4,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
+  AppState,
   Image,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -39,6 +42,31 @@ const PAD_BOTTOM = 28;
 const PULL_DIST = 56; // drag distance that fully pulls the cartridge out
 const SPEEDS = ["x0.5", "x1", "x3", "xINF"] as const;
 
+const DEVICE_ID_KEY = "pokeboy.device-id.v1";
+const TELEMETRY_FLUSH_MS = 5000;
+const LCD_DRAIN_MS = 300;
+const LABEL_CACHE_PREFIX = "pokeboy.label.v1:";
+
+function blobToDataUri(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Could not encode cartridge label"));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read cartridge label"));
+    reader.onabort = () => reject(new Error("Cartridge label read was aborted"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Short opaque id — good enough to distinguish devices/sessions, not a real UUID. */
+function genId(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+type TelemetryEvent = { t: number; kind: string; detail: unknown };
+
 type Unit = (value: number) => number;
 type Translate = Animated.AnimatedInterpolation<number>;
 type AnimValue = Animated.Value;
@@ -50,7 +78,7 @@ const EmulatorContext = createContext<{
   webViewRef: { current: WebView | null };
   onMessage: (event: WebViewMessageEvent) => void;
   setInput: (group: InputGroup, mask: number, held: boolean) => void;
-  settings: { speed: number | "inf"; muted: boolean; volume: number };
+  settings: { speed: number | "inf"; muted: boolean; volume: number; telemetry: boolean };
   paused: boolean;
   mods: readonly string[];
 }>({
@@ -58,7 +86,7 @@ const EmulatorContext = createContext<{
   webViewRef: { current: null },
   onMessage: () => undefined,
   setInput: () => undefined,
-  settings: { speed: 1, muted: false, volume: 1 },
+  settings: { speed: 1, muted: false, volume: 1, telemetry: false },
   paused: false,
   mods: [],
 });
@@ -161,27 +189,117 @@ export default function EmulatorScreen() {
   // State mirror of ejectedRef so the mod panel can gate its touch handling
   // (it sits at opacity 0 while the cartridge is seated).
   const [ejected, setEjected] = useState(false);
+  const [lcdDead, setLcdDead] = useState(false);
+  const lcdDrainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [volume, setVolume] = useState(0.72);
   const [muted, setMuted] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(1);
   const [cartridges, setCartridges] = useState<CartridgeInfo[]>([]);
   const [cartridgeIdx, setCartridgeIdx] = useState(0);
+  const [labelImages, setLabelImages] = useState<Record<string, string>>({});
+  const requestedLabelUrlsRef = useRef(new Set<string>());
+  const refreshedLabelUrlsRef = useRef(new Set<string>());
+  const mountedRef = useRef(true);
   const webViewRef = useRef<WebView | null>(null);
   const inputRef = useRef({ buttons: 0, dpad: 0 });
   const cartridge = cartridges[cartridgeIdx] ?? null;
+  // Latest cartridge id, readable from the flush interval without adding
+  // `cartridge` to that effect's deps (which would restart the timer).
+  const cartridgeIdRef = useRef<string | null>(null);
+  cartridgeIdRef.current = cartridge?.id ?? null;
+
+  // Opt-in telemetry: identity + buffers. Buffers are refs (not state) so a
+  // snapshot arriving every second never triggers a re-render or changes any
+  // memoized prop identity (WebView, context value, etc.).
+  const deviceIdRef = useRef<string | null>(null);
+  const sessionIdRef = useRef<string>(genId());
+  const telemetrySnapshotsRef = useRef<unknown[]>([]);
+  const telemetryEventsRef = useRef<TelemetryEvent[]>([]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem(DEVICE_ID_KEY)
+      .then((raw) => {
+        if (!alive) return;
+        if (raw) {
+          deviceIdRef.current = raw;
+          return;
+        }
+        const id = genId();
+        deviceIdRef.current = id;
+        AsyncStorage.setItem(DEVICE_ID_KEY, id).catch(() => {});
+      })
+      .catch(() => {
+        // Fall back to a session-only id if storage is unavailable.
+        if (alive && !deviceIdRef.current) deviceIdRef.current = genId();
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
   const emulatorSettings = useMemo(
     () => ({
       speed: (SPEEDS[speedIdx] === "xINF" ? "inf" : Number(SPEEDS[speedIdx].slice(1))) as number | "inf",
       muted,
       volume,
+      telemetry: settings.telemetry,
     }),
-    [speedIdx, muted, volume],
+    [speedIdx, muted, volume, settings.telemetry],
   );
 
   useEffect(() => {
     if (!settingsLoaded) return;
     api.listCartridges().then(setCartridges).catch(() => setCartridges([]));
   }, [api, settingsLoaded]);
+
+  const labelUrls = useMemo(
+    () => Array.from(new Set(cartridges.flatMap((item) => (item.img ? [item.img] : [])))),
+    [cartridges],
+  );
+
+  useEffect(() => {
+    for (const url of labelUrls) {
+      if (requestedLabelUrlsRef.current.has(url)) continue;
+      requestedLabelUrlsRef.current.add(url);
+      const cacheKey = `${LABEL_CACHE_PREFIX}${url}`;
+
+      AsyncStorage.getItem(cacheKey)
+        .then((cached) => {
+          if (
+            !cached ||
+            !mountedRef.current ||
+            refreshedLabelUrlsRef.current.has(url)
+          ) return;
+          setLabelImages((previous) =>
+            previous[url] === cached ? previous : { ...previous, [url]: cached },
+          );
+        })
+        .catch(() => {});
+
+      fetch(url)
+        .then((response) => {
+          if (!response.ok) throw new Error(`Label request failed: ${response.status}`);
+          return response.blob();
+        })
+        .then(blobToDataUri)
+        .then((dataUri) => {
+          refreshedLabelUrlsRef.current.add(url);
+          AsyncStorage.setItem(cacheKey, dataUri).catch(() => {});
+          if (!mountedRef.current) return;
+          setLabelImages((previous) =>
+            previous[url] === dataUri ? previous : { ...previous, [url]: dataUri },
+          );
+        })
+        .catch(() => {});
+    }
+  }, [labelUrls]);
 
   const postToEmulator = useCallback((message: object) => {
     webViewRef.current?.postMessage(JSON.stringify(message));
@@ -217,8 +335,16 @@ export default function EmulatorScreen() {
         .catch(() => postToEmulator({ type: "save-data", id, nonce, ts: 0, data: null }));
     } else if (message?.type === "save-corrupt") {
       console.warn("Pokeboy save corrupt", detail);
+      if (settings.telemetry) {
+        telemetryEventsRef.current.push({ t: Date.now(), kind: "save-corrupt", detail });
+      }
     } else if (message?.type === "error" || message?.type === "cache-error") {
       console.warn(`Pokeboy ${message.type}`, detail);
+      if (settings.telemetry) {
+        telemetryEventsRef.current.push({ t: Date.now(), kind: message.type, detail });
+      }
+    } else if (message?.type === "telemetry") {
+      if (settings.telemetry) telemetrySnapshotsRef.current.push(detail);
     } else if (
       message?.type === "ready" ||
       message?.type === "mods" ||
@@ -227,7 +353,7 @@ export default function EmulatorScreen() {
     ) {
       console.log(`Pokeboy ${message.type}`, detail);
     }
-  }, [postToEmulator]);
+  }, [postToEmulator, settings.telemetry]);
   const setInput = useCallback((group: InputGroup, mask: number, held: boolean) => {
     const next = held ? inputRef.current[group] | mask : inputRef.current[group] & ~mask;
     inputRef.current = { ...inputRef.current, [group]: next };
@@ -239,17 +365,65 @@ export default function EmulatorScreen() {
       type: "settings",
       ...emulatorSettings,
     });
-  }, [muted, postToEmulator, speedIdx, volume]);
+  }, [emulatorSettings, postToEmulator]);
 
   useEffect(() => {
     if (ejected) inputRef.current = { buttons: 0, dpad: 0 };
     postToEmulator({ type: "paused", value: ejected });
     if (ejected) postToEmulator({ type: "input", ...inputRef.current });
+    if (!ejected) return;
+
+    const drainTimer = setTimeout(() => {
+      lcdDrainTimerRef.current = null;
+      if (ejectedRef.current) setLcdDead(true);
+    }, LCD_DRAIN_MS);
+    lcdDrainTimerRef.current = drainTimer;
+    return () => {
+      clearTimeout(drainTimer);
+      if (lcdDrainTimerRef.current === drainTimer) lcdDrainTimerRef.current = null;
+    };
   }, [ejected, postToEmulator]);
 
   useEffect(() => {
     postToEmulator({ type: "mods", ids: Array.from(enabledMods) });
   }, [enabledMods, postToEmulator]);
+
+  // Telemetry flush: only active while the toggle is on. Buffers are swapped
+  // out (not copied) so a slow network request can't double-send. Flushes on
+  // a timer and eagerly when the app backgrounds, so nothing is lost on exit.
+  useEffect(() => {
+    if (!settings.telemetry) {
+      telemetrySnapshotsRef.current = [];
+      telemetryEventsRef.current = [];
+      return;
+    }
+    const flush = () => {
+      const snapshots = telemetrySnapshotsRef.current;
+      const events = telemetryEventsRef.current;
+      if (snapshots.length === 0 && events.length === 0) return;
+      telemetrySnapshotsRef.current = [];
+      telemetryEventsRef.current = [];
+      api
+        .postTelemetry({
+          device: { id: deviceIdRef.current ?? "unknown", os: Platform.OS },
+          session: sessionIdRef.current,
+          cartridge: cartridgeIdRef.current,
+          snapshots,
+          events,
+        })
+        .catch(() => {});
+    };
+    const interval = setInterval(flush, TELEMETRY_FLUSH_MS);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "background" || state === "inactive") flush();
+    });
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+      telemetrySnapshotsRef.current = [];
+      telemetryEventsRef.current = [];
+    };
+  }, [settings.telemetry, api]);
 
   const selectCartridge = (direction: -1 | 1) => {
     if (cartridges.length < 2) return;
@@ -292,6 +466,11 @@ export default function EmulatorScreen() {
       };
       const insert = () => {
         ejectedRef.current = false;
+        if (lcdDrainTimerRef.current !== null) {
+          clearTimeout(lcdDrainTimerRef.current);
+          lcdDrainTimerRef.current = null;
+        }
+        setLcdDead(false);
         setEjected(false);
         playSfx("insert");
         anim.stopAnimation((v) => {
@@ -347,7 +526,7 @@ export default function EmulatorScreen() {
   const modsList = useMemo(() => Array.from(enabledMods), [enabledMods]);
   const emulatorContextValue = useMemo(
     () => ({
-      uri: emulatorUri,
+      uri: lcdDead ? null : emulatorUri,
       webViewRef,
       onMessage,
       setInput,
@@ -355,7 +534,7 @@ export default function EmulatorScreen() {
       paused: ejected,
       mods: modsList,
     }),
-    [emulatorUri, webViewRef, onMessage, setInput, emulatorSettings, ejected, modsList],
+    [emulatorUri, lcdDead, webViewRef, onMessage, setInput, emulatorSettings, ejected, modsList],
   );
 
   return (
@@ -384,7 +563,7 @@ export default function EmulatorScreen() {
             labelHeight={cart.labelHeight}
             height={cart.height}
             panHandlers={pan.panHandlers}
-            image={cartridge?.img ?? null}
+            image={cartridge?.img ? labelImages[cartridge.img] ?? cartridge.img : null}
           />
           <CartridgeArrow u={u} anim={anim} side="left" cartHeight={cart.height} onPress={() => selectCartridge(-1)} />
           <CartridgeArrow u={u} anim={anim} side="right" cartHeight={cart.height} onPress={() => selectCartridge(1)} />
@@ -976,6 +1155,25 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
               secureTextEntry
               style={styles.settingsInput}
             />
+          </View>
+
+          <View style={styles.settingsField}>
+            <View style={styles.settingsToggleRow}>
+              <View style={{ flex: 1 }}>
+                <Text selectable={false} style={styles.settingsFieldLabel}>
+                  TELEMETRY
+                </Text>
+                <Text selectable={false} style={styles.settingsToggleHint}>
+                  Stream emulator vitals to the backend
+                </Text>
+              </View>
+              <Switch
+                value={settings.telemetry}
+                onValueChange={(v) => updateSettings({ telemetry: v })}
+                trackColor={{ false: "#aaa596", true: "#9a1f4c" }}
+                thumbColor="#d8d4c6"
+              />
+            </View>
           </View>
 
           <View style={styles.settingsSyncSection}>
@@ -1773,6 +1971,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     fontSize: 14,
     color: "#33333c",
+  },
+  settingsToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  settingsToggleHint: {
+    marginTop: 2,
+    color: "#8a8577",
+    fontSize: 11,
+    lineHeight: 15,
+    userSelect: "none",
   },
   settingsSyncSection: {
     marginTop: 6,
