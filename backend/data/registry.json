@@ -1,6 +1,8 @@
 {
   "roms": [
-    { "id": "pokemon-red", "title": "Pokémon Red", "file": "pokemon-red.gb", "img": "poke-red.png", "version": "1.0.0" }
+    { "id": "pokemon-red", "title": "Pokémon Red", "file": "pokemon-red.gb", "img": "poke-red.png", "version": "1.0.0" },
+    { "id": "pokemon-blue", "title": "Pokémon Blue", "file": "pokemon-blue.gb", "img": "poke-blue.png", "version": "1.0.0" },
+    { "id": "pokemon-yellow", "title": "Pokémon Yellow", "file": "pokemon-yellow.gbc", "img": "poke-yellow.png", "version": "1.0.0" }
   ],
   "mods": [
     { "id": "turbo", "name": "TURBO CPU", "desc": "Overclocks the core for double-speed play.", "file": "turbo.mod", "version": "1.0.0" },

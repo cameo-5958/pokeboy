@@ -6,11 +6,9 @@ dist/
 data/keys.json
 
 # ROM binaries and user-supplied mod payloads are never committed.
-# ROM symbol documents (.sym) are fine to track — they contain no ROM data.
 roms/*.gb
 roms/*.gbc
 roms/*.rom
 mods/*
 !roms/.gitkeep
 !mods/.gitkeep
-!mods/*.sym
