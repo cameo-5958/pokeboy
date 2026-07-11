@@ -225,11 +225,11 @@ export default function EmulatorScreen() {
 
   useEffect(() => {
     mountedRef.current = true;
-    loadEmulatorAssets().then((assets) => {
-      if (mountedRef.current) setEmulatorAssets(assets);
-    }).catch((error) => {
+    try {
+      setEmulatorAssets(loadEmulatorAssets());
+    } catch (error) {
       console.error("Unable to load bundled emulator assets", error);
-    });
+    }
     return () => {
       mountedRef.current = false;
     };
