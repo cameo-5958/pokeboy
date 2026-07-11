@@ -295,7 +295,7 @@ export default function EmulatorScreen() {
   return (
     <EmulatorContext.Provider
       value={{
-        uri: cartridge ? api.emulatorUrl(cartridge.id) : null,
+        uri: cartridge ? api.emulatorUrl(cartridge.id, cartridge.version) : null,
         webViewRef,
         setInput,
         settings: emulatorSettings,
