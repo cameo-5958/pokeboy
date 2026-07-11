@@ -35,19 +35,9 @@
     let hostError=null,hostCallback=0;
     let saveDataWaiter=null,saveReady=false,saveNonce=null,mirrorBlocked=false,hasPersisted=false;
     let telemetry=false,telTimer=0,rafCount=0,frameCount=0;
-    let bootStage='script-start';
 
     function notify(type,detail){
       window.ReactNativeWebView?.postMessage(JSON.stringify({type,detail}));
-    }
-    function errorDetail(error,stage=bootStage){
-      const value=error instanceof Error?error:new Error(String(error));
-      return {message:value.message,name:value.name||'Error',stack:value.stack||null,stage};
-    }
-    function reportError(error,stage){
-      const detail=errorDetail(error,stage);
-      notify('error',detail);
-      return detail;
     }
     function receive(raw){
       try {
@@ -74,7 +64,7 @@
           if(userPaused){persistSave();pauseEmulation()}else resumeEmulation();
         } else if(msg.type==='mods') {
           desiredMods=Array.isArray(msg.ids)?msg.ids.filter(id=>typeof id==='string'):[];
-          modUpdate=modUpdate.then(reconcileMods).catch(error=>reportError(error,'mods-reconcile'));
+          modUpdate=modUpdate.then(reconcileMods).catch(error=>notify('error',error.message));
         } else if(msg.type==='dev-frame') {
           // Dev mode: hand the host a PNG of the LCD framebuffer (an OS
           // screenshot can't capture the WebView surface).
@@ -84,7 +74,7 @@
           if(saveDataWaiter){const resolve=saveDataWaiter;saveDataWaiter=null;resolve(msg)}
           else lateSaveData(msg); // host answered after the handshake timeout
         }
-      } catch(error){ reportError(error,'host-message'); }
+      } catch(error){ notify('error',String(error)); }
     }
     function openRomCache(){
       return new Promise((resolve,reject)=>{
@@ -418,7 +408,7 @@
       if(hostError){
         started=false; pauseEmulation();
         status.style.display='flex'; status.textContent=hostError.message;
-        reportError(hostError,'mod-host-callback');
+        notify('error',hostError.message);
       }
       frameCount+=frames; // free; read/reset only by the 1 Hz telemetry sampler
       if(frames) draw();
@@ -590,9 +580,7 @@
       }finally{modsBusy--;resumeEmulation()}
     }
     async function boot(){
-      bootStage='wasm-initialize';
       Module=await createGBCore({locateFile:file=>file});
-      bootStage='api-bindings';
       api={
         create:Module.cwrap('gb_create','number',[]),
         loadRom:Module.cwrap('gb_load_rom','number',['number','number','number']),
@@ -613,34 +601,27 @@
         saveRam:Module.cwrap('gb_save_ram','number',['number','number']),
         loadSaveRam:Module.cwrap('gb_load_save_ram','number',['number','number','number'])
       };
-      bootStage='core-create';
       gb=api.create();
       audioPtr=Module._malloc(AUDIO_MAX_FRAMES*2*4);
       AudioSystem.init().then(()=>AudioSystem.resume()).catch(()=>{}); // no audio: run silently (push() no-ops)
-      bootStage='host-bridge';
       installHostBridge();
-      bootStage='request-configuration';
       const query=new URLSearchParams(location.search);
       cartridgeId=query.get('cartridge')||'';
       cartridgeVersion=query.get('version')||'0';
       const apiKey=new URLSearchParams(location.hash.slice(1)).get('apiKey')||'';
       requestOptions=apiKey?{headers:{'x-api-key':apiKey}}:{};
       if(!cartridgeId) throw new Error('No cartridge selected');
-      bootStage='registry-load';
       const registry=await localFirstJson('registry','/api/registry');
       void evictStaleCache(registry);
       modVersions=new Map((registry.mods||[]).map(mod=>[mod.id,mod.version]));
-      bootStage='rom-load';
       const bytes=await cachedRom(cartridgeId,cartridgeVersion);
       const ptr=Module._malloc(bytes.length);
       Module.HEAPU8.set(bytes,ptr);
       const ok=api.loadRom(gb,ptr,bytes.length);
       Module._free(ptr);
       if(!ok) throw new Error('INVALID ROM');
-      bootStage='save-restore';
       await restoreSave();
       saveReady=true;
-      bootStage='symbols-load';
       try{
         const bytes=await localFirstPayload(
           'symbols:'+cartridgeId+'@'+cartridgeVersion,
@@ -650,16 +631,14 @@
         copyToHeap(bytes,ptr=>modError(api.modSymbols(gb,ptr,bytes.length)));
       }catch(error){if(error.message!=='SYMBOLS NOT INSTALLED')throw error}
       api.setInput(gb,input.buttons,input.dpad);
-      bootStage='mods-reconcile';
       await reconcileMods();
       status.style.display='none';
       notify('ready',cartridgeId);
       started=true;
       setInterval(persistSave,10000); // wall-clock cadence, matching web/index.html
-      bootStage='running';
       resumeEmulation();
     }
-    boot().catch(error=>{const detail=reportError(error);status.textContent=detail.message});
+    boot().catch(error=>{status.textContent=error.message;notify('error',error.message)});
   })();
   </script>
 </body>

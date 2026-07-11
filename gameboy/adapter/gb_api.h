@@ -59,6 +59,7 @@ void       gb_destroy(gb_handle* gb);
 // Returns 1 on success, 0 on failure.
 int  gb_load_rom(gb_handle* gb, const uint8_t* data, size_t len);
 void gb_reset(gb_handle* gb);
+void gb_reset_post_boot(gb_handle* gb); // deterministic reset that skips custom boot
 
 // Runs exactly one video frame (70224 T-cycles).
 void gb_run_frame(gb_handle* gb);

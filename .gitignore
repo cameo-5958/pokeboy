@@ -8,6 +8,10 @@ build/
 # IDE
 .vscode/
 
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]
+
 # ROMs, battery saves (not redistributable)
 *.gb
 *.gbc

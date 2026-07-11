@@ -34,6 +34,9 @@ if errorlevel 1 exit /b 1
 cl %CFLAGS% %CORE% tests\mod_tests.cpp /Fe:build\gbcore_mod_tests.exe
 if errorlevel 1 exit /b 1
 
+cl %CFLAGS% %CORE% tests\mod_package_tests.cpp /Fe:build\gbcore_mod_package_tests.exe
+if errorlevel 1 exit /b 1
+
 cl %CFLAGS% %CORE% tests\boot_tests.cpp /Fe:build\gbemu_boot_tests.exe
 if errorlevel 1 exit /b 1
 
@@ -41,4 +44,4 @@ build\gbemu_boot_tests.exe
 if errorlevel 1 exit /b 1
 
 echo.
-echo Built build\gbemu.exe, build\gbemu_headless.exe, build\gbcore_mod_tests.exe, and build\gbemu_boot_tests.exe
+echo Built build\gbemu.exe, build\gbemu_headless.exe, build\gbcore_mod_tests.exe, build\gbcore_mod_package_tests.exe, and build\gbemu_boot_tests.exe
