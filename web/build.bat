@@ -33,9 +33,9 @@ call emcc %CORE% -O2 -std=c++17 -I gameboy\core -I gameboy\adapter ^
 if errorlevel 1 exit /b 1
 
 if not exist web\roms mkdir web\roms
-if exist "Pokemon - Blue Version (USA, Europe) (SGB Enhanced).gb" (
-    copy /y "Pokemon - Blue Version (USA, Europe) (SGB Enhanced).gb" web\roms\pokemon-blue.gb >nul
-    echo Copied ROM to web\roms\pokemon-blue.gb
+if exist "Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb" (
+    copy /y "Pokemon - Red Version (USA, Europe) (SGB Enhanced).gb" web\roms\pokemon-red.gb >nul
+    echo Copied ROM to web\roms\pokemon-red.gb
 )
 
 echo.

@@ -17,7 +17,7 @@
   <script src="mod-core.js"></script>
   <script>
   (() => {
-    const W=160,H=144,FRAME_MS=1000/59.7275;
+    const W=160,H=144,FRAME_MS=1000/59.7275,MAX_CATCHUP_FRAMES=4,AUDIO_MAX_FRAMES=4096;
     const palette=new Uint8ClampedArray([
       200,212,164,255, 143,168,120,255, 78,99,80,255, 28,43,34,255
     ]);
@@ -25,14 +25,16 @@
     const status=document.getElementById('status');
     const ctx=canvas.getContext('2d',{alpha:false});
     const image=ctx.createImageData(W,H);
-    let Module,gb,api,input={buttons:0,dpad:0},speed=1,paused=false,last=performance.now(),carry=0;
+    let Module,gb,api,input={buttons:0,dpad:0},speed=1;
+    let acc=0,lastT=0,rafId=0,running=false,started=false,userPaused=false,modsBusy=0;
     let cartridgeId='',cartridgeVersion='',desiredMods=[],modUpdate=Promise.resolve(),requestOptions={};
     let modVersions=new Map();
-    let audioContext=null,audioNode=null,audioPtr=0,muted=false,volume=1;
+    let audioPtr=0,muted=false,volume=1;
     const loadedMods=new Map();
     const modHandlers=new Map();
     let hostError=null,hostCallback=0;
-    let saveCounter=0;
+    let saveDataWaiter=null,saveReady=false,saveNonce=null,mirrorBlocked=false,hasPersisted=false;
+    let telemetry=false,telTimer=0,rafCount=0,frameCount=0;
 
     function notify(type,detail){
       window.ReactNativeWebView?.postMessage(JSON.stringify({type,detail}));
@@ -44,16 +46,33 @@
           input=msg;
           if(gb) api.setInput(gb,input.buttons|0,input.dpad|0);
         } else if(msg.type==='settings') {
-          speed=msg.speed==='inf'?10:Math.max(.5,Number(msg.speed)||1);
+          const prevSpeed=speed;
+          speed=msg.speed==='inf'?Infinity:Math.min(8,Math.max(.5,Number(msg.speed)||1));
+          if(prevSpeed===1&&speed!==1)AudioSystem.clear(); // drop queued 1x audio so it can't play stale later
           muted=Boolean(msg.muted);
           volume=Math.max(0,Math.min(1,Number(msg.volume)||0));
-          if(audioContext?.state==='suspended')audioContext.resume().catch(()=>{});
+          AudioSystem.setVolume(muted?0:volume);
+          AudioSystem.resume().catch(()=>{});
+          const tel=Boolean(msg.telemetry);
+          if(tel!==telemetry){
+            telemetry=tel;
+            if(tel){rafCount=0;frameCount=0;telTimer=setInterval(sampleTelemetry,1000)}
+            else{clearInterval(telTimer);telTimer=0;rafCount=0;frameCount=0}
+          }
         } else if(msg.type==='paused') {
-          paused=Boolean(msg.value);
-          last=performance.now(); carry=0;
+          userPaused=Boolean(msg.value);
+          if(userPaused){persistSave();pauseEmulation()}else resumeEmulation();
         } else if(msg.type==='mods') {
           desiredMods=Array.isArray(msg.ids)?msg.ids.filter(id=>typeof id==='string'):[];
           modUpdate=modUpdate.then(reconcileMods).catch(error=>notify('error',error.message));
+        } else if(msg.type==='dev-frame') {
+          // Dev mode: hand the host a PNG of the LCD framebuffer (an OS
+          // screenshot can't capture the WebView surface).
+          notify('dev-frame',{nonce:msg.nonce,png:canvas.toDataURL('image/png')});
+        } else if(msg.type==='save-data' && msg.id===cartridgeId && saveNonce && msg.nonce===saveNonce) {
+          saveNonce=null;
+          if(saveDataWaiter){const resolve=saveDataWaiter;saveDataWaiter=null;resolve(msg)}
+          else lateSaveData(msg); // host answered after the handshake timeout
         }
       } catch(error){ notify('error',String(error)); }
     }
@@ -101,68 +120,258 @@
     async function localFirstPayload(key,path,missingMessage){
       let db=null;
       try{
+        try{
+          db=await openRomCache();
+          const local=await new Promise((resolve,reject)=>{
+            const request=db.transaction('payloads').objectStore('payloads').get(key);
+            request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+          });
+          if(local){notify('payload-source',{key,source:'local'});return new Uint8Array(local)}
+        }catch(error){db?.close();db=null;notify('cache-error',String(error))}
+        const response=await fetch(path,requestOptions);
+        if(!response.ok)throw new Error(missingMessage);
+        const buffer=await response.arrayBuffer();
+        if(db)try{
+          await new Promise((resolve,reject)=>{
+            const request=db.transaction('payloads','readwrite').objectStore('payloads').put(buffer,key);
+            request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);
+          });
+        }catch(error){notify('cache-error',String(error))}
+        notify('payload-source',{key,source:'api'});return new Uint8Array(buffer);
+      }finally{db?.close()} // IDBDatabase.close() is a no-op when already closed
+    }
+    function evictStoreKeys(db,name,live){
+      return new Promise((resolve,reject)=>{
+        const transaction=db.transaction(name,'readwrite');
+        const store=transaction.objectStore(name);
+        const request=store.getAllKeys();
+        request.onsuccess=()=>{
+          for(const key of request.result)if(!live.has(key))store.delete(key);
+        };
+        request.onerror=()=>reject(request.error);
+        transaction.oncomplete=()=>resolve();
+        transaction.onerror=()=>reject(transaction.error);
+        transaction.onabort=()=>reject(transaction.error);
+      });
+    }
+    async function evictStaleCache(registry){
+      let db=null;
+      try{
+        const roms=registry.roms||[],mods=registry.mods||[];
+        const liveRoms=new Set(roms.map(rom=>rom.id+'@'+rom.version));
+        const livePayloads=new Set([
+          ...mods.map(mod=>'mod:'+mod.id+'@'+mod.version),
+          ...roms.map(rom=>'symbols:'+rom.id+'@'+rom.version)
+        ]);
         db=await openRomCache();
-        const local=await new Promise((resolve,reject)=>{
-          const request=db.transaction('payloads').objectStore('payloads').get(key);
-          request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
-        });
-        if(local){db.close();notify('payload-source',{key,source:'local'});return new Uint8Array(local)}
-      }catch(error){db?.close();db=null;notify('cache-error',String(error))}
-      const response=await fetch(path,requestOptions);
-      if(!response.ok)throw new Error(missingMessage);
-      const buffer=await response.arrayBuffer();
-      if(db)try{
-        await new Promise((resolve,reject)=>{
-          const request=db.transaction('payloads','readwrite').objectStore('payloads').put(buffer,key);
-          request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);
-        });
-      }catch(error){notify('cache-error',String(error))}finally{db.close()}
-      notify('payload-source',{key,source:'api'});return new Uint8Array(buffer);
+        await Promise.all([
+          evictStoreKeys(db,'roms',liveRoms),
+          evictStoreKeys(db,'payloads',livePayloads)
+        ]);
+      }catch(error){notify('cache-error',String(error))}
+      finally{db?.close()}
     }
     async function cachedRom(id,version){
       const key=id+'@'+version;
       let db=null;
       try{
-        db=await openRomCache();
-        const local=await new Promise((resolve,reject)=>{
-          const request=db.transaction('roms').objectStore('roms').get(key);
-          request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
-        });
-        if(local){db.close();notify('rom-source','local');return new Uint8Array(local)}
-      }catch(error){
-        db?.close();db=null;notify('cache-error',String(error));
+        try{
+          db=await openRomCache();
+          const local=await new Promise((resolve,reject)=>{
+            const request=db.transaction('roms').objectStore('roms').get(key);
+            request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+          });
+          if(local){notify('rom-source','local');return new Uint8Array(local)}
+        }catch(error){
+          db?.close();db=null;notify('cache-error',String(error));
+        }
+        const buffer=await fetchRom(id);
+        if(db)try{
+          await new Promise((resolve,reject)=>{
+            const request=db.transaction('roms','readwrite').objectStore('roms').put(buffer,key);
+            request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);
+          });
+        }catch(error){
+          notify('cache-error',String(error));
+        }
+        notify('rom-source','api');return new Uint8Array(buffer);
+      }finally{db?.close()} // IDBDatabase.close() is a no-op when already closed
+    }
+    const AudioSystem=(()=>{
+      let ctx=null,node=null,mode=null,master=null,workletBacklog=0;
+      const resampler={pos:0,lastL:0,lastR:0};
+      const spQueue=[]; // ScriptProcessor fallback: array of {L,R,offset}
+      function setVolume(v){ if(master)master.gain.value=v; }
+      function resample(inL,inR,n,outRate){
+        if(!outRate||Math.round(outRate)===44100)return{L:inL,R:inR,n};
+        const ratio=44100/outRate,outL=[],outR=[];
+        let pos=resampler.pos;
+        while(true){
+          const idx=Math.floor(pos);
+          if(idx>=n-1)break;
+          const frac=pos-idx;
+          const l0=idx<0?resampler.lastL:inL[idx],l1=inL[idx+1];
+          const r0=idx<0?resampler.lastR:inR[idx],r1=inR[idx+1];
+          outL.push(l0+(l1-l0)*frac);
+          outR.push(r0+(r1-r0)*frac);
+          pos+=ratio;
+        }
+        resampler.pos=Math.max(0,pos-(n-1));
+        if(n>0){resampler.lastL=inL[n-1];resampler.lastR=inR[n-1]}
+        return{L:Float32Array.from(outL),R:Float32Array.from(outR),n:outL.length};
       }
-      const buffer=await fetchRom(id);
-      if(db)try{
-        await new Promise((resolve,reject)=>{
-          const request=db.transaction('roms','readwrite').objectStore('roms').put(buffer,key);
-          request.onsuccess=()=>resolve();request.onerror=()=>reject(request.error);
+      const WORKLET_SRC=[
+        "class GBProcessor extends AudioWorkletProcessor {",
+        "  constructor(){",
+        "    super();",
+        "    this.qL = []; this.qR = []; this.qLen = 0; this.qOff = 0;",
+        "    this.port.onmessage = (e) => {",
+        "      if(e.data.stat){ this.port.postMessage({qLen:this.qLen}); return; }", // qLen is already the remaining unplayed count (decremented per consumed sample)
+        "      if(e.data.clear){ this.qL.length = 0; this.qR.length = 0; this.qLen = 0; this.qOff = 0; return; }",
+        "      this.qL.push(e.data.l); this.qR.push(e.data.r); this.qLen += e.data.l.length;",
+        "      if(this.qLen > 44100 * 2){",
+        "        while(this.qLen > 44100){",
+        "          var l = this.qL.shift(); this.qR.shift();",
+        "          this.qLen -= l.length - this.qOff; this.qOff = 0;",
+        "        }",
+        "      }",
+        "    };",
+        "  }",
+        "  process(inputs, outputs){",
+        "    var out = outputs[0];",
+        "    var chL = out[0], chR = out.length>1?out[1]:out[0];",
+        "    for(var i=0;i<chL.length;i++){",
+        "      if(this.qLen <= 0){ chL[i]=0; chR[i]=0; continue; }",
+        "      var l = this.qL[0], r = this.qR[0];",
+        "      chL[i] = l[this.qOff]; chR[i] = r[this.qOff];",
+        "      this.qOff++; this.qLen--;",
+        "      if(this.qOff >= l.length){ this.qL.shift(); this.qR.shift(); this.qOff = 0; }",
+        "    }",
+        "    return true;",
+        "  }",
+        "}",
+        "registerProcessor('gb-processor', GBProcessor);"
+      ].join("\n");
+      function tryWorklet(){
+        if(!ctx.audioWorklet)return Promise.reject(new Error('no audioWorklet'));
+        const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'application/javascript'}));
+        return ctx.audioWorklet.addModule(url).then(()=>{
+          node=new AudioWorkletNode(ctx,'gb-processor',{outputChannelCount:[2]});
+          node.port.onmessage=e=>{if(typeof e.data.qLen==='number')workletBacklog=e.data.qLen}; // stat replies only; worklet posts nothing else
+          node.connect(master);
+          mode='worklet';
         });
-      }catch(error){
-        notify('cache-error',String(error));
-      }finally{db.close()}
-      notify('rom-source','api');return new Uint8Array(buffer);
+      }
+      function initScriptProcessor(){
+        node=ctx.createScriptProcessor(2048,0,2);
+        node.onaudioprocess=event=>{
+          const outL=event.outputBuffer.getChannelData(0),outR=event.outputBuffer.getChannelData(1);
+          let i=0;
+          while(i<outL.length){
+            if(spQueue.length===0){for(;i<outL.length;i++){outL[i]=0;outR[i]=0}break}
+            const chunk=spQueue[0];
+            const take=Math.min(chunk.L.length-chunk.offset,outL.length-i);
+            for(let k=0;k<take;k++){outL[i+k]=chunk.L[chunk.offset+k];outR[i+k]=chunk.R[chunk.offset+k]}
+            chunk.offset+=take; i+=take;
+            if(chunk.offset>=chunk.L.length)spQueue.shift();
+          }
+        };
+        node.connect(master);
+        mode='scriptprocessor';
+        return Promise.resolve();
+      }
+      let wasInterrupted=false;
+      function init(){
+        const Ctx=window.AudioContext||window.webkitAudioContext;
+        if(!Ctx)return Promise.reject(new Error('no AudioContext'));
+        ctx=new Ctx();
+        ctx.addEventListener('statechange',()=>{
+          // after an interruption (WebKit 'interrupted', suspend, etc.) drop the
+          // stale backlog so playback rejoins in sync instead of replaying it
+          if(ctx.state!=='running'){wasInterrupted=true;return}
+          if(wasInterrupted){wasInterrupted=false;clear()}
+        });
+        master=ctx.createGain();
+        master.gain.value=muted?0:volume;
+        master.connect(ctx.destination);
+        return tryWorklet().catch(()=>initScriptProcessor());
+      }
+      function push(inL,inR,n){
+        if(!ctx||!mode)return;
+        const res=resample(inL,inR,n,ctx.sampleRate);
+        if(res.n<=0)return;
+        if(mode==='worklet'){
+          node.port.postMessage({l:res.L,r:res.R});
+        }else{
+          spQueue.push({L:res.L,R:res.R,offset:0});
+          // cap backlog to ~1s to avoid runaway latency
+          let total=0;
+          for(let i=0;i<spQueue.length;i++)total+=spQueue[i].L.length-spQueue[i].offset;
+          while(total>ctx.sampleRate*1&&spQueue.length>1){
+            total-=spQueue[0].L.length-spQueue[0].offset;
+            spQueue.shift();
+          }
+        }
+      }
+      function clear(){
+        resampler.pos=0;resampler.lastL=0;resampler.lastR=0;
+        if(mode==='worklet'&&node)node.port.postMessage({clear:true});
+        else spQueue.length=0;
+      }
+      // resume for any non-running, non-closed state (WebKit has a nonstandard 'interrupted')
+      function resume(){ return ctx&&ctx.state!=='running'&&ctx.state!=='closed'?ctx.resume():Promise.resolve(); }
+      function suspend(){ return ctx&&ctx.state==='running'?ctx.suspend():Promise.resolve(); }
+      function stats(){ // sampler-only: worklet backlog is the previous stat reply (one-sample lag)
+        let backlogFrames=0;
+        if(mode==='worklet'){node.port.postMessage({stat:true});backlogFrames=workletBacklog}
+        else if(mode==='scriptprocessor'){for(let i=0;i<spQueue.length;i++)backlogFrames+=spQueue[i].L.length-spQueue[i].offset}
+        return{state:ctx?ctx.state:'none',mode:mode||'none',backlogFrames,sampleRate:ctx?ctx.sampleRate:0};
+      }
+      return {init,push,resume,suspend,setVolume,clear,stats};
+    })();
+    function pumpAudio(){
+      if(!audioPtr)return;
+      const n=api.readAudio(gb,audioPtr,AUDIO_MAX_FRAMES);
+      if(n<=0)return;
+      if(speed!==1)return; // off-speed: drain the core's buffer but stay silent
+      const interleaved=Module.HEAPF32.subarray(audioPtr/4,audioPtr/4+n*2);
+      const L=new Float32Array(n),R=new Float32Array(n);
+      for(let i=0;i<n;i++){L[i]=interleaved[i*2];R[i]=interleaved[i*2+1]}
+      AudioSystem.push(L,R,n);
     }
-    function startAudio(){
-      const AudioContext=window.AudioContext||window.webkitAudioContext;
-      if(!AudioContext)return;
-      audioContext=new AudioContext({sampleRate:44100});
-      const capacity=2048;
-      audioPtr=Module._malloc(capacity*2*4);
-      audioNode=audioContext.createScriptProcessor(capacity,0,2);
-      audioNode.onaudioprocess=event=>{
-        const left=event.outputBuffer.getChannelData(0),right=event.outputBuffer.getChannelData(1);
-        left.fill(0);right.fill(0);
-        if(!gb||paused||muted)return;
-        const count=api.readAudio(gb,audioPtr,capacity);
-        const samples=Module.HEAPF32.subarray(audioPtr/4,audioPtr/4+count*2);
-        for(let i=0;i<count;i++){left[i]=samples[i*2]*volume;right[i]=samples[i*2+1]*volume}
-      };
-      audioNode.connect(audioContext.destination);
-      audioContext.resume().catch(()=>{});
+    function pauseEmulation(){
+      if(!running)return;
+      running=false;
+      cancelAnimationFrame(rafId);
     }
-    document.addEventListener('message',event=>receive(event.data));
-    window.addEventListener('message',event=>receive(event.data));
+    function resumeEmulation(){
+      if(running||!started||userPaused||modsBusy)return;
+      running=true;
+      lastT=0; acc=0;
+      rafId=requestAnimationFrame(loop);
+    }
+    const seenMessages=new WeakSet();
+    function onMessage(event){
+      if(seenMessages.has(event))return; // RN fires document or window depending on platform; never both for one message
+      seenMessages.add(event);
+      receive(event.data);
+    }
+    document.addEventListener('message',onMessage);
+    window.addEventListener('message',onMessage);
+    window.addEventListener('pagehide',()=>{persistSave();AudioSystem.suspend().catch(()=>{})});
+    window.addEventListener('pageshow',event=>{
+      if(event.persisted){location.reload();return} // back/forward cache restore: WASM/audio state is stale, start over
+      AudioSystem.resume().catch(()=>{});
+      if(running)lastT=0; // don't let the hidden gap schedule a catch-up burst
+    });
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState==='hidden'){
+        persistSave();AudioSystem.suspend().catch(()=>{});
+      }else{
+        AudioSystem.resume().catch(()=>{});
+        if(running)lastT=0;
+      }
+    });
 
     function draw(){
       const src=Module.HEAPU8.subarray(api.framebuffer(gb),api.framebuffer(gb)+W*H);
@@ -173,17 +382,51 @@
       }
       ctx.putImageData(image,0,0);
     }
-    function loop(now){
-      carry+=paused?0:Math.min(250,now-last)*speed;
-      last=now;
+    function loop(t){
+      rafId=requestAnimationFrame(loop);
+      rafCount++; // free; read/reset only by the 1 Hz telemetry sampler
+      if(!lastT)lastT=t;
+      let dt=t-lastT;
+      lastT=t;
+      if(dt>250)dt=250; // page was backgrounded; avoid a huge catch-up burst
       let frames=0;
-      while(carry>=FRAME_MS && frames<10){
-        api.runFrame(gb); carry-=FRAME_MS; frames++;
-        if(hostError){ paused=true; status.style.display='flex'; status.textContent=hostError.message; notify('error',hostError.message); break; }
+      if(speed===Infinity){
+        // uncapped: run as many frames as fit in ~11ms, leaving time to render
+        const budget=performance.now()+11;
+        while(performance.now()<budget&&!hostError){
+          api.runFrame(gb); pumpAudio(); frames++;
+        }
+        acc=0;
+      }else{
+        acc+=dt*speed;
+        const cap=Math.max(MAX_CATCHUP_FRAMES,Math.ceil(speed)+2);
+        while(acc>=FRAME_MS && frames<cap && !hostError){
+          api.runFrame(gb); pumpAudio(); acc-=FRAME_MS; frames++;
+        }
+        if(acc>FRAME_MS*cap)acc=FRAME_MS*cap;
       }
+      if(hostError){
+        started=false; pauseEmulation();
+        status.style.display='flex'; status.textContent=hostError.message;
+        notify('error',hostError.message);
+      }
+      frameCount+=frames; // free; read/reset only by the 1 Hz telemetry sampler
       if(frames) draw();
-      if(frames && ++saveCounter>=300){ saveCounter=0; persistSave(); }
-      requestAnimationFrame(loop);
+    }
+    function sampleTelemetry(){
+      const snap={
+        t:Date.now(),
+        rafFps:rafCount,
+        emuFps:frameCount,
+        speed:speed===Infinity?'inf':speed,
+        accMs:Math.round(acc),
+        running,
+        audio:AudioSystem.stats(),
+        wasmHeapBytes:Module?Module.HEAPU8.length:0,
+        jsHeapBytes:performance.memory?performance.memory.usedJSHeapSize:null
+      };
+      rafCount=0;frameCount=0;
+      notify('telemetry',snap);
     }
     function copyToHeap(bytes,operation){
       const ptr=Module._malloc(Math.max(1,bytes.length));
@@ -206,7 +449,7 @@
       return cpu;
     }
     function persistSave(){
-      if(!gb||!api.hasBattery(gb))return;
+      if(!gb||!saveReady||!api.hasBattery(gb))return;
       const lenPtr=Module._malloc(4);
       try{
         Module.HEAPU32[lenPtr/4]=0;
@@ -214,14 +457,77 @@
         if(!ptr||!len)return;
         let binary='',bytes=Module.HEAPU8.subarray(ptr,ptr+len);
         for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
-        localStorage.setItem('pokeboy.save.'+cartridgeId,btoa(binary));
+        const data=btoa(binary),ts=Date.now();
+        hasPersisted=true;
+        try{localStorage.setItem('pokeboy.save.'+cartridgeId,JSON.stringify({v:1,ts,data}))}catch(error){}
+        // mirror to native even if localStorage failed; blocked while the boot
+        // handshake is unresolved so a blank session can't clobber a good backup
+        if(!mirrorBlocked)notify('save',{id:cartridgeId,ts,data});
       }finally{Module._free(lenPtr)}
     }
-    function restoreSave(){
-      const encoded=localStorage.getItem('pokeboy.save.'+cartridgeId);
-      if(!encoded)return;
-      const binary=atob(encoded),bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
-      copyToHeap(bytes,ptr=>api.loadSaveRam(gb,ptr,bytes.length));
+    function decodeSave(data){
+      if(typeof data!=='string')throw new Error('Invalid save data');
+      const binary=atob(data);
+      return Uint8Array.from(binary,char=>char.charCodeAt(0));
+    }
+    function localSave(){
+      const key='pokeboy.save.'+cartridgeId;
+      let raw=null;
+      try{raw=localStorage.getItem(key)}catch(error){return null}
+      if(!raw)return null;
+      try{
+        let save;
+        if(raw.trimStart().startsWith('{')){
+          const envelope=JSON.parse(raw);
+          if(!envelope||envelope.v!==1||!Number.isFinite(envelope.ts)||envelope.ts<0||typeof envelope.data!=='string')throw new Error('Invalid save envelope');
+          save={ts:envelope.ts,data:envelope.data};
+        }else save={ts:0,data:raw};
+        return {...save,bytes:decodeSave(save.data)};
+      }catch(error){
+        try{localStorage.setItem('pokeboy.save.corrupt.'+cartridgeId,raw)}catch(quarantineError){}
+        try{localStorage.removeItem(key)}catch(removeError){}
+        notify('save-corrupt',cartridgeId);
+        return null;
+      }
+    }
+    function lateSaveData(msg){
+      mirrorBlocked=false; // host is alive after all; mirroring is safe again
+      if(hasPersisted||typeof msg.data!=='string')return; // never overwrite this session's own progress
+      const ts=Number.isFinite(msg.ts)&&msg.ts>=0?msg.ts:0;
+      const local=localSave();
+      if(!local||ts>local.ts){
+        // don't load mid-game; stage it locally so the next boot picks it up
+        try{localStorage.setItem('pokeboy.save.'+cartridgeId,JSON.stringify({v:1,ts,data:msg.data}))}catch(error){}
+      }
+    }
+    async function restoreSave(){
+      const local=localSave();
+      let winner=local,hostWins=false;
+      if(window.ReactNativeWebView){
+        let timer;
+        saveNonce=Math.random().toString(36).slice(2)+Date.now().toString(36);
+        const host=await Promise.race([
+          new Promise(resolve=>{saveDataWaiter=resolve;notify('save-request',{id:cartridgeId,nonce:saveNonce})}),
+          new Promise(resolve=>{timer=setTimeout(()=>resolve(null),3000)})
+        ]);
+        clearTimeout(timer);saveDataWaiter=null;
+        if(!host&&!local)mirrorBlocked=true; // host never answered + nothing local: don't let a blank session overwrite the backup
+        if(host&&host.data!==null){
+          try{
+            const candidate={
+              ts:Number.isFinite(host.ts)&&host.ts>=0?host.ts:0,
+              data:host.data,
+              bytes:decodeSave(host.data)
+            };
+            if(!winner||candidate.ts>winner.ts){winner=candidate;hostWins=true}
+          }catch(error){notify('save-corrupt',cartridgeId)}
+        }
+      }
+      if(!winner)return;
+      if(hostWins){
+        try{localStorage.setItem('pokeboy.save.'+cartridgeId,JSON.stringify({v:1,ts:winner.ts,data:winner.data}))}catch(error){}
+      }
+      copyToHeap(winner.bytes,ptr=>api.loadSaveRam(gb,ptr,winner.bytes.length));
     }
     function installHostBridge(){
       hostCallback=Module.addFunction((_gb,handle,index,context)=>{
@@ -248,7 +554,7 @@
     }
     async function reconcileMods(){
       if(!gb)return;
-      const wasPaused=paused; paused=true;
+      modsBusy++; pauseEmulation();
       try{
         for(const [id,handle] of loadedMods){
           if(!desiredMods.includes(id)){ modError(api.modUnload(gb,handle)); loadedMods.delete(id); modHandlers.delete(handle); }
@@ -271,7 +577,7 @@
           }finally{Module._free(out)}
         }
         notify('mods',Array.from(loadedMods.keys()));
-      }finally{paused=wasPaused;last=performance.now();carry=0}
+      }finally{modsBusy--;resumeEmulation()}
     }
     async function boot(){
       Module=await createGBCore({locateFile:file=>file});
@@ -296,7 +602,8 @@
         loadSaveRam:Module.cwrap('gb_load_save_ram','number',['number','number','number'])
       };
       gb=api.create();
-      startAudio();
+      audioPtr=Module._malloc(AUDIO_MAX_FRAMES*2*4);
+      AudioSystem.init().then(()=>AudioSystem.resume()).catch(()=>{}); // no audio: run silently (push() no-ops)
       installHostBridge();
       const query=new URLSearchParams(location.search);
       cartridgeId=query.get('cartridge')||'';
@@ -305,6 +612,7 @@
       requestOptions=apiKey?{headers:{'x-api-key':apiKey}}:{};
       if(!cartridgeId) throw new Error('No cartridge selected');
       const registry=await localFirstJson('registry','/api/registry');
+      void evictStaleCache(registry);
       modVersions=new Map((registry.mods||[]).map(mod=>[mod.id,mod.version]));
       const bytes=await cachedRom(cartridgeId,cartridgeVersion);
       const ptr=Module._malloc(bytes.length);
@@ -312,7 +620,8 @@
       const ok=api.loadRom(gb,ptr,bytes.length);
       Module._free(ptr);
       if(!ok) throw new Error('INVALID ROM');
-      restoreSave();
+      await restoreSave();
+      saveReady=true;
       try{
         const bytes=await localFirstPayload(
           'symbols:'+cartridgeId+'@'+cartridgeVersion,
@@ -325,7 +634,9 @@
       await reconcileMods();
       status.style.display='none';
       notify('ready',cartridgeId);
-      requestAnimationFrame(loop);
+      started=true;
+      setInterval(persistSave,10000); // wall-clock cadence, matching web/index.html
+      resumeEmulation();
     }
     boot().catch(error=>{status.textContent=error.message;notify('error',error.message)});
   })();
