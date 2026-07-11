@@ -105,10 +105,11 @@ function cartMetrics(u: Unit, width: number) {
 // Hardware add-ons that can be snapped onto the console. Pure client state —
 // enabling one just tracks it locally (behavior wiring comes later).
 const MODS = [
-  { id: "turbo", name: "TURBO CPU", desc: "Overclocks the core for double-speed play." },
-  { id: "rumble", name: "RUMBLE PAK", desc: "Adds force feedback on big hits." },
-  { id: "backlight", name: "BACKLIGHT", desc: "Lights up the LCD for night sessions." },
-  { id: "link", name: "LINK CABLE", desc: "Hooks up a second console for trades." },
+  {
+    id: "tradeback-npc",
+    name: "TRADEBACK NPC",
+    desc: "Trades back the first Pokemon in your party at Celadon Center.",
+  },
 ] as const;
 
 // Fixed-size pieces so the panel stack height is known up front — portrait
