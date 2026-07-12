@@ -677,6 +677,7 @@ export default function EmulatorScreen() {
         cartridgeVersion: cartridge.version ?? "0",
         gbcoreUri: emulatorAssets.gbcoreUri,
         wasmUri: emulatorAssets.wasmUri,
+        wasmBase64: emulatorAssets.wasmBase64,
         modCoreUri: emulatorAssets.modCoreUri,
       };
       return {

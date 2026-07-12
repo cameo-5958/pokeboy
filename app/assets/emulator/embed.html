@@ -644,7 +644,15 @@
     }
     async function boot(){
       bootStage='wasm-initialize';
-      Module=await createGBCore({locateFile:file=>file.endsWith('.wasm')?runtime.wasmUri:file});
+      // file:// pages can't fetch() sibling files in WKWebView, so the host
+      // hands us the wasm bytes; locateFile stays as the hosted fallback.
+      let wasmBinary;
+      if(runtime.wasmBase64){
+        const raw=atob(runtime.wasmBase64);
+        wasmBinary=new Uint8Array(raw.length);
+        for(let i=0;i<raw.length;i++)wasmBinary[i]=raw.charCodeAt(i);
+      }
+      Module=await createGBCore({wasmBinary,locateFile:file=>file.endsWith('.wasm')?runtime.wasmUri:file});
       bootStage='api-bindings';
       api={
         create:Module.cwrap('gb_create','number',[]),
