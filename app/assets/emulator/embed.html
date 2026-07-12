@@ -24,6 +24,94 @@
         document.head.appendChild(script);
       });
     }
+    // ---- Boot screen -------------------------------------------------
+    // DMG-style power-on: the logo steps down the LCD, the two-tone chime
+    // rings when it lands, and a glint sweeps across the letters — all while
+    // the core, ROM, and mods load behind it, like the real boot ROM masking
+    // its hardware checks. Purely cosmetic (a canned "slideshow"): the core
+    // still cold-boots the ROM directly, so boot() holds the first game
+    // frame until the sequence finishes.
+    const BootRom=(()=>{
+      const BW=160,BH=144,PX=2; // logo cells render as 2x2 LCD pixels
+      const T_SCROLL_START=500,T_LAND=1700,T_GLINT=2000,T_GLINT_END=2700,T_DONE=3900;
+      const SHADES=[[200,212,164],[143,168,120],[78,99,80],[28,43,34]];
+      const FONT={ // 5x7 glyphs, one 5-bit row per entry, MSB = left column
+        P:[30,17,17,30,16,16,16],
+        O:[14,17,17,17,17,17,14],
+        K:[17,18,20,24,20,18,17],
+        E:[31,16,16,30,16,16,31],
+        B:[30,17,17,30,17,17,30],
+        Y:[17,17,10,4,4,4,4]
+      };
+      const TEXT='POKEBOY';
+      const cells=[]; // lit logo cells in logo-local [col,row]
+      for(let i=0;i<TEXT.length;i++){
+        const glyph=FONT[TEXT[i]];
+        for(let r=0;r<7;r++)for(let c=0;c<5;c++){
+          if(glyph[r]&(16>>c))cells.push([i*6+c,r]);
+        }
+      }
+      const cols=TEXT.length*6-1;
+      const logoW=cols*PX,logoH=7*PX;
+      const logoX=(BW-logoW)>>1,logoYEnd=((BH-logoH)>>1)-6;
+      const bctx=document.getElementById('screen').getContext('2d',{alpha:false});
+      const frame=bctx.createImageData(BW,BH);
+      let raf=0,t0=0,done=false,chimed=false,chimeFn=null,chimePending=false,resolveDone;
+      const finished=new Promise(resolve=>{resolveDone=resolve});
+      function put(x,y,s){
+        if(x<0||y<0||x>=BW||y>=BH)return;
+        const j=(y*BW+x)*4,c=SHADES[s];
+        frame.data[j]=c[0];frame.data[j+1]=c[1];frame.data[j+2]=c[2];frame.data[j+3]=255;
+      }
+      function paint(t){
+        const c0=SHADES[0];
+        for(let j=0;j<frame.data.length;j+=4){
+          frame.data[j]=c0[0];frame.data[j+1]=c0[1];frame.data[j+2]=c0[2];frame.data[j+3]=255;
+        }
+        // stepped scroll from above the screen down to just above center
+        const k=Math.max(0,Math.min(1,(t-T_SCROLL_START)/(T_LAND-T_SCROLL_START)));
+        const logoY=Math.round((-logoH+(logoYEnd+logoH)*k)/PX)*PX;
+        // glint: a light band sweeping diagonally across the landed logo
+        const sweep=t>=T_GLINT&&t<T_GLINT_END?(t-T_GLINT)/(T_GLINT_END-T_GLINT):-1;
+        const band=sweep<0?-1e9:sweep*(cols+21)-7;
+        for(const cell of cells){
+          const s=sweep>=0&&Math.abs(cell[0]+cell[1]-band)<3?1:3;
+          for(let dy=0;dy<PX;dy++)for(let dx=0;dx<PX;dx++)put(logoX+cell[0]*PX+dx,logoY+cell[1]*PX+dy,s);
+        }
+        bctx.putImageData(frame,0,0);
+      }
+      function tick(now){
+        if(done)return;
+        if(!t0)t0=now;
+        const t=now-t0;
+        paint(t);
+        if(!chimed&&t>=T_LAND){
+          chimed=true;
+          if(chimeFn)chimeFn();else chimePending=true;
+        }
+        if(t>=T_DONE){done=true;resolveDone();return}
+        raf=requestAnimationFrame(tick);
+      }
+      function start(){
+        document.getElementById('status').style.display='none';
+        raf=requestAnimationFrame(tick);
+      }
+      function setChime(fn){
+        chimeFn=fn;
+        if(chimePending){chimePending=false;fn()}
+      }
+      function cancel(){
+        if(done)return;
+        done=true;
+        cancelAnimationFrame(raf);
+        paint(0); // blank LCD behind the error text
+        resolveDone();
+      }
+      return{start,finished,setChime,cancel};
+    })();
+    window.__pokeboyBootCancel=()=>BootRom.cancel();
+    BootRom.start();
+
     await loadScript(runtime.gbcoreUri);
     await loadScript(runtime.modCoreUri);
     const apiUrl=path=>runtime.backendUrl+path;
@@ -309,6 +397,7 @@
       }
       let wasInterrupted=false;
       function init(){
+        if(ctx)return Promise.resolve(); // boot chime may have initialized us already
         const Ctx=window.AudioContext||window.webkitAudioContext;
         if(!Ctx)return Promise.reject(new Error('no AudioContext'));
         ctx=new Ctx();
@@ -354,8 +443,26 @@
         else if(mode==='scriptprocessor'){for(let i=0;i<spQueue.length;i++)backlogFrames+=spQueue[i].L.length-spQueue[i].offset}
         return{state:ctx?ctx.state:'none',mode:mode||'none',backlogFrames,sampleRate:ctx?ctx.sampleRate:0};
       }
-      return {init,push,resume,suspend,setVolume,clear,stats};
+      function chime(){
+        // DMG power-on "ba-ding": ~1048 Hz for a beat, then ~2080 Hz ringing
+        // out — the boot ROM's two square-wave frequency writes. Runs through
+        // the master gain so the host's mute/volume settings apply.
+        return init().then(resume).then(()=>{
+          const t=ctx.currentTime;
+          const osc=ctx.createOscillator(),gain=ctx.createGain();
+          osc.type='square';
+          osc.frequency.setValueAtTime(1048.6,t);
+          osc.frequency.setValueAtTime(2080.5,t+0.1);
+          gain.gain.setValueAtTime(0.15,t);
+          gain.gain.setValueAtTime(0.15,t+0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001,t+0.9);
+          osc.connect(gain);gain.connect(master);
+          osc.start(t);osc.stop(t+0.95);
+        }).catch(()=>{});
+      }
+      return {init,push,resume,suspend,setVolume,clear,stats,chime};
     })();
+    BootRom.setChime(()=>{AudioSystem.chime()});
     function pumpAudio(){
       if(!audioPtr)return;
       const n=api.readAudio(gb,audioPtr,AUDIO_MAX_FRAMES);
@@ -715,6 +822,8 @@
       api.setInput(gb,input.buttons,input.dpad);
       bootStage='mods-reconcile';
       await reconcileMods();
+      bootStage='boot-screen';
+      await BootRom.finished; // hold the first game frame until the logo/chime play out
       status.style.display='none';
       notify('ready',cartridgeId);
       started=true;
@@ -722,14 +831,20 @@
       bootStage='running';
       resumeEmulation();
     }
-    boot().catch(error=>{const detail=reportError(error);status.textContent=detail.message});
+    boot().catch(error=>{
+      const detail=reportError(error);
+      BootRom.cancel();
+      status.style.display='flex';
+      status.textContent=detail.message;
+    });
   })().catch(error=>{
     // Bootstrap failures (missing PokeboyRuntime, core script load) happen
     // before reportError/status exist in scope — report them by hand so they
     // can never fail silently.
     const message=error instanceof Error?error.message:String(error);
+    if(window.__pokeboyBootCancel)try{window.__pokeboyBootCancel()}catch(cancelError){}
     const statusEl=document.getElementById('status');
-    if(statusEl)statusEl.textContent=message;
+    if(statusEl){statusEl.style.display='flex';statusEl.textContent=message}
     window.ReactNativeWebView?.postMessage(JSON.stringify({
       type:'error',
       detail:{message,name:(error&&error.name)||'Error',stack:(error&&error.stack)||null,stage:'bootstrap'}
