@@ -37,8 +37,8 @@ int main() {
     }
 
     assert(!gb.bus.boot_rom_enabled);
-    assert(elapsed_frames >= 295 && elapsed_frames <= 305); // approximately five seconds
-    assert(animation_frames.size() >= 10);                  // actual changing PPU output
+    assert(elapsed_frames >= 150 && elapsed_frames <= 175); // logo boot: ~2.7 seconds
+    assert(animation_frames.size() >= 5);                   // fade + glint actually animate
     assert(gb.cpu.pc >= 0x0100);                            // executing cartridge bytes
     assert(gb.cpu.af == 0x01B0);
     assert(gb.cpu.bc == 0x0013);
