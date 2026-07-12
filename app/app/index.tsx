@@ -70,6 +70,7 @@ function genId(): string {
 }
 
 type TelemetryEvent = { t: number; kind: string; detail: unknown };
+type BootError = { message: string; name: string; stack: string | null };
 
 type Unit = (value: number) => number;
 type AnimValue = Animated.Value;
@@ -208,6 +209,7 @@ export default function EmulatorScreen() {
   const mountedRef = useRef(true);
   const webViewRef = useRef<WebView | null>(null);
   const [emulatorAssets, setEmulatorAssets] = useState<EmulatorAssets | null>(null);
+  const [emulatorAssetError, setEmulatorAssetError] = useState<BootError | null>(null);
   const inputRef = useRef({ buttons: 0, dpad: 0 });
   const cartridge = cartridges[cartridgeIdx] ?? null;
   // Latest cartridge id, readable from the flush interval without adding
@@ -222,18 +224,40 @@ export default function EmulatorScreen() {
   const sessionIdRef = useRef<string>(genId());
   const telemetrySnapshotsRef = useRef<unknown[]>([]);
   const telemetryEventsRef = useRef<TelemetryEvent[]>([]);
+  const emulatorAssetErrorReportedRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
-    try {
-      setEmulatorAssets(loadEmulatorAssets());
-    } catch (error) {
+    loadEmulatorAssets().then((assets) => {
+      if (mountedRef.current) setEmulatorAssets(assets);
+    }).catch((error) => {
       console.error("Unable to load bundled emulator assets", error);
-    }
+      if (!mountedRef.current) return;
+      setEmulatorAssetError({
+        message: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : "Error",
+        stack: error instanceof Error ? error.stack ?? null : null,
+      });
+    });
     return () => {
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      !settingsLoaded ||
+      !settings.telemetry ||
+      !emulatorAssetError ||
+      emulatorAssetErrorReportedRef.current
+    ) return;
+    emulatorAssetErrorReportedRef.current = true;
+    telemetryEventsRef.current.push({
+      t: Date.now(),
+      kind: "emulator-assets-error",
+      detail: emulatorAssetError,
+    });
+  }, [emulatorAssetError, settings.telemetry, settingsLoaded]);
 
   useEffect(() => {
     let alive = true;
@@ -683,6 +707,13 @@ export default function EmulatorScreen() {
     <View style={styles.page}>
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar hidden />
+      {emulatorAssetError ? (
+        <View style={styles.bootError} pointerEvents="none">
+          <Text style={styles.bootErrorText}>
+            EMULATOR START FAILED{"\n"}{emulatorAssetError.message}
+          </Text>
+        </View>
+      ) : null}
       <Animated.View onLayout={onBodyLayout} style={{ transform: [{ translateY: bodyTranslate }] }}>
         {/* Cartridge layer — kept UNDER the console body (zIndex 0 vs 1) so it
             emerges from behind the top edge and slides back under on insert. */}
@@ -1895,6 +1926,22 @@ const styles = StyleSheet.create({
     paddingTop: PAD_TOP,
     paddingBottom: PAD_BOTTOM,
     backgroundColor: "#26262f",
+  },
+  bootError: {
+    position: "absolute",
+    top: PAD_TOP,
+    left: 16,
+    right: 16,
+    zIndex: 10,
+    padding: 10,
+    borderRadius: 6,
+    backgroundColor: "#7c1740",
+  },
+  bootErrorText: {
+    color: "#f2d9e2",
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
   },
 
   body: {
