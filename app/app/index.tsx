@@ -22,7 +22,7 @@ import {
 } from "react-native";
 import WebView, { type WebViewMessageEvent } from "react-native-webview";
 
-import { createApi, type Cartridge as CartridgeInfo } from "@/api/client";
+import { createApi, type Cartridge as CartridgeInfo, type RegistryMod } from "@/api/client";
 import { playSfx } from "@/sfx";
 import {
   diffSection,
@@ -49,6 +49,7 @@ const TELEMETRY_FLUSH_MS = 5000;
 const LCD_DRAIN_MS = 300;
 const LABEL_CACHE_PREFIX = "pokeboy.label.v1:";
 const CARTRIDGE_RETRY_MS = 15000;
+const MOD_REGISTRY_RETRY_MS = 15000;
 const DEV_POLL_MS = 750;
 const BATTLE_LINK_ENDPOINT_KEY = "pokeboy.mod.battle-link.endpoint.v1";
 const DEFAULT_BATTLE_LINK_ENDPOINT = "https://pokeboy.cameo.moe/battle-link/decision";
@@ -111,21 +112,6 @@ function cartMetrics(u: Unit, width: number) {
   // paddings + grip ridges above the label + contact strip below it
   return { labelWidth, labelHeight, height: labelHeight + u(58) };
 }
-
-// Hardware add-ons that can be snapped onto the console. Pure client state —
-// enabling one just tracks it locally (behavior wiring comes later).
-const MODS = [
-  {
-    id: "battle-link",
-    name: "BATTLE LINK",
-    desc: "Routes trainer decisions through your public Breadwinner API.",
-  },
-  {
-    id: "tradeback-npc",
-    name: "TRADEBACK NPC",
-    desc: "Trades back the first Pokemon in your party at Celadon Center.",
-  },
-] as const;
 
 // Fixed-size pieces so the panel stack height is known up front — portrait
 // uses it to park the ejected cartridge low enough to leave room above.
@@ -216,6 +202,7 @@ export default function EmulatorScreen() {
   const [speedIdx, setSpeedIdx] = useState(1);
   const [battleLinkEndpoint, setBattleLinkEndpoint] = useState(DEFAULT_BATTLE_LINK_ENDPOINT);
   const [cartridges, setCartridges] = useState<CartridgeInfo[]>([]);
+  const [mods, setMods] = useState<readonly RegistryMod[]>([]);
   const [cartridgeIdx, setCartridgeIdx] = useState(0);
   const [labelImages, setLabelImages] = useState<Record<string, string>>({});
   const requestedLabelUrlsRef = useRef(new Set<string>());
@@ -336,6 +323,41 @@ export default function EmulatorScreen() {
         if (!alive) return;
         setCartridges([]);
         retry = setTimeout(load, CARTRIDGE_RETRY_MS);
+      }
+    };
+    load();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") load();
+    });
+    return () => {
+      alive = false;
+      if (retry) clearTimeout(retry);
+      subscription.remove();
+    };
+  }, [api, settingsLoaded]);
+
+  // The accessory bay must reflect the backend catalog, rather than a list
+  // compiled into the app. This also lets a registry update add a mod without
+  // requiring a matching IPA change.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    let alive = true;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const load = async () => {
+      try {
+        const { data, fresh } = await api.fetchRegistryWithMeta();
+        if (!alive) return;
+        setMods(data.mods);
+        const available = new Set(data.mods.map((mod) => mod.id));
+        setEnabledMods((previous) => {
+          const next = new Set([...previous].filter((id) => available.has(id)));
+          return next.size === previous.size ? previous : next;
+        });
+        if (!fresh) retry = setTimeout(load, MOD_REGISTRY_RETRY_MS);
+      } catch {
+        if (!alive) return;
+        setMods([]);
+        retry = setTimeout(load, MOD_REGISTRY_RETRY_MS);
       }
     };
     load();
@@ -774,6 +796,7 @@ export default function EmulatorScreen() {
             active={ejected}
             landscape={landscape}
             cartWidth={cartWidth}
+            mods={mods}
             enabled={enabledMods}
             onSet={setMod}
             battleLinkEndpoint={battleLinkEndpoint}
@@ -1135,6 +1158,7 @@ function ModChanger({
   active,
   landscape,
   cartWidth,
+  mods,
   enabled,
   onSet,
   battleLinkEndpoint,
@@ -1145,6 +1169,7 @@ function ModChanger({
   active: boolean;
   landscape: boolean;
   cartWidth: number;
+  mods: readonly RegistryMod[];
   enabled: ReadonlySet<string>;
   onSet: (id: string, on: boolean) => void;
   battleLinkEndpoint: string;
@@ -1158,11 +1183,16 @@ function ModChanger({
   const opacity = anim.interpolate({ inputRange: [1, 2], outputRange: [0, 1], extrapolate: "clamp" });
   const grow = anim.interpolate({ inputRange: [1, 2], outputRange: [0.7, 1], extrapolate: "clamp" });
 
-  const mod = MODS[idx];
-  const on = enabled.has(mod.id);
+  useEffect(() => {
+    setIdx((current) => Math.min(current, Math.max(0, mods.length - 1)));
+  }, [mods.length]);
+
+  const mod = mods[idx];
+  const on = mod ? enabled.has(mod.id) : false;
   const scroll = (dir: 1 | -1) => {
+    if (mods.length < 2) return;
     playSfx("dpad");
-    setIdx((i) => (i + dir + MODS.length) % MODS.length);
+    setIdx((i) => (i + dir + mods.length) % mods.length);
   };
   const toggleSettings = () => {
     playSfx("select");
@@ -1184,47 +1214,55 @@ function ModChanger({
           : { left: (cartWidth - width) / 2, top: -(m.height + u(14)) },
       ]}
     >
-      {/* Panel 1: mod browser */}
+      {/* Panel 1: registry-backed mod browser */}
       <View style={[styles.modPanel, { borderRadius: u(10), padding: m.pad }]}>
-        <View style={[styles.modNameRow, { height: m.nameH }]}>
-          <ModScroll u={u} h={m.nameH} dir={-1} onPress={scroll} />
-          <Text selectable={false} style={[styles.modName, { fontSize: u(9), letterSpacing: u(1) }]}>
-            {mod.name}
+        {mod ? (
+          <>
+            <View style={[styles.modNameRow, { height: m.nameH }]}>
+              <ModScroll u={u} h={m.nameH} dir={-1} onPress={scroll} />
+              <Text selectable={false} style={[styles.modName, { fontSize: u(9), letterSpacing: u(1) }]}>
+                {mod.name}
+              </Text>
+              <ModScroll u={u} h={m.nameH} dir={1} onPress={scroll} />
+            </View>
+            <Text
+              selectable={false}
+              numberOfLines={2}
+              style={[
+                styles.modDesc,
+                { height: m.descH, fontSize: u(8), lineHeight: u(12), marginTop: m.gap },
+              ]}
+            >
+              {mod.desc ?? "No description available."}
+            </Text>
+            <View style={{ flexDirection: "row", gap: m.gap, marginTop: m.gap }}>
+              <ModChoice u={u} h={m.btnH} label="YES" active={on} onPress={() => onSet(mod.id, true)} />
+              <ModChoice u={u} h={m.btnH} label="NO" active={!on} onPress={() => onSet(mod.id, false)} />
+            </View>
+            <Pressable
+              onPress={toggleConfig}
+              style={({ pressed }) => [
+                styles.settingsButton,
+                { height: m.configH, borderRadius: u(5), marginTop: m.gap },
+                pressed && { opacity: 0.62 },
+              ]}
+            >
+              <Text
+                selectable={false}
+                style={[styles.modName, styles.settingsButtonText, { fontSize: u(8), letterSpacing: u(1) }]}
+              >
+                CONFIG
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <Text selectable={false} style={[styles.modDesc, { fontSize: u(8), lineHeight: u(12) }]}>
+            NO MODS IN REGISTRY
           </Text>
-          <ModScroll u={u} h={m.nameH} dir={1} onPress={scroll} />
-        </View>
-        <Text
-          selectable={false}
-          numberOfLines={2}
-          style={[
-            styles.modDesc,
-            { height: m.descH, fontSize: u(8), lineHeight: u(12), marginTop: m.gap },
-          ]}
-        >
-          {mod.desc}
-        </Text>
-        <View style={{ flexDirection: "row", gap: m.gap, marginTop: m.gap }}>
-          <ModChoice u={u} h={m.btnH} label="YES" active={on} onPress={() => onSet(mod.id, true)} />
-          <ModChoice u={u} h={m.btnH} label="NO" active={!on} onPress={() => onSet(mod.id, false)} />
-        </View>
-        <Pressable
-          onPress={toggleConfig}
-          style={({ pressed }) => [
-            styles.settingsButton,
-            { height: m.configH, borderRadius: u(5), marginTop: m.gap },
-            pressed && { opacity: 0.62 },
-          ]}
-        >
-          <Text
-            selectable={false}
-            style={[styles.modName, styles.settingsButtonText, { fontSize: u(8), letterSpacing: u(1) }]}
-          >
-            CONFIG
-          </Text>
-        </Pressable>
+        )}
       </View>
 
-      {active ? (
+      {active && mod ? (
         <ModConfigModal
           open={configOpen}
           mod={mod}
@@ -1246,7 +1284,7 @@ function ModChanger({
           ENABLED
         </Text>
         <Text selectable={false} style={[styles.modCountValue, { fontSize: u(9) }]}>
-          {enabled.size}/{MODS.length}
+          {enabled.size}/{mods.length}
         </Text>
       </View>
 
@@ -1523,7 +1561,7 @@ function ModConfigModal({
   onBattleLinkEndpoint,
 }: {
   open: boolean;
-  mod: (typeof MODS)[number];
+  mod: RegistryMod;
   onClose: () => void;
   battleLinkEndpoint: string;
   onBattleLinkEndpoint: (value: string) => void;
