@@ -267,34 +267,32 @@
   }
 
   function drawWaiting(memory) {
-    // Centered dialog over the battlefield; BattleLinkReady/Cancel restore
-    // the scene from the tile buffers when the wait ends. $79-$7E are the
-    // standard textbox border tiles, $EC the open right-pointing triangle.
+    // Centered over the battlefield: AWAITING alone inside a textbox
+    // ($79-$7E border tiles), with the cancel hint on its own cleared strip
+    // below. $EC is the open right-pointing triangle. BattleLinkReady/Cancel
+    // restore the scene from the tile buffers when the wait ends.
     const width = 12;
-    const height = 4;
     const left = (20 - width) >> 1;
-    const top = (18 - height) >> 1;
+    const top = 7;
     const put = (row, column, tile) =>
       memory.write8(A.tileMap + (top + row) * 20 + left + column, tile);
+    const glyph = (char) => char === ">" ? 0xec :
+      char >= "A" && char <= "Z" ? 0x80 + char.charCodeAt(0) - 65 : 0x7f;
+    const text = (row, value) => {
+      const start = (width - value.length) >> 1;
+      for (let index = 0; index < width; index += 1)
+        put(row, index, glyph(value[index - start] || " "));
+    };
     for (let column = 0; column < width; column += 1) {
       const edge = column === 0 ? 0 : column === width - 1 ? 2 : 1;
       put(0, column, [0x79, 0x7a, 0x7b][edge]);
-      put(height - 1, column, [0x7d, 0x7a, 0x7e][edge]);
+      put(2, column, [0x7d, 0x7a, 0x7e][edge]);
     }
-    const text = (row, value) => {
-      const inner = width - 2;
-      const start = (inner - value.length) >> 1;
-      put(row, 0, 0x7c);
-      for (let index = 0; index < inner; index += 1) {
-        const char = value[index - start] || " ";
-        const tile = char === ">" ? 0xec :
-          char >= "A" && char <= "Z" ? 0x80 + char.charCodeAt(0) - 65 : 0x7f;
-        put(row, 1 + index, tile);
-      }
-      put(row, width - 1, 0x7c);
-    };
-    text(1, "AWAITING");
-    text(2, ">B BACK");
+    put(1, 0, 0x7c);
+    put(1, width - 1, 0x7c);
+    for (let index = 1; index < width - 1; index += 1)
+      put(1, index, glyph("AWAITING"[index - 2] || " "));
+    text(3, ">B BACK");
   }
 
   function forcedAction(memory) {
