@@ -9,6 +9,7 @@ const { URL } = require("node:url");
 
 const source = fs.readFileSync("assets/emulator/mod-core.bin", "utf8");
 let requests = 0;
+let lastState = null;
 const context = {
   AbortController: globalThis.AbortController,
   URL,
@@ -19,8 +20,10 @@ const context = {
   clearTimeout,
   console,
   crypto: webcrypto,
-  fetch: async () => {
+  fetch: async (url) => {
     requests += 1;
+    const encoded = new URL(String(url)).searchParams.get("state");
+    lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
     return { ok: true, json: async () => ({ action: 1 }) };
   },
   setTimeout,
@@ -85,5 +88,43 @@ setImmediate(() => {
   decide(cpu, memory);
   assert.equal(cpu.a, 3, "forced turns bypass the public API");
   assert.equal(requests, 1);
-  console.log("Battle Link browser host tests passed");
+
+  // maxTimeTillRandom: 0 resolves immediately with a random legal action and
+  // never touches the network.
+  ram[0xd068] = 0;
+  context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 0;
+  cpu.a = 0;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 1, "zero maxTimeTillRandom resumes the ROM immediately");
+  assert.equal(requests, 1, "zero maxTimeTillRandom skips the endpoint");
+  assert.ok([10, 20].includes(ram[0xccdd]), "random fallback selects a legal move");
+
+  // A finite value still opens the request and carries the configured
+  // deadline in the snapshot.
+  context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 5000;
+  cpu.a = 0;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 0, "finite maxTimeTillRandom long-polls as before");
+  setImmediate(() => {
+    assert.equal(requests, 2);
+    assert.equal(lastState.timeoutMs, 5000, "snapshot advertises the configured deadline");
+    cpu.a = 0;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 1, "remote decision resumes the ROM");
+
+    // Frame-driven failsafe: even if fetch never settles (wedged WebView
+    // network path), the per-frame decide poll enforces the deadline.
+    context.fetch = () => new Promise(() => {});
+    context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 80;
+    cpu.a = 0;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 0, "wedged fetch leaves the request pending");
+    setTimeout(() => {
+      cpu.a = 0;
+      decide(cpu, memory);
+      assert.equal(cpu.a, 1, "frame poll enforces the deadline despite a wedged fetch");
+      assert.ok([10, 20].includes(ram[0xccdd]), "failsafe selects a legal move");
+      console.log("Battle Link browser host tests passed");
+    }, 150);
+  });
 });
