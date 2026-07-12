@@ -55,6 +55,7 @@ const BATTLE_LINK_ENDPOINT_KEY = "pokeboy.mod.battle-link.endpoint.v1";
 const DEFAULT_BATTLE_LINK_ENDPOINT = "https://pokeboy.cameo.moe/battle-link/decision";
 const BATTLE_LINK_MAX_WAIT_KEY = "pokeboy.mod.battle-link.maxTimeTillRandom.v1";
 const DEFAULT_BATTLE_LINK_MAX_WAIT_S = 30;
+const ENABLED_MODS_KEY = "pokeboy.mods.enabled.v1";
 
 function blobToDataUri(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -302,6 +303,15 @@ export default function EmulatorScreen() {
         const seconds = Number(value);
         if (alive && value !== null && Number.isFinite(seconds) && seconds >= 0) {
           setBattleLinkMaxWaitS(seconds);
+        }
+      })
+      .catch(() => {});
+    AsyncStorage.getItem(ENABLED_MODS_KEY)
+      .then((value) => {
+        if (!alive || !value) return;
+        const ids: unknown = JSON.parse(value);
+        if (Array.isArray(ids)) {
+          setEnabledMods(new Set(ids.filter((id): id is string => typeof id === "string")));
         }
       })
       .catch(() => {});
@@ -660,7 +670,7 @@ export default function EmulatorScreen() {
     setMuted((v) => !v);
   };
 
-  // Enabled mods, by id.
+  // Enabled mods, by id. Persisted so toggles survive app relaunches.
   const setMod = (id: string, on: boolean) => {
     if (enabledMods.has(id) === on) return;
     playSfx(on ? "modOn" : "modOff");
@@ -668,6 +678,7 @@ export default function EmulatorScreen() {
       const next = new Set(prev);
       if (on) next.add(id);
       else next.delete(id);
+      AsyncStorage.setItem(ENABLED_MODS_KEY, JSON.stringify(Array.from(next))).catch(() => {});
       return next;
     });
   };
