@@ -267,16 +267,32 @@
   }
 
   function drawWaiting(memory) {
-    const write = (row, text) => {
-      for (let column = 0; column < 18; column += 1) {
-        const char = (text[column] || " ").toUpperCase();
-        const tile = char >= "A" && char <= "Z" ? 0x80 + char.charCodeAt(0) - 65 : 0x7f;
-        memory.write8(A.tileMap + row * 20 + column + 1, tile);
-      }
+    // Centered over the battlefield: AWAITING alone inside a textbox
+    // ($79-$7E border tiles), with the cancel hint on its own cleared strip
+    // below. $EC is the open right-pointing triangle. BattleLinkReady/Cancel
+    // restore the scene from the tile buffers when the wait ends.
+    const width = 12;
+    const left = (20 - width) >> 1;
+    const top = 7;
+    const put = (row, column, tile) =>
+      memory.write8(A.tileMap + (top + row) * 20 + left + column, tile);
+    const glyph = (char) => char === ">" ? 0xec :
+      char >= "A" && char <= "Z" ? 0x80 + char.charCodeAt(0) - 65 : 0x7f;
+    const text = (row, value) => {
+      const start = (width - value.length) >> 1;
+      for (let index = 0; index < width; index += 1)
+        put(row, index, glyph(value[index - start] || " "));
     };
-    write(14, "AWAITING MOVE");
-    write(15, "DECISION");
-    write(16, "B BACK");
+    for (let column = 0; column < width; column += 1) {
+      const edge = column === 0 ? 0 : column === width - 1 ? 2 : 1;
+      put(0, column, [0x79, 0x7a, 0x7b][edge]);
+      put(2, column, [0x7d, 0x7a, 0x7e][edge]);
+    }
+    put(1, 0, 0x7c);
+    put(1, width - 1, 0x7c);
+    for (let index = 1; index < width - 1; index += 1)
+      put(1, index, glyph("AWAITING"[index - 2] || " "));
+    text(3, ">B BACK");
   }
 
   function forcedAction(memory) {
