@@ -1,0 +1,183 @@
+"""High-level Battle facade over RawBattle: schema_v1 states, revealed-info
+tracking, and the SPECS action-int mapping."""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass, field
+from typing import Any
+
+from sim import engine
+from sim.engine import MOVE, PASS, RESULT_NONE, SWITCH, RawBattle
+from sim.gen1data import MOVES, SPECIES
+from sim.pack import PokemonSpec, max_pp, pack_battle
+from sim.schema import ACTION_PASS, ACTION_SWITCH_BASE, State
+
+SPECIES_BY_ID = {v[0]: k for k, v in SPECIES.items()}
+MOVES_BY_ID = {v[0]: k for k, v in MOVES.items()}
+
+_SIDE = (0, 184)
+_POKE = 24
+_ORDER_OFF = 176
+_TURN_OFF = 368
+
+STATUS_NAMES = {0x08: "PSN", 0x10: "BRN", 0x20: "FRZ", 0x40: "PAR"}
+
+
+def _status_name(status: int) -> str | None:
+    if status == 0:
+        return None
+    if status & 0x07:
+        return "SLP"
+    for bit, name in STATUS_NAMES.items():
+        if status & bit:
+            return name
+    return None
+
+
+def _parse_pokemon(buf: bytes, side: int, ix: int) -> dict[str, Any]:
+    o = _SIDE[side] + ix * _POKE
+    hp_max = int.from_bytes(buf[o : o + 2], "little")
+    moves = []
+    for m in range(4):
+        mid, pp = buf[o + 10 + m * 2], buf[o + 11 + m * 2]
+        if mid:
+            moves.append({"id": MOVES_BY_ID[mid], "pp": pp})
+    hp = int.from_bytes(buf[o + 18 : o + 20], "little")
+    return {
+        "species": SPECIES_BY_ID.get(buf[o + 21]),
+        "level": buf[o + 23],
+        "hp": hp,
+        "max_hp": hp_max,
+        "status": _status_name(buf[o + 20]),
+        "moves": moves,
+    }
+
+
+@dataclass
+class BattleRecord:
+    winner: str
+    turns: list[dict[str, Any]] = field(default_factory=list)
+
+
+class Battle:
+    """Two-seat gen1 battle. Players are 1 and 2 in the public API."""
+
+    def __init__(self, team1: list[PokemonSpec], team2: list[PokemonSpec], seed: int):
+        self.teams = (team1, team2)
+        packed = pack_battle(team1, team2, seed)
+        self.battle_id = "b_" + hashlib.sha1(packed).hexdigest()[:8]
+        self.raw = RawBattle(packed, seed=seed)
+        # revealed[side] = set of party indexes seen; revealed_moves[side][ix]
+        self._revealed: tuple[set[int], set[int]] = (set(), set())
+        self._revealed_moves: tuple[dict[int, set[str]], dict[int, set[str]]] = ({}, {})
+        self._initial_pp = tuple(
+            {ix: {m: max_pp(m) for m in p.moves} for ix, p in enumerate(team)}
+            for team in (team1, team2)
+        )
+        self.raw.update(0, 0)  # initial switch-in of both leads
+        self._track_reveals()
+
+    # -- revealed-information tracking (engine-truth based, no protocol logs) --
+
+    def _active_ix(self, side: int) -> int:
+        order = self.raw.bytes[_SIDE[side] + _ORDER_OFF : _SIDE[side] + _ORDER_OFF + 6]
+        for i, slot in enumerate(order):
+            if slot == 1:
+                return i
+        return 0
+
+    def _track_reveals(self) -> None:
+        buf = self.raw.bytes
+        for side in (0, 1):
+            active = self._active_ix(side)
+            self._revealed[side].add(active)
+            for ix in list(self._revealed[side]):
+                seen = self._revealed_moves[side].setdefault(ix, set())
+                o = _SIDE[side] + ix * _POKE
+                for m in range(4):
+                    mid, pp = buf[o + 10 + m * 2], buf[o + 11 + m * 2]
+                    if not mid:
+                        continue
+                    name = MOVES_BY_ID[mid]
+                    if pp < self._initial_pp[side].get(ix, {}).get(name, 0):
+                        seen.add(name)
+
+    # -- SPECS action ints <-> engine choices --
+
+    def _choice_map(self, side: int) -> dict[int, int]:
+        request = self.raw.requests()[side]
+        mapping: dict[int, int] = {}
+        for choice in self.raw.choices(side, request):
+            kind = engine.choice_type(choice)
+            data = engine.choice_data(choice)
+            if kind == MOVE:
+                mapping[data - 1 if data else ACTION_PASS] = choice
+            elif kind == SWITCH:
+                mapping[ACTION_SWITCH_BASE + data - 2] = choice
+            elif kind == PASS:
+                mapping[ACTION_PASS] = choice
+        return mapping
+
+    @property
+    def winner(self) -> str | None:
+        return self.raw.winner()
+
+    def state(self, player: int) -> State:
+        side = player - 1
+        opp = 1 - side
+        buf = self.raw.bytes
+        request = self.raw.requests()[side]
+        my_pokemon = [_parse_pokemon(buf, side, i) for i in range(len(self.teams[side]))]
+        opp_pokemon = []
+        for i in range(len(self.teams[opp])):
+            p = _parse_pokemon(buf, opp, i)
+            if i in self._revealed[opp]:
+                opp_pokemon.append(
+                    {
+                        "species": p["species"],
+                        "hp_fraction": round(p["hp"] / p["max_hp"], 4) if p["max_hp"] else 0.0,
+                        "status": p["status"],
+                        "revealed_moves": sorted(self._revealed_moves[opp].get(i, set())),
+                    }
+                )
+            else:
+                opp_pokemon.append(
+                    {"species": None, "hp_fraction": None, "status": None, "revealed_moves": []}
+                )
+        request_kind = {PASS: "wait", MOVE: "turn", SWITCH: "force_switch"}[request]
+        return State(
+            battle_id=self.battle_id,
+            turn=int.from_bytes(buf[_TURN_OFF : _TURN_OFF + 2], "little"),
+            request_kind=request_kind,
+            my_side={"active_ix": self._active_ix(side), "pokemon": my_pokemon},
+            opp_side={"active_ix": self._active_ix(opp), "pokemon": opp_pokemon},
+            legal_actions=sorted(self._choice_map(side)),
+        )
+
+    def step(self, a1: int, a2: int) -> None:
+        if self.raw.result_type() != RESULT_NONE:
+            raise RuntimeError("battle is over")
+        maps = (self._choice_map(0), self._choice_map(1))
+        choices = []
+        for side, action in ((0, a1), (1, a2)):
+            if action not in maps[side]:
+                raise ValueError(
+                    f"illegal action {action} for p{side + 1}; legal: {sorted(maps[side])}"
+                )
+            choices.append(maps[side][action])
+        self.raw.update(choices[0], choices[1])
+        self._track_reveals()
+
+
+def run_battle(agent1, agent2, team1, team2, seed: int, max_turns: int = 1000) -> BattleRecord:
+    b = Battle(team1, team2, seed)
+    turns: list[dict[str, Any]] = []
+    for _ in range(max_turns):
+        if b.winner:
+            break
+        s1, s2 = b.state(1), b.state(2)
+        a1, a2 = agent1.choose(s1), agent2.choose(s2)
+        turns.append({"state_p1": s1.to_json(), "state_p2": s2.to_json(), "a1": a1, "a2": a2})
+        b.step(a1, a2)
+    return BattleRecord(winner=b.winner or "unfinished", turns=turns)
