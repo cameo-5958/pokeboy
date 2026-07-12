@@ -1,0 +1,6 @@
+{
+  "mode": "showdown",
+  "engine_commit": "388b6109b14154f07b3f3ee9d67f34871127c4c2",
+  "zig_version": "0.16.0",
+  "build_flags": ["-Doptimize=ReleaseFast", "-Dshowdown=true", "-Ddynamic=true"]
+}
