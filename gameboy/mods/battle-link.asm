@@ -9,7 +9,9 @@ DEF wBuffer                   EQU $cee9
 DEF wIsInBattle               EQU $d057
 DEF wLinkState                EQU $d12b
 DEF hJoyPressed               EQU $ffb3
+DEF hAutoBGTransferEnabled    EQU $ffba
 
+DEF Joypad                    EQU $019a
 DEF DelayFrame                EQU $20af
 DEF LoadScreenTilesFromBuffer1 EQU $3725
 DEF DrawHUDsAndHPBars         EQU $4d5a
@@ -71,6 +73,13 @@ BattleLinkSelect::
     ret nz
     xor a
     ld [wBuffer + 2], a
+    ; The host draws AWAITING into wTileMap, which only reaches VRAM while
+    ; auto BG transfer is enabled — force it on for the wait and restore the
+    ; caller's value on every exit path.
+    ldh a, [hAutoBGTransferEnabled]
+    ld [wBuffer + 3], a
+    ld a, 1
+    ldh [hAutoBGTransferEnabled], a
 
 BattleLinkPoll:
 BattleLinkHostOpcode::
@@ -88,6 +97,9 @@ BattleLinkHostSlot::
 
 BattleLinkPending:
     call DelayFrame
+    ; VBlank only refreshes the raw joypad state; hJoyPressed is derived by
+    ; Joypad, which nothing else calls while this loop owns the CPU.
+    call Joypad
     ldh a, [hJoyPressed]
     and B_BUTTON
     jr z, BattleLinkPoll
@@ -100,6 +112,8 @@ BattleLinkPending:
 BattleLinkCancel:
     xor a
     ld [wBuffer + 2], a
+    ld a, [wBuffer + 3]
+    ldh [hAutoBGTransferEnabled], a
     call LoadScreenTilesFromBuffer1
     call DrawHUDsAndHPBars
     ; Discard our CALL return address and restart the battle menu.
@@ -109,6 +123,8 @@ BattleLinkCancel:
 BattleLinkReady:
     xor a
     ld [wBuffer + 2], a
+    ld a, [wBuffer + 3]
+    ldh [hAutoBGTransferEnabled], a
     call LoadScreenTilesFromBuffer1
     call DrawHUDsAndHPBars
     ret
