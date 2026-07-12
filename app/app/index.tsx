@@ -50,6 +50,8 @@ const LCD_DRAIN_MS = 300;
 const LABEL_CACHE_PREFIX = "pokeboy.label.v1:";
 const CARTRIDGE_RETRY_MS = 15000;
 const DEV_POLL_MS = 750;
+const BATTLE_LINK_ENDPOINT_KEY = "pokeboy.mod.battle-link.endpoint.v1";
+const DEFAULT_BATTLE_LINK_ENDPOINT = "https://pokeboy.cameo.moe/battle-link/decision";
 
 function blobToDataUri(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -82,7 +84,13 @@ const EmulatorContext = createContext<{
   webViewRef: { current: WebView | null };
   onMessage: (event: WebViewMessageEvent) => void;
   setInput: (group: InputGroup, mask: number, held: boolean) => void;
-  settings: { speed: number | "inf"; muted: boolean; volume: number; telemetry: boolean };
+  settings: {
+    speed: number | "inf";
+    muted: boolean;
+    volume: number;
+    telemetry: boolean;
+    battleLinkEndpoint: string;
+  };
   paused: boolean;
   mods: readonly string[];
 }>({
@@ -90,7 +98,7 @@ const EmulatorContext = createContext<{
   webViewRef: { current: null },
   onMessage: () => undefined,
   setInput: () => undefined,
-  settings: { speed: 1, muted: false, volume: 1, telemetry: false },
+  settings: { speed: 1, muted: false, volume: 1, telemetry: false, battleLinkEndpoint: "" },
   paused: false,
   mods: [],
 });
@@ -107,6 +115,11 @@ function cartMetrics(u: Unit, width: number) {
 // Hardware add-ons that can be snapped onto the console. Pure client state —
 // enabling one just tracks it locally (behavior wiring comes later).
 const MODS = [
+  {
+    id: "battle-link",
+    name: "BATTLE LINK",
+    desc: "Routes trainer decisions through your public Breadwinner API.",
+  },
   {
     id: "tradeback-npc",
     name: "TRADEBACK NPC",
@@ -201,6 +214,7 @@ export default function EmulatorScreen() {
   const [volume, setVolume] = useState(0.72);
   const [muted, setMuted] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(1);
+  const [battleLinkEndpoint, setBattleLinkEndpoint] = useState(DEFAULT_BATTLE_LINK_ENDPOINT);
   const [cartridges, setCartridges] = useState<CartridgeInfo[]>([]);
   const [cartridgeIdx, setCartridgeIdx] = useState(0);
   const [labelImages, setLabelImages] = useState<Record<string, string>>({});
@@ -280,14 +294,27 @@ export default function EmulatorScreen() {
       alive = false;
     };
   }, []);
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem(BATTLE_LINK_ENDPOINT_KEY)
+      .then((value) => { if (alive && value) setBattleLinkEndpoint(value); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const saveBattleLinkEndpoint = useCallback((value: string) => {
+    const endpoint = value.trim();
+    setBattleLinkEndpoint(endpoint);
+    AsyncStorage.setItem(BATTLE_LINK_ENDPOINT_KEY, endpoint).catch(() => {});
+  }, []);
   const emulatorSettings = useMemo(
     () => ({
       speed: (SPEEDS[speedIdx] === "xINF" ? "inf" : Number(SPEEDS[speedIdx].slice(1))) as number | "inf",
       muted,
       volume,
       telemetry: settings.telemetry,
+      battleLinkEndpoint,
     }),
-    [speedIdx, muted, volume, settings.telemetry],
+    [speedIdx, muted, volume, settings.telemetry, battleLinkEndpoint],
   );
 
   // The list is local-first, so a launch while the backend is unreachable
@@ -679,6 +706,7 @@ export default function EmulatorScreen() {
         wasmUri: emulatorAssets.wasmUri,
         wasmBase64: emulatorAssets.wasmBase64,
         modCoreUri: emulatorAssets.modCoreUri,
+        battleLinkEndpoint,
       };
       return {
         uri: emulatorAssets.documentUri,
@@ -687,7 +715,7 @@ export default function EmulatorScreen() {
         key: `${cartridge.id}@${cartridge.version ?? "0"}`,
       };
     },
-    [api.baseUrl, cartridge, emulatorAssets, settings.apiKey],
+    [api.baseUrl, battleLinkEndpoint, cartridge, emulatorAssets, settings.apiKey],
   );
   const modsList = useMemo(() => Array.from(enabledMods), [enabledMods]);
   const emulatorContextValue = useMemo(
@@ -748,6 +776,8 @@ export default function EmulatorScreen() {
             cartWidth={cartWidth}
             enabled={enabledMods}
             onSet={setMod}
+            battleLinkEndpoint={battleLinkEndpoint}
+            onBattleLinkEndpoint={saveBattleLinkEndpoint}
           />
         </Animated.View>
 
@@ -1107,6 +1137,8 @@ function ModChanger({
   cartWidth,
   enabled,
   onSet,
+  battleLinkEndpoint,
+  onBattleLinkEndpoint,
 }: {
   u: Unit;
   anim: AnimValue;
@@ -1115,6 +1147,8 @@ function ModChanger({
   cartWidth: number;
   enabled: ReadonlySet<string>;
   onSet: (id: string, on: boolean) => void;
+  battleLinkEndpoint: string;
+  onBattleLinkEndpoint: (value: string) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1190,7 +1224,15 @@ function ModChanger({
         </Pressable>
       </View>
 
-      {active ? <ModConfigModal open={configOpen} mod={mod} onClose={toggleConfig} /> : null}
+      {active ? (
+        <ModConfigModal
+          open={configOpen}
+          mod={mod}
+          onClose={toggleConfig}
+          battleLinkEndpoint={battleLinkEndpoint}
+          onBattleLinkEndpoint={onBattleLinkEndpoint}
+        />
+      ) : null}
 
       {/* Panel 2: enabled count */}
       <View
@@ -1477,13 +1519,25 @@ function ModConfigModal({
   open,
   mod,
   onClose,
+  battleLinkEndpoint,
+  onBattleLinkEndpoint,
 }: {
   open: boolean;
   mod: (typeof MODS)[number];
   onClose: () => void;
+  battleLinkEndpoint: string;
+  onBattleLinkEndpoint: (value: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const cardWidth = Math.min(width * 0.86, 380);
+  const [draft, setDraft] = useState(battleLinkEndpoint);
+  useEffect(() => { if (open) setDraft(battleLinkEndpoint); }, [open, battleLinkEndpoint]);
+  const endpointError = !/^https:\/\/[^\s]+$/i.test(draft.trim());
+  const save = () => {
+    if (endpointError) return;
+    onBattleLinkEndpoint(draft);
+    onClose();
+  };
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
       {/* Backdrop — tapping outside the card closes the dialog. */}
@@ -1504,9 +1558,42 @@ function ModConfigModal({
               </Text>
             </Pressable>
           </View>
-          <Text selectable={false} style={styles.modConfigPlaceholder}>
-            No options for this mod yet.
-          </Text>
+          {mod.id === "battle-link" ? (
+            <>
+              <Text selectable={false} style={styles.settingsFieldLabel}>PUBLIC DECISION API</Text>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                placeholder="https://example.com/decision"
+                placeholderTextColor="#8b8679"
+                style={[styles.settingsInput, endpointError && styles.settingsInputError]}
+              />
+              <Text selectable={false} style={styles.modConfigHelp}>
+                The endpoint must accept Battle Link GET requests and allow WebView CORS.
+              </Text>
+              {endpointError ? (
+                <Text selectable={false} style={styles.modConfigError}>Enter a public HTTPS URL.</Text>
+              ) : null}
+              <Pressable
+                disabled={endpointError}
+                onPress={save}
+                style={({ pressed }) => [
+                  styles.modConfigSave,
+                  endpointError && { opacity: 0.4 },
+                  pressed && { opacity: 0.65 },
+                ]}
+              >
+                <Text selectable={false} style={styles.settingsButtonText}>SAVE ENDPOINT</Text>
+              </Pressable>
+            </>
+          ) : (
+            <Text selectable={false} style={styles.modConfigPlaceholder}>
+              No options for this mod yet.
+            </Text>
+          )}
         </Pressable>
       </Pressable>
     </Modal>
@@ -2186,6 +2273,31 @@ const styles = StyleSheet.create({
     color: "#6b665a",
     fontWeight: "600",
     userSelect: "none",
+  },
+  modConfigHelp: {
+    marginTop: 8,
+    color: "#6b665a",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  modConfigError: {
+    marginTop: 6,
+    color: "#8e2f35",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modConfigSave: {
+    marginTop: 14,
+    minHeight: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: "#aaa596",
+    backgroundColor: "#c8c3b4",
+  },
+  settingsInputError: {
+    borderColor: "#8e2f35",
   },
   settingsBackdrop: {
     flex: 1,
