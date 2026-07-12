@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "prebuild": "expo prebuild",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:battle-link": "node scripts/test-battle-link-core.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",

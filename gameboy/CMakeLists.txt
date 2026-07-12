@@ -32,6 +32,11 @@ if(BUILD_TESTING)
     # uncommitted ROM: mod_package_tests rom.gb symbols.sym package.gbmod
     add_executable(gbcore_mod_package_tests tests/mod_package_tests.cpp)
     target_link_libraries(gbcore_mod_package_tests PRIVATE gbcore)
+
+    # Manual guarded-package harness for Breadwinner: Battle Link. It uses the
+    # same local, uncommitted ROM and symbol inputs as gbcore_mod_package_tests.
+    add_executable(gbcore_battle_link_package_tests tests/battle_link_package_tests.cpp)
+    target_link_libraries(gbcore_battle_link_package_tests PRIVATE gbcore)
 endif()
 
 if(WIN32)
