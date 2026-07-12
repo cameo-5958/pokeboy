@@ -13,32 +13,32 @@ export type EmulatorAssets = {
   readAccessUri: string;
 };
 
-let pending: Promise<EmulatorAssets> | null = null;
-
-function usableUri(asset: Asset): string {
-  const uri = asset.localUri ?? asset.uri;
-  if (!uri) throw new Error(`Bundled emulator asset ${asset.name} has no URI`);
-  return uri;
+function localUri(asset: Asset, name: string): string {
+  if (!asset.localUri) throw new Error(`Bundled emulator asset ${name} has no local URI`);
+  return asset.localUri;
 }
 
-/** Resolves the emulator files copied into the native application bundle. */
+let cached: EmulatorAssets | null = null;
+let pending: Promise<EmulatorAssets> | null = null;
+
 export function loadEmulatorAssets(): Promise<EmulatorAssets> {
+  if (cached) return Promise.resolve(cached);
   if (pending) return pending;
-  pending = (async () => {
-    const [document, gbcore, wasm, modCore] = await Asset.loadAsync([
-      documentModule,
-      coreModule,
-      wasmModule,
-      modCoreModule,
-    ]);
-    const documentUri = usableUri(document);
-    return {
-      documentUri,
-      gbcoreUri: usableUri(gbcore),
-      wasmUri: usableUri(wasm),
-      modCoreUri: usableUri(modCore),
-      readAccessUri: documentUri.slice(0, documentUri.lastIndexOf("/") + 1),
-    };
-  })();
+  pending = Asset.loadAsync([documentModule, coreModule, wasmModule, modCoreModule])
+    .then(([document, gbcore, wasm, modCore]) => {
+      const documentUri = localUri(document, "embed.html");
+      cached = {
+        documentUri,
+        gbcoreUri: localUri(gbcore, "gbcore.bin"),
+        wasmUri: localUri(wasm, "gbcore.wasm"),
+        modCoreUri: localUri(modCore, "mod-core.bin"),
+        readAccessUri: documentUri.slice(0, documentUri.lastIndexOf("/") + 1),
+      };
+      return cached;
+    })
+    .catch((error) => {
+      pending = null;
+      throw error;
+    });
   return pending;
 }
