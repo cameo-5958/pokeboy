@@ -15,6 +15,7 @@ bool GameBoy::load_rom(const uint8_t* data, size_t len) {
 void GameBoy::reset_custom_boot() {
     cpu = CPU{};
     cpu.bus = &bus;
+    cpu.mods = &mods;
     cpu.sp = 0xFFFE;
     cpu.pc = 0x0000;
 
