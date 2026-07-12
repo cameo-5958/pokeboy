@@ -4,21 +4,27 @@
   "targetCrc32": "0x9f7fdd53",
   "targetSize": 1048576,
   "metadata": {
-    "version": "1.0.0",
+    "version": "1.0.2",
     "description": "Routes every non-forced Pokemon Red trainer decision through a public Battle Link endpoint.",
-    "permissions": ["network"],
+    "permissions": [
+      "network"
+    ],
     "config": [
       {
         "key": "endpoint",
         "label": "DECISION API",
         "type": "url",
         "required": true,
-        "schemes": ["https"],
+        "schemes": [
+          "https"
+        ],
         "description": "One public HTTPS endpoint used for the entire game."
       }
     ]
   },
-  "imports": ["battle-link.decide"],
+  "imports": [
+    "battle-link.decide"
+  ],
   "sections": [
     {
       "name": "battle-link.code",
@@ -26,7 +32,9 @@
       "bank": "0x0f",
       "address": "0x7e00",
       "fill": "0x00",
-      "data": { "file": "battle-link.bin" }
+      "data": {
+        "file": "battle-link.bin"
+      }
     }
   ],
   "patches": [
@@ -59,10 +67,26 @@
     }
   ],
   "symbols": [
-    { "name": "BattleLinkBattleStart", "section": "battle-link.code", "offset": 0 },
-    { "name": "BattleLinkSelect", "section": "battle-link.code", "offset": 16 },
-    { "name": "BattleLinkDispatch", "section": "battle-link.code", "offset": 90 },
-    { "name": "BattleLinkChooseSwitch", "section": "battle-link.code", "offset": 205 }
+    {
+      "name": "BattleLinkBattleStart",
+      "section": "battle-link.code",
+      "offset": 0
+    },
+    {
+      "name": "BattleLinkSelect",
+      "section": "battle-link.code",
+      "offset": 16
+    },
+    {
+      "name": "BattleLinkDispatch",
+      "section": "battle-link.code",
+      "offset": 112
+    },
+    {
+      "name": "BattleLinkChooseSwitch",
+      "section": "battle-link.code",
+      "offset": 227
+    }
   ],
   "relocations": [
     {
@@ -76,7 +100,7 @@
     {
       "target": "section",
       "in": "battle-link.code",
-      "offset": 35,
+      "offset": 44,
       "type": "host16",
       "reference": "host",
       "name": "battle-link.decide"

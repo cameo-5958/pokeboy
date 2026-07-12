@@ -27,7 +27,14 @@
     enemyNicks: 0xd9ee,
   });
   const PARTY_LENGTH = 44;
-  const TIMEOUT_MS = 30000;
+  const DEFAULT_MAX_TIME_TILL_RANDOM_MS = 30000;
+  // maxTimeTillRandom: how long a decision request may wait for the endpoint
+  // before Battle Link falls back to a uniform random legal action. 0 skips
+  // the network entirely and always picks randomly.
+  const maxTimeTillRandomMs = () => {
+    const value = Number(globalThis.PokeboyRuntime?.battleLinkMaxTimeTillRandomMs);
+    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_MAX_TIME_TILL_RANDOM_MS;
+  };
   const ITEM_CODES = Object.freeze({
     fullRestore: [32, 2, 0x10], potion: [33, 3, 0x14],
     superPotion: [34, 4, 0x13], hyperPotion: [35, 5, 0x12],
@@ -35,6 +42,14 @@
     xAttack: [38, 8, 0x41], xDefend: [39, 9, 0x42],
     xSpeed: [40, 10, 0x43], xSpecial: [41, 11, 0x45],
   });
+
+  // Diagnostics: forwarded by the embed page into opt-in telemetry events so
+  // device-side failures are visible without a debugger.
+  const modEvent = (event, detail) => {
+    try {
+      globalThis.PokeboyModEvent?.("battle-link", Object.assign({ event }, detail || {}));
+    } catch (error) {}
+  };
 
   let battleId = null;
   let turn = 0;
@@ -174,7 +189,7 @@
     return {
       snapshot: {
         protocol: 1, battleId: battleId || (battleId = newId()), turn, attempt,
-        timeoutMs: TIMEOUT_MS, rom: "pokemon-red-us", mod: "battle-link@1.0.0",
+        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.0.0",
         trainer: { class: memory.read8(A.trainerClass), party: trainerParty, active: trainerActive },
         opponent: { party: opponentParty, active: opponentActive },
         battle: {
@@ -206,24 +221,31 @@
   }
 
   async function requestDecision(state) {
-    const deadline = Date.now() + TIMEOUT_MS;
+    const timeoutMs = state.snapshot.timeoutMs;
+    const deadline = Date.now() + timeoutMs;
     const endpoint = String(globalThis.PokeboyRuntime?.battleLinkEndpoint || "").trim();
     let delay = 250;
-    const timeout = setTimeout(() => state.controller.abort("deadline"), TIMEOUT_MS);
+    const timeout = setTimeout(() => state.controller.abort("deadline"), timeoutMs);
     try {
-      if (!/^https:\/\//i.test(endpoint)) throw new Error("Battle Link endpoint is not configured");
+      if (!/^https:\/\//i.test(endpoint)) {
+        modEvent("config-error", { endpoint });
+        throw new Error("Battle Link endpoint is not configured");
+      }
       while (!state.cancelled && Date.now() < deadline) {
         try {
           const url = new URL(endpoint);
           url.searchParams.set("state", base64url(state.snapshot));
+          modEvent("fetch-start", { attempt: state.snapshot.attempt, urlLength: url.toString().length });
           const response = await fetch(url.toString(), { method: "GET", signal: state.controller.signal });
           if (!response.ok) throw new Error(`Battle Link HTTP ${response.status}`);
           const body = await response.json();
           const action = state.actions.find((candidate) => candidate.code === body?.action);
           if (!action || !Number.isInteger(body.action)) throw new Error("Battle Link returned an illegal action");
           state.result = action;
+          modEvent("resolved", { code: action.code, source: "remote" });
           return;
         } catch (error) {
+          modEvent("fetch-error", { message: String(error) });
           if (state.cancelled || state.controller.signal.aborted) break;
           await new Promise((resolve) => setTimeout(resolve, Math.min(delay, deadline - Date.now())));
           delay = Math.min(delay * 2, 2000);
@@ -237,7 +259,10 @@
       }
     } finally {
       clearTimeout(timeout);
-      if (!state.cancelled && !state.result) state.result = randomAction(state.actions);
+      if (!state.cancelled && !state.result) {
+        state.result = randomAction(state.actions);
+        modEvent("resolved", { code: state.result.code, source: "random-deadline" });
+      }
     }
   }
 
@@ -293,13 +318,25 @@
     }
     if (!pending) {
       const { snapshot, actions } = makeSnapshot(memory);
-      pending = { snapshot, actions, controller: new AbortController(), cancelled: false, result: null };
+      pending = {
+        snapshot, actions, controller: new AbortController(), cancelled: false, result: null,
+        deadline: Date.now() + snapshot.timeoutMs,
+      };
       requestDecision(pending);
     }
     if (!pending.result) {
-      drawWaiting(memory);
-      cpu.a = 0;
-      return;
+      if (Date.now() < pending.deadline) {
+        drawWaiting(memory);
+        cpu.a = 0;
+        return;
+      }
+      // Frame-driven failsafe: this hook runs every frame while the ROM
+      // waits, so the deadline holds even if the async request path never
+      // settles (wedged fetch or timers in the WebView).
+      pending.cancelled = true;
+      pending.controller.abort("deadline");
+      pending.result = randomAction(pending.actions);
+      modEvent("resolved", { code: pending.result.code, source: "random-failsafe" });
     }
     const action = pending.result;
     memory.write8(A.buffer, action._kind);
