@@ -335,6 +335,28 @@ bool test_link_host_call_and_unload() {
     return true;
 }
 
+bool test_host_call_fires_through_custom_boot() {
+    // The embed boots via gb_load_rom and runs straight through the custom
+    // boot handoff; it never calls gb_reset_post_boot. The D3 trap must fire
+    // on that path too.
+    const std::vector<uint8_t> rom = make_rom();
+    gb_handle* gb = gb_create();
+    CHECK(gb != nullptr);
+    CHECK(gb_load_rom(gb, rom.data(), rom.size()) == 1);
+    const char symbols[] = "00:0150 Hook\n00:0200 ModulePointer\n";
+    CHECK(gb_mod_load_symbols(gb, symbols, sizeof(symbols) - 1) == GB_MOD_OK);
+    const std::vector<uint8_t> package = make_linked_package(rom, "fixture-boot");
+    uint32_t handle = 0;
+    CHECK(gb_mod_load(gb, package.data(), package.size(), &handle) == GB_MOD_OK);
+    HostState host{handle};
+    gb_mod_set_host_callback(gb, host_callback, &host);
+    for (int frame = 0; frame < 600 && host.calls == 0; ++frame)
+        gb_run_frame(gb);
+    CHECK(host.calls > 0 && host.valid);
+    gb_destroy(gb);
+    return true;
+}
+
 bool test_appended_section_and_far_pointer() {
     const std::vector<uint8_t> rom = make_rom();
     gb_handle* gb = gb_create();
@@ -378,6 +400,7 @@ bool test_full_rgbds_symbol_records() {
 
 int main() {
     if (!test_link_host_call_and_unload()) return 1;
+    if (!test_host_call_fires_through_custom_boot()) return 1;
     if (!test_appended_section_and_far_pointer()) return 1;
     if (!test_full_rgbds_symbol_records()) return 1;
     std::puts("mod linker tests passed");
