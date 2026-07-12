@@ -20,7 +20,7 @@
     function loadScript(uri){
       return new Promise((resolve,reject)=>{
         const script=document.createElement('script');
-        script.src=uri;script.onload=resolve;script.onerror=()=>reject(new Error('Unable to load bundled emulator script'));
+        script.src=uri;script.onload=resolve;script.onerror=()=>reject(new Error('Unable to load bundled emulator script: '+uri));
         document.head.appendChild(script);
       });
     }
@@ -644,7 +644,15 @@
     }
     async function boot(){
       bootStage='wasm-initialize';
-      Module=await createGBCore({locateFile:file=>file.endsWith('.wasm')?runtime.wasmUri:file});
+      // file:// pages can't fetch() sibling files in WKWebView, so the host
+      // hands us the wasm bytes; locateFile stays as the hosted fallback.
+      let wasmBinary;
+      if(runtime.wasmBase64){
+        const raw=atob(runtime.wasmBase64);
+        wasmBinary=new Uint8Array(raw.length);
+        for(let i=0;i<raw.length;i++)wasmBinary[i]=raw.charCodeAt(i);
+      }
+      Module=await createGBCore({wasmBinary,locateFile:file=>file.endsWith('.wasm')?runtime.wasmUri:file});
       bootStage='api-bindings';
       api={
         create:Module.cwrap('gb_create','number',[]),
@@ -712,7 +720,18 @@
       resumeEmulation();
     }
     boot().catch(error=>{const detail=reportError(error);status.textContent=detail.message});
-  })();
+  })().catch(error=>{
+    // Bootstrap failures (missing PokeboyRuntime, core script load) happen
+    // before reportError/status exist in scope — report them by hand so they
+    // can never fail silently.
+    const message=error instanceof Error?error.message:String(error);
+    const statusEl=document.getElementById('status');
+    if(statusEl)statusEl.textContent=message;
+    window.ReactNativeWebView?.postMessage(JSON.stringify({
+      type:'error',
+      detail:{message,name:(error&&error.name)||'Error',stack:(error&&error.stack)||null,stage:'bootstrap'}
+    }));
+  });
   </script>
 </body>
 </html>

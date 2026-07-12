@@ -1,4 +1,5 @@
 import { Asset } from "expo-asset";
+import * as FileSystem from "expo-file-system";
 
 import documentModule from "../../assets/emulator/embed.html";
 import coreModule from "../../assets/emulator/gbcore.bin";
@@ -9,6 +10,9 @@ export type EmulatorAssets = {
   documentUri: string;
   gbcoreUri: string;
   wasmUri: string;
+  // WKWebView cannot fetch() file:// URIs, so the Emscripten glue gets the
+  // wasm bytes handed in (Module.wasmBinary) instead of fetching wasmUri.
+  wasmBase64: string;
   modCoreUri: string;
   readAccessUri: string;
 };
@@ -25,12 +29,17 @@ export function loadEmulatorAssets(): Promise<EmulatorAssets> {
   if (cached) return Promise.resolve(cached);
   if (pending) return pending;
   pending = Asset.loadAsync([documentModule, coreModule, wasmModule, modCoreModule])
-    .then(([document, gbcore, wasm, modCore]) => {
+    .then(async ([document, gbcore, wasm, modCore]) => {
       const documentUri = localUri(document, "embed.html");
+      const wasmUri = localUri(wasm, "gbcore.wasm");
+      const wasmBase64 = await FileSystem.readAsStringAsync(wasmUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
       cached = {
         documentUri,
         gbcoreUri: localUri(gbcore, "gbcore.bin"),
-        wasmUri: localUri(wasm, "gbcore.wasm"),
+        wasmUri,
+        wasmBase64,
         modCoreUri: localUri(modCore, "mod-core.bin"),
         readAccessUri: documentUri.slice(0, documentUri.lastIndexOf("/") + 1),
       };
