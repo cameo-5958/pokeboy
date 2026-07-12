@@ -30,6 +30,7 @@ export type RegistryRom = {
 export type RegistryMod = {
   id: string;
   name: string;
+  desc: string | null;
   version: string;
   checksum: string | null;
 };
@@ -100,6 +101,8 @@ export function createApi(cfg: ApiConfig = {}) {
     /** URL to stream a cartridge's ROM bytes. */
     romUrl: (id: string) => `${base}/api/cartridges/${id}/rom`,
     fetchRegistry: () => get<Registry>("/api/registry"),
+    /** Local-first registry lookup, including whether the result is current. */
+    fetchRegistryWithMeta: () => getWithMeta<Registry>("/api/registry"),
     /** Dev mode: fetch (and clear) the remote-control commands queued for this device. */
     pollDevCommands: async (deviceId: string): Promise<DevCommand[]> => {
       const res = await fetch(
