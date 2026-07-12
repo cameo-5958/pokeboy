@@ -53,6 +53,8 @@ const MOD_REGISTRY_RETRY_MS = 15000;
 const DEV_POLL_MS = 750;
 const BATTLE_LINK_ENDPOINT_KEY = "pokeboy.mod.battle-link.endpoint.v1";
 const DEFAULT_BATTLE_LINK_ENDPOINT = "https://pokeboy.cameo.moe/battle-link/decision";
+const BATTLE_LINK_MAX_WAIT_KEY = "pokeboy.mod.battle-link.maxTimeTillRandom.v1";
+const DEFAULT_BATTLE_LINK_MAX_WAIT_S = 30;
 
 function blobToDataUri(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -91,6 +93,7 @@ const EmulatorContext = createContext<{
     volume: number;
     telemetry: boolean;
     battleLinkEndpoint: string;
+    battleLinkMaxTimeTillRandomMs: number;
   };
   paused: boolean;
   mods: readonly string[];
@@ -99,7 +102,14 @@ const EmulatorContext = createContext<{
   webViewRef: { current: null },
   onMessage: () => undefined,
   setInput: () => undefined,
-  settings: { speed: 1, muted: false, volume: 1, telemetry: false, battleLinkEndpoint: "" },
+  settings: {
+    speed: 1,
+    muted: false,
+    volume: 1,
+    telemetry: false,
+    battleLinkEndpoint: "",
+    battleLinkMaxTimeTillRandomMs: DEFAULT_BATTLE_LINK_MAX_WAIT_S * 1000,
+  },
   paused: false,
   mods: [],
 });
@@ -201,6 +211,7 @@ export default function EmulatorScreen() {
   const [muted, setMuted] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(1);
   const [battleLinkEndpoint, setBattleLinkEndpoint] = useState(DEFAULT_BATTLE_LINK_ENDPOINT);
+  const [battleLinkMaxWaitS, setBattleLinkMaxWaitS] = useState(DEFAULT_BATTLE_LINK_MAX_WAIT_S);
   const [cartridges, setCartridges] = useState<CartridgeInfo[]>([]);
   const [mods, setMods] = useState<readonly RegistryMod[]>([]);
   const [cartridgeIdx, setCartridgeIdx] = useState(0);
@@ -286,12 +297,24 @@ export default function EmulatorScreen() {
     AsyncStorage.getItem(BATTLE_LINK_ENDPOINT_KEY)
       .then((value) => { if (alive && value) setBattleLinkEndpoint(value); })
       .catch(() => {});
+    AsyncStorage.getItem(BATTLE_LINK_MAX_WAIT_KEY)
+      .then((value) => {
+        const seconds = Number(value);
+        if (alive && value !== null && Number.isFinite(seconds) && seconds >= 0) {
+          setBattleLinkMaxWaitS(seconds);
+        }
+      })
+      .catch(() => {});
     return () => { alive = false; };
   }, []);
   const saveBattleLinkEndpoint = useCallback((value: string) => {
     const endpoint = value.trim();
     setBattleLinkEndpoint(endpoint);
     AsyncStorage.setItem(BATTLE_LINK_ENDPOINT_KEY, endpoint).catch(() => {});
+  }, []);
+  const saveBattleLinkMaxWait = useCallback((seconds: number) => {
+    setBattleLinkMaxWaitS(seconds);
+    AsyncStorage.setItem(BATTLE_LINK_MAX_WAIT_KEY, String(seconds)).catch(() => {});
   }, []);
   const emulatorSettings = useMemo(
     () => ({
@@ -300,8 +323,9 @@ export default function EmulatorScreen() {
       volume,
       telemetry: settings.telemetry,
       battleLinkEndpoint,
+      battleLinkMaxTimeTillRandomMs: Math.round(battleLinkMaxWaitS * 1000),
     }),
-    [speedIdx, muted, volume, settings.telemetry, battleLinkEndpoint],
+    [speedIdx, muted, volume, settings.telemetry, battleLinkEndpoint, battleLinkMaxWaitS],
   );
 
   // The list is local-first, so a launch while the backend is unreachable
@@ -466,7 +490,7 @@ export default function EmulatorScreen() {
       if (settings.telemetry) {
         telemetryEventsRef.current.push({ t: Date.now(), kind: "save-corrupt", detail });
       }
-    } else if (message?.type === "error" || message?.type === "cache-error") {
+    } else if (message?.type === "error" || message?.type === "cache-error" || message?.type === "mod-event") {
       console.warn(`Pokeboy ${message.type}`, detail);
       if (settings.telemetry) {
         telemetryEventsRef.current.push({ t: Date.now(), kind: message.type, detail });
@@ -729,6 +753,7 @@ export default function EmulatorScreen() {
         wasmBase64: emulatorAssets.wasmBase64,
         modCoreUri: emulatorAssets.modCoreUri,
         battleLinkEndpoint,
+        battleLinkMaxTimeTillRandomMs: Math.round(battleLinkMaxWaitS * 1000),
       };
       return {
         uri: emulatorAssets.documentUri,
@@ -737,7 +762,7 @@ export default function EmulatorScreen() {
         key: `${cartridge.id}@${cartridge.version ?? "0"}`,
       };
     },
-    [api.baseUrl, battleLinkEndpoint, cartridge, emulatorAssets, settings.apiKey],
+    [api.baseUrl, battleLinkEndpoint, battleLinkMaxWaitS, cartridge, emulatorAssets, settings.apiKey],
   );
   const modsList = useMemo(() => Array.from(enabledMods), [enabledMods]);
   const emulatorContextValue = useMemo(
@@ -801,6 +826,8 @@ export default function EmulatorScreen() {
             onSet={setMod}
             battleLinkEndpoint={battleLinkEndpoint}
             onBattleLinkEndpoint={saveBattleLinkEndpoint}
+            battleLinkMaxWaitS={battleLinkMaxWaitS}
+            onBattleLinkMaxWait={saveBattleLinkMaxWait}
           />
         </Animated.View>
 
@@ -1163,6 +1190,8 @@ function ModChanger({
   onSet,
   battleLinkEndpoint,
   onBattleLinkEndpoint,
+  battleLinkMaxWaitS,
+  onBattleLinkMaxWait,
 }: {
   u: Unit;
   anim: AnimValue;
@@ -1174,6 +1203,8 @@ function ModChanger({
   onSet: (id: string, on: boolean) => void;
   battleLinkEndpoint: string;
   onBattleLinkEndpoint: (value: string) => void;
+  battleLinkMaxWaitS: number;
+  onBattleLinkMaxWait: (seconds: number) => void;
 }) {
   const [idx, setIdx] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1269,6 +1300,8 @@ function ModChanger({
           onClose={toggleConfig}
           battleLinkEndpoint={battleLinkEndpoint}
           onBattleLinkEndpoint={onBattleLinkEndpoint}
+          battleLinkMaxWaitS={battleLinkMaxWaitS}
+          onBattleLinkMaxWait={onBattleLinkMaxWait}
         />
       ) : null}
 
@@ -1559,21 +1592,31 @@ function ModConfigModal({
   onClose,
   battleLinkEndpoint,
   onBattleLinkEndpoint,
+  battleLinkMaxWaitS,
+  onBattleLinkMaxWait,
 }: {
   open: boolean;
   mod: RegistryMod;
   onClose: () => void;
   battleLinkEndpoint: string;
   onBattleLinkEndpoint: (value: string) => void;
+  battleLinkMaxWaitS: number;
+  onBattleLinkMaxWait: (seconds: number) => void;
 }) {
   const { width } = useWindowDimensions();
   const cardWidth = Math.min(width * 0.86, 380);
   const [draft, setDraft] = useState(battleLinkEndpoint);
+  const [maxWaitDraft, setMaxWaitDraft] = useState(String(battleLinkMaxWaitS));
   useEffect(() => { if (open) setDraft(battleLinkEndpoint); }, [open, battleLinkEndpoint]);
+  useEffect(() => { if (open) setMaxWaitDraft(String(battleLinkMaxWaitS)); }, [open, battleLinkMaxWaitS]);
   const endpointError = !/^https:\/\/[^\s]+$/i.test(draft.trim());
+  const maxWaitSeconds = Number(maxWaitDraft.trim());
+  const maxWaitError =
+    maxWaitDraft.trim() === "" || !Number.isFinite(maxWaitSeconds) || maxWaitSeconds < 0 || maxWaitSeconds > 300;
   const save = () => {
-    if (endpointError) return;
+    if (endpointError || maxWaitError) return;
     onBattleLinkEndpoint(draft);
+    onBattleLinkMaxWait(maxWaitSeconds);
     onClose();
   };
   return (
@@ -1615,16 +1658,33 @@ function ModConfigModal({
               {endpointError ? (
                 <Text selectable={false} style={styles.modConfigError}>Enter a public HTTPS URL.</Text>
               ) : null}
+              <Text selectable={false} style={styles.settingsFieldLabel}>MAX TIME TILL RANDOM (SECONDS)</Text>
+              <TextInput
+                value={maxWaitDraft}
+                onChangeText={setMaxWaitDraft}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="numeric"
+                placeholder="30"
+                placeholderTextColor="#8b8679"
+                style={[styles.settingsInput, maxWaitError && styles.settingsInputError]}
+              />
+              <Text selectable={false} style={styles.modConfigHelp}>
+                How long a battle waits for the endpoint before picking a random legal action. 0 always picks randomly.
+              </Text>
+              {maxWaitError ? (
+                <Text selectable={false} style={styles.modConfigError}>Enter 0–300 seconds.</Text>
+              ) : null}
               <Pressable
-                disabled={endpointError}
+                disabled={endpointError || maxWaitError}
                 onPress={save}
                 style={({ pressed }) => [
                   styles.modConfigSave,
-                  endpointError && { opacity: 0.4 },
+                  (endpointError || maxWaitError) && { opacity: 0.4 },
                   pressed && { opacity: 0.65 },
                 ]}
               >
-                <Text selectable={false} style={styles.settingsButtonText}>SAVE ENDPOINT</Text>
+                <Text selectable={false} style={styles.settingsButtonText}>SAVE SETTINGS</Text>
               </Pressable>
             </>
           ) : (

@@ -45,14 +45,21 @@ The endpoint keeps the request open until it can respond:
 ```
 
 Only a code offered in that request is accepted. HTTP failures, invalid JSON,
-and illegal codes are retried until the original 30-second deadline. At the
-deadline Battle Link chooses uniformly from the legal actions. The endpoint
+and illegal codes are retried until the request's `maxTimeTillRandom` deadline
+(configured on the mod configuration screen alongside the endpoint; default
+30 seconds, advertised to the endpoint as the snapshot's `timeoutMs`). At the
+deadline Battle Link chooses uniformly from the legal actions, so battles
+never stall indefinitely; a value of 0 skips the request entirely and always
+picks randomly. The endpoint
 must allow the app's WebView origin through CORS and support the encoded query
 length.
 
-While waiting, the ROM displays `AWAITING MOVE DECISION` and `B BACK`. Pressing
-B aborts the request and returns to the player's battle menu; the reselected
-turn retains its battle/turn identity and increments `attempt`.
+While waiting, the ROM displays `AWAITING MOVE DECISION` and `B BACK` in the
+battle textbox, and music keeps playing: the wait loop is `DelayFrame` (halt
+with interrupts enabled), so the VBlank handler continues to run the audio
+engine and the auto BG-map transfer every frame. Pressing B aborts the request
+and returns to the player's battle menu; the reselected turn retains its
+battle/turn identity and increments `attempt`.
 
 ## Action codes
 
