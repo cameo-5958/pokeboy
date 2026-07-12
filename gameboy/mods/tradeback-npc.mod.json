@@ -4,7 +4,7 @@
   "targetCrc32": "0x9f7fdd53",
   "targetSize": 1048576,
   "metadata": {
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "Replaces every Pokemon Center link receptionist with a native tradeback NPC for party slot one.",
     "config": [
       {
@@ -36,7 +36,7 @@
     {
       "symbol": "CableClubNPC",
       "expected": "21 b8 72 cd 49 3c fa 4b d7",
-      "data": "3e 12 21 00 00 cd 00 00 c9"
+      "data": "06 12 21 00 00 cd 00 00 c9"
     },
     {
       "symbol": "InGameTrade_DoTrade",
