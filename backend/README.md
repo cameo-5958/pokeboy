@@ -49,6 +49,10 @@ Keys live in `data/keys.json` (git-ignored).
 | Method | Path                        | Description                                |
 | ------ | --------------------------- | ------------------------------------------ |
 | GET    | `/health`                   | Liveness check (unauthenticated).          |
+| GET    | `/battle-link`              | Public live trainer command console.       |
+| GET    | `/battle-link/decision`     | Public Battle Link long-poll endpoint.     |
+| GET    | `/battle-link/pending`      | Pending command requests for the console.  |
+| POST   | `/battle-link/command`      | Submit a legal action code.                |
 | POST   | `/api/keys`                 | Mint a device key (admin-token guarded).   |
 | GET    | `/api/keys`                 | List issued keys, masked (admin-token).    |
 | DELETE | `/api/keys/:key`            | Revoke a key (admin-token).                |
