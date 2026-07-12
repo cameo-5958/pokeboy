@@ -11,6 +11,7 @@ import { keysRouter } from "./routes/keys.js";
 import { modsRouter } from "./routes/mods.js";
 import { registryRouter } from "./routes/registry.js";
 import { telemetryRouter } from "./routes/telemetry.js";
+import { battleLinkRouter } from "./routes/battle-link.js";
 
 const app = express();
 
@@ -28,6 +29,9 @@ app.use(express.json({ limit: "1mb" }));
 // Static label images.
 app.use("/labels", express.static(paths.labels()));
 app.get("/health", (_req, res) => res.json({ ok: true }));
+// Public by design: the ROM long-polls this endpoint and the browser console
+// submits trainer commands without sharing the Pokeboy device API key.
+app.use("/battle-link", battleLinkRouter);
 
 // Key management. Mounted before the data-key guard so a fresh device can be
 // issued its first key. Guards itself with ADMIN_TOKEN.

@@ -3,6 +3,7 @@
     { "id": "pokemon-red", "title": "Pokémon Red", "file": "pokemon-red.gb", "img": "poke-red.png", "version": "1.0.0" }
   ],
   "mods": [
-    { "id": "tradeback-npc", "name": "TRADEBACK NPC", "desc": "Replaces every Pokemon Center link receptionist with a tradeback NPC.", "file": "tradeback-npc.gbmod", "version": "1.2.1" }
+    { "id": "tradeback-npc", "name": "TRADEBACK NPC", "desc": "Replaces every Pokemon Center link receptionist with a tradeback NPC.", "file": "tradeback-npc.gbmod", "version": "1.2.1" },
+    { "id": "battle-link", "name": "BREADWINNER: BATTLE LINK", "desc": "Routes every non-forced trainer decision through a public API.", "file": "battle-link.gbmod", "version": "1.0.0" }
   ]
 }

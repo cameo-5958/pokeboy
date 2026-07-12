@@ -76,6 +76,9 @@
           muted=Boolean(msg.muted);
           volume=Math.max(0,Math.min(1,Number(msg.volume)||0));
           AudioSystem.setVolume(muted?0:volume);
+          if(typeof msg.battleLinkEndpoint==='string'){
+            runtime.battleLinkEndpoint=msg.battleLinkEndpoint.trim();
+          }
           AudioSystem.resume().catch(()=>{});
           const tel=Boolean(msg.telemetry);
           if(tel!==telemetry){
