@@ -1642,6 +1642,9 @@ function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
           key={emulator.key}
           ref={webViewRef}
           source={{ uri: emulator.uri }}
+          // The bundled emulator loads from a file:// URI, which the default
+          // whitelist (http/https) silently blocks — leaving a blank WebView.
+          originWhitelist={["file://*", "http://*", "https://*"]}
           injectedJavaScriptBeforeContentLoaded={emulator.injected}
           allowingReadAccessToURL={emulator.readAccessUri}
           style={styles.emulator}
