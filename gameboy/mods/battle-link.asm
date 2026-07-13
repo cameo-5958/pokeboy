@@ -222,12 +222,13 @@ BattleLinkChooseSwitch::
     ret
 
 ; The wait UI lives here rather than in the host so dialog changes ship with
-; the package instead of an app rebuild. Copies four 12-tile rows into the
-; centre of wTileMap; BattleLinkSelect has already forced auto BG transfer on,
-; and BattleLinkReady/Cancel restore the scene from the tile buffers.
+; the package instead of an app rebuild. Copies four 12-tile rows over the
+; textbox area of wTileMap; BattleLinkSelect has already forced auto BG
+; transfer on, and BattleLinkReady/Cancel restore the scene from the tile
+; buffers.
 BattleLinkDrawWaiting::
     ld hl, BattleLinkWaitTiles
-    ld de, wTileMap + 7 * 20 + 4
+    ld de, wTileMap + 13 * 20 + 4
     ld c, 4
 .row
     ld b, 12
