@@ -21,7 +21,7 @@
       "name": "BREADWINNER: BATTLE LINK",
       "desc": "Routes every non-forced trainer decision through a public API.",
       "file": "battle-link.gbmod",
-      "version": "1.1.0"
+      "version": "1.0.4"
     }
   ]
 }
