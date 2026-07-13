@@ -50,15 +50,6 @@
     function notify(type,detail){
       window.ReactNativeWebView?.postMessage(JSON.stringify({type,detail}));
     }
-    // Battle Link discord mode: the mod core hands decision snapshots up
-    // through this bridge; the native host answers with battle-link-decision
-    // messages that receive() feeds back into the core.
-    window.PokeboyBattleLinkHost={
-      request:detail=>notify('battle-link-request',detail),
-      cancel:detail=>notify('battle-link-cancel',detail),
-      resolved:detail=>notify('battle-link-resolved',detail),
-      battleEnd:detail=>notify('battle-link-end',detail)
-    };
     function errorDetail(error,stage=bootStage){
       const value=error instanceof Error?error:new Error(String(error));
       const detail={message:value.message,name:value.name||'Error',stack:value.stack||null,stage};
@@ -88,12 +79,6 @@
           if(typeof msg.battleLinkEndpoint==='string'){
             runtime.battleLinkEndpoint=msg.battleLinkEndpoint.trim();
           }
-          if(typeof msg.battleLinkMode==='string'){
-            runtime.battleLinkMode=msg.battleLinkMode;
-          }
-          if(Number.isFinite(msg.battleLinkMaxTimeTillRandomMs)&&msg.battleLinkMaxTimeTillRandomMs>=0){
-            runtime.battleLinkMaxTimeTillRandomMs=msg.battleLinkMaxTimeTillRandomMs;
-          }
           AudioSystem.resume().catch(()=>{});
           const tel=Boolean(msg.telemetry);
           if(tel!==telemetry){
@@ -107,8 +92,6 @@
         } else if(msg.type==='mods') {
           desiredMods=Array.isArray(msg.ids)?msg.ids.filter(id=>typeof id==='string'):[];
           modUpdate=modUpdate.then(reconcileMods).catch(error=>reportError(error,'mods-reconcile'));
-        } else if(msg.type==='battle-link-decision') {
-          window.PokeboyBattleLinkDeliver?.(msg);
         } else if(msg.type==='dev-frame') {
           // Dev mode: hand the host a PNG of the LCD framebuffer (an OS
           // screenshot can't capture the WebView surface).

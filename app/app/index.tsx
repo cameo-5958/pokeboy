@@ -22,10 +22,7 @@ import {
 } from "react-native";
 import WebView, { type WebViewMessageEvent } from "react-native-webview";
 
-import * as SecureStore from "expo-secure-store";
-
 import { createApi, type Cartridge as CartridgeInfo, type RegistryMod } from "@/api/client";
-import { DiscordBattleLinkBot, type BattleSnapshot } from "@/discord/battleLink";
 import { playSfx } from "@/sfx";
 import {
   diffSection,
@@ -58,11 +55,6 @@ const BATTLE_LINK_ENDPOINT_KEY = "pokeboy.mod.battle-link.endpoint.v1";
 const DEFAULT_BATTLE_LINK_ENDPOINT = "https://pokeboy.cameo.moe/battle-link/decision";
 const BATTLE_LINK_MAX_WAIT_KEY = "pokeboy.mod.battle-link.maxTimeTillRandom.v1";
 const DEFAULT_BATTLE_LINK_MAX_WAIT_S = 30;
-const BATTLE_LINK_MODE_KEY = "pokeboy.mod.battle-link.mode.v1";
-// Bot token lives in the device keychain (SecureStore), never AsyncStorage.
-const BATTLE_LINK_DISCORD_TOKEN_KEY = "pokeboy.mod.battle-link.discord-token.v1";
-
-type BattleLinkMode = "get" | "discord";
 const ENABLED_MODS_KEY = "pokeboy.mods.enabled.v1";
 
 function blobToDataUri(blob: Blob): Promise<string> {
@@ -102,7 +94,6 @@ const EmulatorContext = createContext<{
     volume: number;
     telemetry: boolean;
     battleLinkEndpoint: string;
-    battleLinkMode: BattleLinkMode;
     battleLinkMaxTimeTillRandomMs: number;
   };
   paused: boolean;
@@ -118,7 +109,6 @@ const EmulatorContext = createContext<{
     volume: 1,
     telemetry: false,
     battleLinkEndpoint: "",
-    battleLinkMode: "get" as BattleLinkMode,
     battleLinkMaxTimeTillRandomMs: DEFAULT_BATTLE_LINK_MAX_WAIT_S * 1000,
   },
   paused: false,
@@ -223,8 +213,6 @@ export default function EmulatorScreen() {
   const [speedIdx, setSpeedIdx] = useState(1);
   const [battleLinkEndpoint, setBattleLinkEndpoint] = useState(DEFAULT_BATTLE_LINK_ENDPOINT);
   const [battleLinkMaxWaitS, setBattleLinkMaxWaitS] = useState(DEFAULT_BATTLE_LINK_MAX_WAIT_S);
-  const [battleLinkMode, setBattleLinkMode] = useState<BattleLinkMode>("get");
-  const [battleLinkDiscordToken, setBattleLinkDiscordToken] = useState("");
   const [cartridges, setCartridges] = useState<CartridgeInfo[]>([]);
   const [mods, setMods] = useState<readonly RegistryMod[]>([]);
   const [cartridgeIdx, setCartridgeIdx] = useState(0);
@@ -318,14 +306,6 @@ export default function EmulatorScreen() {
         }
       })
       .catch(() => {});
-    AsyncStorage.getItem(BATTLE_LINK_MODE_KEY)
-      .then((value) => {
-        if (alive && (value === "get" || value === "discord")) setBattleLinkMode(value);
-      })
-      .catch(() => {});
-    SecureStore.getItemAsync(BATTLE_LINK_DISCORD_TOKEN_KEY)
-      .then((value) => { if (alive && value) setBattleLinkDiscordToken(value); })
-      .catch(() => {});
     AsyncStorage.getItem(ENABLED_MODS_KEY)
       .then((value) => {
         if (!alive || !value) return;
@@ -346,18 +326,6 @@ export default function EmulatorScreen() {
     setBattleLinkMaxWaitS(seconds);
     AsyncStorage.setItem(BATTLE_LINK_MAX_WAIT_KEY, String(seconds)).catch(() => {});
   }, []);
-  const saveBattleLinkMode = useCallback((mode: BattleLinkMode) => {
-    setBattleLinkMode(mode);
-    AsyncStorage.setItem(BATTLE_LINK_MODE_KEY, mode).catch(() => {});
-  }, []);
-  const saveBattleLinkDiscordToken = useCallback((value: string) => {
-    const token = value.trim();
-    setBattleLinkDiscordToken(token);
-    (token
-      ? SecureStore.setItemAsync(BATTLE_LINK_DISCORD_TOKEN_KEY, token)
-      : SecureStore.deleteItemAsync(BATTLE_LINK_DISCORD_TOKEN_KEY)
-    ).catch(() => {});
-  }, []);
   const emulatorSettings = useMemo(
     () => ({
       speed: (SPEEDS[speedIdx] === "xINF" ? "inf" : Number(SPEEDS[speedIdx].slice(1))) as number | "inf",
@@ -365,10 +333,9 @@ export default function EmulatorScreen() {
       volume,
       telemetry: settings.telemetry,
       battleLinkEndpoint,
-      battleLinkMode,
       battleLinkMaxTimeTillRandomMs: Math.round(battleLinkMaxWaitS * 1000),
     }),
-    [speedIdx, muted, volume, settings.telemetry, battleLinkEndpoint, battleLinkMode, battleLinkMaxWaitS],
+    [speedIdx, muted, volume, settings.telemetry, battleLinkEndpoint, battleLinkMaxWaitS],
   );
 
   // The list is local-first, so a launch while the backend is unreachable
@@ -499,32 +466,6 @@ export default function EmulatorScreen() {
       dpad: inputRef.current.dpad | devInputRef.current.dpad,
     });
   }, [postToEmulator]);
-  // Phone-hosted Discord bot (Battle Link DISC mode). Lives at screen level so
-  // it survives WebView reloads; the emulator only exchanges snapshot and
-  // decision messages with it. The token itself never enters the WebView.
-  const discordBotRef = useRef<DiscordBattleLinkBot | null>(null);
-  const telemetryEnabledRef = useRef(settings.telemetry);
-  useEffect(() => { telemetryEnabledRef.current = settings.telemetry; }, [settings.telemetry]);
-  useEffect(() => {
-    const token = battleLinkDiscordToken.trim();
-    if (battleLinkMode !== "discord" || !token) return;
-    const bot = new DiscordBattleLinkBot(token, {
-      sendDecision: (decision) => postToEmulator({ type: "battle-link-decision", ...decision }),
-      onEvent: (kind, detail) => {
-        console.log("Pokeboy battle-link discord", kind, detail);
-        if (telemetryEnabledRef.current) {
-          telemetryEventsRef.current.push({ t: Date.now(), kind: `discord-${kind}`, detail });
-        }
-      },
-    });
-    discordBotRef.current = bot;
-    bot.start();
-    return () => {
-      bot.stop();
-      if (discordBotRef.current === bot) discordBotRef.current = null;
-    };
-  }, [battleLinkMode, battleLinkDiscordToken, postToEmulator]);
-
   const onMessage = useCallback((event: WebViewMessageEvent) => {
     let message: { type?: unknown; detail?: unknown };
     try {
@@ -566,26 +507,13 @@ export default function EmulatorScreen() {
       }
     } else if (message?.type === "telemetry") {
       if (settings.telemetry) telemetrySnapshotsRef.current.push(detail);
-    } else if (message?.type === "battle-link-request") {
-      if (detail && typeof detail === "object") {
-        discordBotRef.current?.handleRequest(detail as BattleSnapshot);
-      }
-    } else if (message?.type === "battle-link-cancel") {
-      discordBotRef.current?.handleCancel(detail && typeof detail === "object" ? detail : {});
-    } else if (message?.type === "battle-link-resolved") {
-      discordBotRef.current?.handleResolved(detail && typeof detail === "object" ? detail : {});
-    } else if (message?.type === "battle-link-end") {
-      discordBotRef.current?.handleBattleEnd(detail && typeof detail === "object" ? detail : {});
-    } else if (message?.type === "ready") {
-      // Fresh WebView boot: any battle the bot was tracking is gone.
-      discordBotRef.current?.handleEmulatorReset();
-      console.log("Pokeboy ready", detail);
     } else if (message?.type === "dev-frame") {
       if (!detail || typeof detail !== "object") return;
       const { nonce, png } = detail as { nonce?: unknown; png?: unknown };
       if (typeof nonce !== "string" || typeof png !== "string") return;
       api.postDevResult({ id: nonce, ok: true, png }).catch(() => {});
     } else if (
+      message?.type === "ready" ||
       message?.type === "mods" ||
       message?.type === "rom-source" ||
       message?.type === "payload-source"
@@ -836,7 +764,6 @@ export default function EmulatorScreen() {
         wasmBase64: emulatorAssets.wasmBase64,
         modCoreUri: emulatorAssets.modCoreUri,
         battleLinkEndpoint,
-        battleLinkMode,
         battleLinkMaxTimeTillRandomMs: Math.round(battleLinkMaxWaitS * 1000),
       };
       return {
@@ -846,7 +773,7 @@ export default function EmulatorScreen() {
         key: `${cartridge.id}@${cartridge.version ?? "0"}`,
       };
     },
-    [api.baseUrl, battleLinkEndpoint, battleLinkMode, battleLinkMaxWaitS, cartridge, emulatorAssets, settings.apiKey],
+    [api.baseUrl, battleLinkEndpoint, battleLinkMaxWaitS, cartridge, emulatorAssets, settings.apiKey],
   );
   const modsList = useMemo(() => Array.from(enabledMods), [enabledMods]);
   const emulatorContextValue = useMemo(
@@ -912,10 +839,6 @@ export default function EmulatorScreen() {
             onBattleLinkEndpoint={saveBattleLinkEndpoint}
             battleLinkMaxWaitS={battleLinkMaxWaitS}
             onBattleLinkMaxWait={saveBattleLinkMaxWait}
-            battleLinkMode={battleLinkMode}
-            onBattleLinkMode={saveBattleLinkMode}
-            battleLinkDiscordToken={battleLinkDiscordToken}
-            onBattleLinkDiscordToken={saveBattleLinkDiscordToken}
           />
         </Animated.View>
 
@@ -1280,10 +1203,6 @@ function ModChanger({
   onBattleLinkEndpoint,
   battleLinkMaxWaitS,
   onBattleLinkMaxWait,
-  battleLinkMode,
-  onBattleLinkMode,
-  battleLinkDiscordToken,
-  onBattleLinkDiscordToken,
 }: {
   u: Unit;
   anim: AnimValue;
@@ -1295,10 +1214,6 @@ function ModChanger({
   onSet: (id: string, on: boolean) => void;
   battleLinkEndpoint: string;
   onBattleLinkEndpoint: (value: string) => void;
-  battleLinkMode: BattleLinkMode;
-  onBattleLinkMode: (mode: BattleLinkMode) => void;
-  battleLinkDiscordToken: string;
-  onBattleLinkDiscordToken: (value: string) => void;
   battleLinkMaxWaitS: number;
   onBattleLinkMaxWait: (seconds: number) => void;
 }) {
@@ -1398,10 +1313,6 @@ function ModChanger({
           onBattleLinkEndpoint={onBattleLinkEndpoint}
           battleLinkMaxWaitS={battleLinkMaxWaitS}
           onBattleLinkMaxWait={onBattleLinkMaxWait}
-          battleLinkMode={battleLinkMode}
-          onBattleLinkMode={onBattleLinkMode}
-          battleLinkDiscordToken={battleLinkDiscordToken}
-          onBattleLinkDiscordToken={onBattleLinkDiscordToken}
         />
       ) : null}
 
@@ -1694,10 +1605,6 @@ function ModConfigModal({
   onBattleLinkEndpoint,
   battleLinkMaxWaitS,
   onBattleLinkMaxWait,
-  battleLinkMode,
-  onBattleLinkMode,
-  battleLinkDiscordToken,
-  onBattleLinkDiscordToken,
 }: {
   open: boolean;
   mod: RegistryMod;
@@ -1706,32 +1613,20 @@ function ModConfigModal({
   onBattleLinkEndpoint: (value: string) => void;
   battleLinkMaxWaitS: number;
   onBattleLinkMaxWait: (seconds: number) => void;
-  battleLinkMode: BattleLinkMode;
-  onBattleLinkMode: (mode: BattleLinkMode) => void;
-  battleLinkDiscordToken: string;
-  onBattleLinkDiscordToken: (value: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const cardWidth = Math.min(width * 0.86, 380);
   const [draft, setDraft] = useState(battleLinkEndpoint);
   const [maxWaitDraft, setMaxWaitDraft] = useState(String(battleLinkMaxWaitS));
-  const [modeDraft, setModeDraft] = useState<BattleLinkMode>(battleLinkMode);
-  const [tokenDraft, setTokenDraft] = useState(battleLinkDiscordToken);
   useEffect(() => { if (open) setDraft(battleLinkEndpoint); }, [open, battleLinkEndpoint]);
   useEffect(() => { if (open) setMaxWaitDraft(String(battleLinkMaxWaitS)); }, [open, battleLinkMaxWaitS]);
-  useEffect(() => { if (open) setModeDraft(battleLinkMode); }, [open, battleLinkMode]);
-  useEffect(() => { if (open) setTokenDraft(battleLinkDiscordToken); }, [open, battleLinkDiscordToken]);
-  const endpointError = modeDraft === "get" && !/^https:\/\/[^\s]+$/i.test(draft.trim());
-  const tokenError = modeDraft === "discord" && !/^\S{20,}$/.test(tokenDraft.trim());
+  const endpointError = !/^https:\/\/[^\s]+$/i.test(draft.trim());
   const maxWaitSeconds = Number(maxWaitDraft.trim());
   const maxWaitError =
     maxWaitDraft.trim() === "" || !Number.isFinite(maxWaitSeconds) || maxWaitSeconds < 0 || maxWaitSeconds > 300;
-  const saveError = endpointError || tokenError || maxWaitError;
   const save = () => {
-    if (saveError) return;
-    onBattleLinkMode(modeDraft);
-    if (modeDraft === "get") onBattleLinkEndpoint(draft);
-    else onBattleLinkDiscordToken(tokenDraft);
+    if (endpointError || maxWaitError) return;
+    onBattleLinkEndpoint(draft);
     onBattleLinkMaxWait(maxWaitSeconds);
     onClose();
   };
@@ -1757,72 +1652,23 @@ function ModConfigModal({
           </View>
           {mod.id === "battle-link" ? (
             <>
-              <Text selectable={false} style={styles.settingsFieldLabel}>DECISION SOURCE</Text>
-              <View style={styles.modConfigModeRow}>
-                {(["get", "discord"] as const).map((mode) => (
-                  <Pressable
-                    key={mode}
-                    onPress={() => setModeDraft(mode)}
-                    style={({ pressed }) => [
-                      styles.modConfigModeBtn,
-                      modeDraft === mode && styles.modConfigModeBtnOn,
-                      pressed && { opacity: 0.65 },
-                    ]}
-                  >
-                    <Text
-                      selectable={false}
-                      style={[
-                        styles.modConfigModeText,
-                        modeDraft === mode && styles.modConfigModeTextOn,
-                      ]}
-                    >
-                      {mode === "get" ? "GET" : "DISC"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-              {modeDraft === "get" ? (
-                <>
-                  <Text selectable={false} style={styles.settingsFieldLabel}>PUBLIC DECISION API</Text>
-                  <TextInput
-                    value={draft}
-                    onChangeText={setDraft}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                    placeholder="https://example.com/decision"
-                    placeholderTextColor="#8b8679"
-                    style={[styles.settingsInput, endpointError && styles.settingsInputError]}
-                  />
-                  <Text selectable={false} style={styles.modConfigHelp}>
-                    The endpoint must accept Battle Link GET requests and allow WebView CORS.
-                  </Text>
-                  {endpointError ? (
-                    <Text selectable={false} style={styles.modConfigError}>Enter a public HTTPS URL.</Text>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  <Text selectable={false} style={styles.settingsFieldLabel}>DISCORD BOT TOKEN</Text>
-                  <TextInput
-                    value={tokenDraft}
-                    onChangeText={setTokenDraft}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    secureTextEntry
-                    placeholder="Bot token"
-                    placeholderTextColor="#8b8679"
-                    style={[styles.settingsInput, tokenError && styles.settingsInputError]}
-                  />
-                  <Text selectable={false} style={styles.modConfigHelp}>
-                    The bot runs on this phone; the token is kept in the device keychain.
-                    Invite the bot as a user app, then /connect during a battle.
-                  </Text>
-                  {tokenError ? (
-                    <Text selectable={false} style={styles.modConfigError}>Enter a Discord bot token.</Text>
-                  ) : null}
-                </>
-              )}
+              <Text selectable={false} style={styles.settingsFieldLabel}>PUBLIC DECISION API</Text>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                placeholder="https://example.com/decision"
+                placeholderTextColor="#8b8679"
+                style={[styles.settingsInput, endpointError && styles.settingsInputError]}
+              />
+              <Text selectable={false} style={styles.modConfigHelp}>
+                The endpoint must accept Battle Link GET requests and allow WebView CORS.
+              </Text>
+              {endpointError ? (
+                <Text selectable={false} style={styles.modConfigError}>Enter a public HTTPS URL.</Text>
+              ) : null}
               <Text selectable={false} style={styles.settingsFieldLabel}>MAX TIME TILL RANDOM (SECONDS)</Text>
               <TextInput
                 value={maxWaitDraft}
@@ -1835,17 +1681,17 @@ function ModConfigModal({
                 style={[styles.settingsInput, maxWaitError && styles.settingsInputError]}
               />
               <Text selectable={false} style={styles.modConfigHelp}>
-                How long a battle waits for a decision before picking a random legal action. 0 always picks randomly.
+                How long a battle waits for the endpoint before picking a random legal action. 0 always picks randomly.
               </Text>
               {maxWaitError ? (
                 <Text selectable={false} style={styles.modConfigError}>Enter 0–300 seconds.</Text>
               ) : null}
               <Pressable
-                disabled={saveError}
+                disabled={endpointError || maxWaitError}
                 onPress={save}
                 style={({ pressed }) => [
                   styles.modConfigSave,
-                  saveError && { opacity: 0.4 },
+                  (endpointError || maxWaitError) && { opacity: 0.4 },
                   pressed && { opacity: 0.65 },
                 ]}
               >
@@ -2542,34 +2388,6 @@ const styles = StyleSheet.create({
     color: "#6b665a",
     fontSize: 12,
     lineHeight: 17,
-  },
-  modConfigModeRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
-  },
-  modConfigModeBtn: {
-    flex: 1,
-    minHeight: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: "#aaa596",
-    backgroundColor: "#c8c3b4",
-  },
-  modConfigModeBtnOn: {
-    borderColor: "#4c4a55",
-    backgroundColor: "#4c4a55",
-  },
-  modConfigModeText: {
-    color: "#4c4a55",
-    fontWeight: "700",
-    letterSpacing: 1,
-    userSelect: "none",
-  },
-  modConfigModeTextOn: {
-    color: "#d6d1c2",
   },
   modConfigError: {
     marginTop: 6,
