@@ -33,7 +33,7 @@ bool call_targets_fixed_section(gb_handle* gb, uint16_t address) {
     if (gb_read_mem(gb, address) != 0xcd) return false;
     const uint16_t target = static_cast<uint16_t>(gb_read_mem(gb, address + 1) |
                                                   (gb_read_mem(gb, address + 2) << 8));
-    return target >= 0x7e00 && target < 0x7f00;
+    return target >= 0x7e00 && target < 0x8000;
 }
 
 } // namespace
@@ -63,6 +63,8 @@ int main(int argc, char** argv) {
     ok &= call_targets_fixed_section(gb, 0x4341);
     ok &= call_targets_fixed_section(gb, 0x4397);
     ok &= call_targets_fixed_section(gb, 0x4969);
+    ok &= call_targets_fixed_section(gb, 0x506f); // UseBagItem's call UseItem
+    ok &= call_targets_fixed_section(gb, 0x51b7); // pre-SwitchPlayerMon call
     ok &= byte_is(gb, 0x0f, 0x7e00, 0x3e); // ld a, 4; host reset trap follows
     ok &= gb_mod_unload(gb, handle) == GB_MOD_OK;
     ok &= byte_is(gb, 0x0f, 0x411e, 0xaf);
@@ -70,6 +72,8 @@ int main(int argc, char** argv) {
     ok &= byte_is(gb, 0x0f, 0x4341, 0x21);
     ok &= byte_is(gb, 0x0f, 0x4397, 0x21);
     ok &= byte_is(gb, 0x0f, 0x4969, 0x06);
+    ok &= byte_is(gb, 0x0f, 0x5070, 0xbc); // call UseItem restored
+    ok &= byte_is(gb, 0x0f, 0x51b8, 0xdc); // call GBPalNormal restored
     gb_destroy(gb);
     if (!ok) return 1;
     std::puts("Battle Link guarded package link/unload test passed");
