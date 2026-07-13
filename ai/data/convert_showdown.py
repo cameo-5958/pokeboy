@@ -19,8 +19,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from sim.gen1data import MOVES, SPECIES
-
+from data.normalize import canon_move, canon_species
 from data.trajectory import dumps_state, mechanics_flags_hash
 
 
@@ -155,9 +154,9 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
             elif cmd == "switch":
                 side_ix = _ident_side(parts[2])
                 side = sides[side_ix]
-                species = parts[3].split(",")[0].strip()
-                if species not in SPECIES:
-                    raise RejectedReplay(f"unknown species {species!r}")
+                species = canon_species(parts[3].split(",")[0].strip())
+                if species is None:
+                    raise RejectedReplay(f"unknown species {parts[3]!r}")
                 forced = side.active is not None and side.active.fainted
                 if started and turn >= 1 and side.active is not None:
                     snap = _snapshot(
@@ -179,10 +178,10 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
             elif cmd == "move":
                 side_ix = _ident_side(parts[2])
                 side = sides[side_ix]
-                move = parts[3].strip()
+                move = canon_move(parts[3].strip())
                 if side.active is None:
                     raise RejectedReplay("move with no active")
-                if move in MOVES:
+                if move is not None:
                     if move not in side.active.moves and move != "Struggle":
                         side.active.moves.append(move)
                     if len(side.active.moves) > 4:
