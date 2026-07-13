@@ -123,42 +123,42 @@
     {
       "name": "BattleLinkDispatch",
       "section": "battle-link.code",
-      "offset": 159
+      "offset": 124
     },
     {
       "name": "BattleLinkChooseSwitch",
       "section": "battle-link.code",
-      "offset": 281
+      "offset": 246
     },
     {
       "name": "BattleLinkAwaitSwitch",
       "section": "battle-link.code",
-      "offset": 307
+      "offset": 272
     },
     {
       "name": "BattleLinkAwaitItem",
       "section": "battle-link.code",
-      "offset": 330
+      "offset": 279
     },
     {
       "name": "BattleLinkMedicineStatusGate",
       "section": "battle-link.medicine",
-      "offset": 19
+      "offset": 15
     },
     {
       "name": "BattleLinkMedicineReviveGate",
       "section": "battle-link.medicine",
-      "offset": 28
+      "offset": 22
     },
     {
       "name": "BattleLinkMedicineHpGate",
       "section": "battle-link.medicine",
-      "offset": 37
+      "offset": 29
     },
     {
       "name": "BattleLinkPPRestoreGate",
       "section": "battle-link.medicine",
-      "offset": 47
+      "offset": 37
     }
   ],
   "relocations": [
@@ -181,7 +181,7 @@
     {
       "target": "section",
       "in": "battle-link.code",
-      "offset": 396,
+      "offset": 344,
       "type": "host16",
       "reference": "host",
       "name": "battle-link.decide"
