@@ -54,9 +54,22 @@ def make_agent(name: str, seed: int):
 def cmd_battle(args) -> None:
     rng = random.Random(args.seed)
     tally = {"p1_wins": 0, "p2_wins": 0, "ties": 0, "unfinished": 0, "turns": 0}
+    cache: dict[str, object] = {}
+
+    def get_agent(name: str, seed: int):
+        # model seats keep the loaded checkpoint across battles; only the
+        # sampling stream is reset per battle
+        if not name.startswith("model:"):
+            return make_agent(name, seed)
+        if name in cache:
+            cache[name].reseed(seed)
+        else:
+            cache[name] = make_agent(name, seed)
+        return cache[name]
+
     for i in range(args.battles):
-        a1 = make_agent(args.p1, rng.randrange(2**31))
-        a2 = make_agent(args.p2, rng.randrange(2**31))
+        a1 = get_agent(args.p1, rng.randrange(2**31))
+        a2 = get_agent(args.p2, rng.randrange(2**31))
         t1, t2 = sample_team(rng), sample_team(rng)
         rec = run_battle(a1, a2, t1, t2, seed=rng.randrange(2**63))
         key = {"p1": "p1_wins", "p2": "p2_wins", "tie": "ties"}.get(rec.winner, "unfinished")

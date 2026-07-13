@@ -54,6 +54,10 @@ class ModelAgent:
         self._gen = torch.Generator().manual_seed(seed)
         return self
 
+    def reseed(self, seed: int) -> None:
+        """Reset the sampling stream (e.g. per battle when the agent is reused)."""
+        self._gen = torch.Generator().manual_seed(seed)
+
     @torch.no_grad()
     def choose(self, state: State) -> int:
         enc = self.tok.encode(state.to_json())
