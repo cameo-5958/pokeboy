@@ -159,18 +159,18 @@
       actions.push({ code: 0, type: "move", slot: -1, move: 165, struggle: true, _kind: 0 });
     }
 
+    // Switching is a remote-player right, not an AI behaviour: any healthy
+    // benched mon is legal for every trainer class, even with aiCount at 0
+    // (aiCount only meters item uses below).
+    trainerParty.forEach((mon) => {
+      if (mon.hp > 0 && mon.slot !== trainerActive.partySlot) {
+        actions.push({ code: 16 + mon.slot, type: "switch", partySlot: mon.slot, _kind: 1 });
+      }
+    });
     if (memory.read8(A.aiCount) === 0) return actions;
     const trainerClass = memory.read8(A.trainerClass);
     const hp = trainerActive.hp;
     const max = Math.max(1, trainerActive.maxHp);
-    const canSwitch = [0x0d, 0x15, 0x20, 0x2e].includes(trainerClass);
-    if (canSwitch) {
-      trainerParty.forEach((mon) => {
-        if (mon.hp > 0 && mon.slot !== trainerActive.partySlot) {
-          actions.push({ code: 16 + mon.slot, type: "switch", partySlot: mon.slot, _kind: 1 });
-        }
-      });
-    }
     const add = (name, condition = true) => { if (condition) actions.push(itemAction(name)); };
     if (trainerClass === 0x18 || trainerClass === 0x1f || trainerClass === 0x26) add("xAttack");
     if (trainerClass === 0x1d) add("guardSpec");
