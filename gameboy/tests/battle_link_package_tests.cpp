@@ -28,12 +28,17 @@ bool byte_is(gb_handle* gb, uint8_t bank, uint16_t address, uint8_t expected) {
     return false;
 }
 
-bool call_targets_fixed_section(gb_handle* gb, uint16_t address) {
-    gb_write_mem(gb, 0x2000, 0x0f);
+bool call_targets_range(gb_handle* gb, uint8_t bank, uint16_t address,
+                        uint16_t low, uint16_t high) {
+    gb_write_mem(gb, 0x2000, bank);
     if (gb_read_mem(gb, address) != 0xcd) return false;
     const uint16_t target = static_cast<uint16_t>(gb_read_mem(gb, address + 1) |
                                                   (gb_read_mem(gb, address + 2) << 8));
-    return target >= 0x7e00 && target < 0x7f00;
+    return target >= low && target < high;
+}
+
+bool call_targets_fixed_section(gb_handle* gb, uint16_t address) {
+    return call_targets_range(gb, 0x0f, address, 0x7c00, 0x8000);
 }
 
 } // namespace
@@ -63,13 +68,27 @@ int main(int argc, char** argv) {
     ok &= call_targets_fixed_section(gb, 0x4341);
     ok &= call_targets_fixed_section(gb, 0x4397);
     ok &= call_targets_fixed_section(gb, 0x4969);
-    ok &= byte_is(gb, 0x0f, 0x7e00, 0x3e); // ld a, 4; host reset trap follows
+    ok &= call_targets_fixed_section(gb, 0x506f); // UseBagItem's call UseItem
+    ok &= call_targets_fixed_section(gb, 0x51b7); // pre-SwitchPlayerMon call
+    // Medicine waits only after native target/effect validation has passed.
+    ok &= call_targets_range(gb, 0x03, 0x5b7c, 0x7d00, 0x7d40);
+    ok &= call_targets_range(gb, 0x03, 0x5bc5, 0x7d00, 0x7d40);
+    ok &= call_targets_range(gb, 0x03, 0x5c2a, 0x7d00, 0x7d40);
+    ok &= call_targets_range(gb, 0x03, 0x6410, 0x7d00, 0x7d40);
+    ok &= byte_is(gb, 0x0f, 0x7c00, 0x3e); // ld a, 4; host reset trap follows
     ok &= gb_mod_unload(gb, handle) == GB_MOD_OK;
     ok &= byte_is(gb, 0x0f, 0x411e, 0xaf);
     ok &= byte_is(gb, 0x0f, 0x42a6, 0xcd);
     ok &= byte_is(gb, 0x0f, 0x4341, 0x21);
     ok &= byte_is(gb, 0x0f, 0x4397, 0x21);
     ok &= byte_is(gb, 0x0f, 0x4969, 0x06);
+    ok &= byte_is(gb, 0x0f, 0x5070, 0xbc); // call UseItem restored
+    ok &= byte_is(gb, 0x0f, 0x51b8, 0xdc); // call GBPalNormal restored
+    ok &= byte_is(gb, 0x03, 0x5b7c, 0xaf); // status-effect instructions restored
+    ok &= byte_is(gb, 0x03, 0x5bc5, 0xfa); // revive validation tail restored
+    ok &= byte_is(gb, 0x03, 0x5c2a, 0xaf); // HP-effect instructions restored
+    ok &= byte_is(gb, 0x03, 0x5c2d, 0xd0);
+    ok &= byte_is(gb, 0x03, 0x6410, 0x7e); // PP-effect instructions restored
     gb_destroy(gb);
     if (!ok) return 1;
     std::puts("Battle Link guarded package link/unload test passed");
