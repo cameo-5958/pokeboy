@@ -6,31 +6,13 @@ DEF wTileMap                  EQU $c3a0
 DEF wEnemySelectedMove        EQU $ccdd
 DEF wEnemyMoveListIndex       EQU $cce2
 DEF wBuffer                   EQU $cee9
-DEF wActionResultOrTookBattleTurn EQU $cd6a
-DEF wLowHealthAlarm           EQU $d083
 DEF wIsInBattle               EQU $d057
 DEF wLinkState                EQU $d12b
-; Tail of wLinkBattleRandomNumberList ($d148-$d151): the whole $d141-$d151
-; union holds only link-serial exchange data, Game Corner prize prices, and
-; the link-battle RNG list, all idle during the non-link battles this mod
-; runs in. wBuffer aliases wHPBarMaxHP, so a resolved decision parked there
-; is destroyed by any HP-bar animation; it is copied here the moment the
-; host reports ready. +0 = action kind, +1 = payload, +2 = resolved flag.
-DEF wBattleLinkStash          EQU $d14f
 DEF hJoyPressed               EQU $ffb3
 DEF hAutoBGTransferEnabled    EQU $ffba
 
-DEF wCurItem                  EQU $cf91
-
 DEF Joypad                    EQU $019a
-DEF RedrawPartyMenu           EQU $14d9
 DEF DelayFrame                EQU $20af
-DEF UseItem                   EQU $30bc
-DEF GBPalNormal               EQU $3ddc
-; ItemUseMedicine.canceledItemUse minus its two `pop af`s. All three
-; medicine gates run after those entry pushes have already been consumed.
-DEF ItemUseMedicineDone       EQU $5de7
-DEF ItemUsePPRestoreDone      EQU $6451
 DEF LoadScreenTilesFromBuffer1 EQU $3725
 DEF DrawHUDsAndHPBars         EQU $4d5a
 DEF SelectEnemyMove           EQU $5564
@@ -63,14 +45,10 @@ DEF ACTION_X_DEFEND           EQU 9
 DEF ACTION_X_SPEED            EQU 10
 DEF ACTION_X_SPECIAL          EQU 11
 
-SECTION "Battle Link", ROMX[$7c00], BANK[$0f]
+SECTION "Battle Link", ROMX[$7e00], BANK[$0f]
 
 BattleLinkStart::
 ; Called once at StartBattle so the host can give every battle a fresh UUID.
-; The stash bytes alias Game Corner prize prices between battles, and a
-; decision resolved on a turn whose dispatch never ran (the enemy fainted
-; before it) survives the battle — clear the whole stash so neither can leak
-; into the first send-out or dispatch of this battle.
 BattleLinkBattleStart::
     ld a, 4
 BattleLinkStartHostOpcode::
@@ -81,24 +59,11 @@ BattleLinkStartHostSlot::
     ld [$d058], a
     ld [$ccf5], a
     ld [$cd6a], a
-    ld [wBattleLinkStash], a
-    ld [wBattleLinkStash + 1], a
-    ld [wBattleLinkStash + 2], a
     ret
 
 ; Replaces `call SelectEnemyMove`.  Native selection still establishes
 ; Struggle/disabled-move behavior and gives forced turns a safe fallback.
 BattleLinkSelect::
-    ; A pre-commit hook may have already resolved this turn. The stashed
-    ; action feeds BattleLinkDispatch, and the host wrote the enemy move
-    ; registers when it resolved, so native selection must not run.
-    ld a, [wBattleLinkStash + 2]
-    and a
-    jr z, .fresh
-    xor a
-    ld [wBattleLinkStash + 2], a
-    ret
-.fresh
     call SelectEnemyMove
     ld a, [wIsInBattle]
     cp 2
@@ -108,8 +73,7 @@ BattleLinkSelect::
     ret nz
     xor a
     ld [wBuffer + 2], a
-    ld [wBuffer + 4], a
-    ; The AWAITING bar goes into wTileMap, which only reaches VRAM while
+    ; The host draws AWAITING into wTileMap, which only reaches VRAM while
     ; auto BG transfer is enabled — force it on for the wait and restore the
     ; caller's value on every exit path.
     ldh a, [hAutoBGTransferEnabled]
@@ -122,25 +86,17 @@ BattleLinkHostOpcode::
     db $d3
 BattleLinkHostSlot::
     dw 0
-    ; A: 0=pending, 1=remote decision, 2=cancel, 3=native/forced bypass,
-    ; 4=random fallback (invalid endpoint response or deadline)
+    ; A: 0=pending, 1=ready, 2=cancel, 3=native/forced bypass
     and a
     jr z, BattleLinkPending
+    cp 1
+    jr z, BattleLinkReady
     cp 2
     jr z, BattleLinkCancel
-    cp 3
-    ret z
-    jr BattleLinkReady
+    ret
 
 BattleLinkPending:
-    call BattleLinkDrawWaiting
     call DelayFrame
-    ; A switch or item spends the turn before SelectEnemyMove runs, and the
-    ; cancel path restarts the battle menu without undoing it — a free
-    ; take-back. Only poll B while the turn is still open.
-    ld a, [wActionResultOrTookBattleTurn]
-    and a
-    jr nz, BattleLinkPoll
     ; VBlank only refreshes the raw joypad state; hJoyPressed is derived by
     ; Joypad, which nothing else calls while this loop owns the CPU.
     call Joypad
@@ -165,15 +121,6 @@ BattleLinkCancel:
     jp MainInBattleLoop
 
 BattleLinkReady:
-    ; A still holds the host status: flash RECEIVED (1) or REJECTED (4)
-    ; over the bar before the scene is repaired.
-    call BattleLinkFlashResult
-    ; Move the decision out of wBuffer before any animation can clobber the
-    ; HP-bar scratch it aliases; the dispatch hooks read the stash.
-    ld a, [wBuffer]
-    ld [wBattleLinkStash], a
-    ld a, [wBuffer + 1]
-    ld [wBattleLinkStash + 1], a
     xor a
     ld [wBuffer + 2], a
     ld a, [wBuffer + 3]
@@ -187,13 +134,7 @@ BattleLinkReady:
 ; original bank-$0e routine so animations, text, HP/status changes, switching,
 ; and AI item-count accounting stay native.
 BattleLinkDispatch::
-    ; Native TrainerAI bails for wild battles; without this gate a stale or
-    ; garbage stash byte would fire an AI item on a wild mon. cp leaves carry
-    ; set when a < 2, and carry means "AI took the turn" to the caller.
-    ld a, [wIsInBattle]
-    cp 2
-    jr nz, .noAction
-    ld a, [wBattleLinkStash]
+    ld a, [wBuffer]
     and a
     ret z
     cp ACTION_SWITCH
@@ -218,7 +159,6 @@ BattleLinkDispatch::
     jr z, .xSpeed
     cp ACTION_X_SPECIAL
     jr z, .xSpecial
-.noAction
     and a
     ret
 
@@ -258,22 +198,17 @@ BattleLinkDispatch::
     ld b, $0e
     call Bankswitch
     xor a
-    ld [wBattleLinkStash], a
+    ld [wBuffer], a
     scf
     ret
 
 ; EnemySendOut normally starts its candidate scan immediately after the
 ; current slot. A remote switch carries the exact requested slot in wBuffer+1.
-; Consuming the stash here (not just in dispatch) covers the send-out after a
-; faint, where MainInBattleLoop skips the dispatch site and the pending switch
-; would otherwise be re-applied on a later turn.
 BattleLinkChooseSwitch::
-    ld a, [wBattleLinkStash]
+    ld a, [wBuffer]
     cp ACTION_SWITCH
     jr nz, .native
-    xor a
-    ld [wBattleLinkStash], a
-    ld a, [wBattleLinkStash + 1]
+    ld a, [wBuffer + 1]
     ld b, a
     ret
 .native
@@ -285,296 +220,4 @@ BattleLinkChooseSwitch::
     jr z, .next
     ret
 
-; Patched over `call GBPalNormal` just before the fall-through into
-; SwitchPlayerMon: the mon must not leave the field until the decision is in.
-; The turn was committed two instructions earlier; reopen it for the wait so
-; B still cancels, and only re-commit once the host answers.
-BattleLinkAwaitSwitch::
-    call GBPalNormal
-    xor a
-    ld [wActionResultOrTookBattleTurn], a
-    call BattleLinkAwait
-    jr c, .cancelled
-    ld a, 1
-    ld [wActionResultOrTookBattleTurn], a
-    ret
-.cancelled
-    ; PartyMenuOrRockOrRun is jumped to from DisplayBattleMenu, so the stack
-    ; holds our patch-call frame plus DisplayBattleMenu's return address.
-    pop hl
-    pop hl
-    jp MainInBattleLoop
-
-; Patched over `call UseItem` in UseBagItem. Only items that spend the turn
-; with no further menu pre-wait here: balls (which commit even when the
-; trainer blocks them), the X items, X Accuracy, Guard Spec, Dire Hit and
-; the battle Poké Flute.
-; Medicine waits after target selection and native effect validation via
-; one of three bank-3 gates instead.
-; Ether/Elixir waits after target/move selection via a bank-3 effect gate.
-; Everything else — fossils, key items and "not the time" cases — runs
-; native with no wait.
-; A cancelled wait returns with the turn still open, so UseBagItem's own
-; "was the item used?" check reopens the bag.
-BattleLinkAwaitItem::
-    ld a, [wCurItem]
-    dec a
-    cp 4                     ; balls $01-$04
-    jr c, .wait
-    ld a, [wCurItem]
-    cp $2e                   ; X ACCURACY
-    jr z, .wait
-    cp $37                   ; GUARD SPEC
-    jr z, .wait
-    cp $3a                   ; DIRE HIT
-    jr z, .wait
-    cp $49                   ; POKé FLUTE
-    jr z, .wait
-    sub $41                  ; X ATTACK..X SPECIAL ($41-$44)
-    cp 4
-    jr nc, .native
-.wait
-    call BattleLinkAwait
-    ret c
-.native
-    jp UseItem
-
-; Core wait: polls the host for this turn's decision. Returns carry set if
-; the player backed out with B; otherwise carry clear with a = 1 (decision
-; arrived and was stashed) or a = 3 (host chose native handling, first poll,
-; no box drawn). The transfer flag is restored on every exit; the caller
-; owns any screen repair.
-BattleLinkAwaitCore::
-    ld a, [wBattleLinkStash + 2]
-    and a
-    jr z, .fresh
-    ld a, 1                    ; already resolved this turn (menu re-entry)
-    ret
-.fresh
-    xor a
-    ld [wBuffer + 2], a
-    ld [wBuffer + 4], a
-    ldh a, [hAutoBGTransferEnabled]
-    ld [wBuffer + 3], a
-    ld a, 1
-    ldh [hAutoBGTransferEnabled], a
-BattleLinkAwaitPoll:
-    db $d3
-BattleLinkAwaitHostSlot::
-    dw 0
-    and a
-    jr z, BattleLinkAwaitPending
-    cp 2
-    jr z, BattleLinkAwaitCancelled
-    cp 3
-    jr z, BattleLinkAwaitDone  ; native bypass, first poll, no bar drawn
-    ; 1 = remote decision, 4 = random fallback: flash the outcome, then
-    ; stash the decision before any animation can clobber the HP-bar
-    ; scratch that wBuffer aliases.
-    call BattleLinkFlashResult
-    ld a, [wBuffer]
-    ld [wBattleLinkStash], a
-    ld a, [wBuffer + 1]
-    ld [wBattleLinkStash + 1], a
-    ld a, 1
-    ld [wBattleLinkStash + 2], a
-BattleLinkAwaitDone:
-    push af
-    xor a
-    ld [wBuffer + 2], a
-    ld a, [wBuffer + 3]
-    ldh [hAutoBGTransferEnabled], a
-    pop af
-    and a
-    ret
-BattleLinkAwaitPending:
-    call BattleLinkDrawWaiting
-    call DelayFrame
-    call Joypad
-    ldh a, [hJoyPressed]
-    and B_BUTTON
-    jr z, BattleLinkAwaitPoll
-    ld a, 1
-    ld [wBuffer + 2], a
-    jr BattleLinkAwaitPoll
-BattleLinkAwaitCancelled:
-    xor a
-    ld [wBuffer + 2], a
-    ld a, [wBuffer + 3]
-    ldh [hAutoBGTransferEnabled], a
-    scf
-    ret
-
-; Battle-scene flavour of the wait, used by the switch and bag hooks: the
-; battlefield is restored over the box on ready and cancel exits.
-BattleLinkAwait::
-    call BattleLinkAwaitCore
-    jr c, .cancelled
-    cp 3
-    ret z                      ; bypass: no box was drawn
-    call BattleLinkAwaitRestoreScene
-    and a
-    ret
-.cancelled
-    call BattleLinkAwaitRestoreScene
-    scf
-    ret
-BattleLinkAwaitRestoreScene:
-    call LoadScreenTilesFromBuffer1
-    jp DrawHUDsAndHPBars
-
-; Runs under Bankswitch from a bank-3 medicine gate after the player picked
-; a target and native code proved the effect is valid. The verdict goes
-; through RAM because Bankswitch's return path restores AF. On ready the
-; party menu is redrawn to clear the box; on cancel the native failure path
-; repaints the screen itself.
-BattleLinkAwaitMedicine::
-    call BattleLinkAwaitCore
-    jr c, .cancelled
-    cp 3
-    jr z, .proceed
-    call RedrawPartyMenu
-.proceed
-    xor a
-    jr .store
-.cancelled
-    ld a, 1
-.store
-    ld [wBattleLinkStash - 1], a
-    ret
-
-; The wait UI lives here rather than in the host so dialog changes ship with
-; the package instead of an app rebuild. A single 12-tile status bar on the
-; bottom textbox line of wTileMap; the wait entries have already forced auto
-; BG transfer on, and the ready/cancel exits restore the scene from the tile
-; buffers.
-BattleLinkDrawWaiting::
-    ; Remember that the bar reached the screen so a decision that resolves
-    ; on the very first poll doesn't flash over an untouched scene.
-    ld a, 1
-    ld [wBuffer + 4], a
-    ld hl, BattleLinkWaitBar
-    call BattleLinkDrawBar
-    ; A committed turn cannot be cancelled — blank the hint so the bar does
-    ; not offer a B that BattleLinkPending will ignore.
-    ld a, [wActionResultOrTookBattleTurn]
-    and a
-    ret z
-    ld hl, wTileMap + 16 * 20 + 4 + 10
-    ld a, $7f
-    ld [hli], a
-    ld [hl], a
-    ret
-
-; Copies the 12-tile bar at hl over the bottom textbox line, matching the
-; chatbox alignment of the old AWAITING box.
-BattleLinkDrawBar:
-    ld de, wTileMap + 16 * 20 + 4
-    ld b, 12
-.tile
-    ld a, [hli]
-    ld [de], a
-    inc de
-    dec b
-    jr nz, .tile
-    ret
-
-; A holds the host status: 1 flashes RECEIVED, anything else REJECTED (the
-; random fallback, status 4). Skipped when no bar was ever drawn this wait.
-; The caller repairs the screen afterwards; DelayFrame keeps music running.
-BattleLinkFlashResult:
-    ld hl, BattleLinkReceivedBar
-    cp 1
-    jr z, .draw
-    ld hl, BattleLinkRejectedBar
-.draw
-    ld a, [wBuffer + 4]
-    and a
-    ret z
-    call BattleLinkDrawBar
-    ld b, 24
-.hold
-    call DelayFrame
-    dec b
-    jr nz, .hold
-    ret
-
-BattleLinkWaitBar:
-    db $80, $96, $80, $88, $93, $88, $8d, $86, $75, $7f, $ec, $81 ; AWAITING… ▶B
-BattleLinkReceivedBar:
-    db $7f, $7f, $91, $84, $82, $84, $88, $95, $84, $83, $7f, $7f ;   RECEIVED
-BattleLinkRejectedBar:
-    db $7f, $7f, $91, $84, $89, $84, $82, $93, $84, $83, $7f, $7f ;   REJECTED
-
 BattleLinkEnd::
-
-SECTION "Battle Link Medicine", ROMX[$7d00], BANK[$03]
-
-; Bridge ItemUseMedicine (bank 3) to the bank-$0f wait while preserving the
-; live party-mon pointer, selected-mon identity and scratch registers.
-; Returns Z on ready/native bypass and NZ on B cancel.
-BattleLinkMedicineWait:
-    push hl
-    push de
-    push bc
-    ld b, $0f
-    ld hl, BattleLinkAwaitMedicine
-    call Bankswitch
-    pop bc
-    pop de
-    pop hl
-    ld a, [wBattleLinkStash - 1]
-    and a
-    ret
-
-; Patched over the first three effect instructions after .checkMonStatus has
-; proved the selected mon has the ailment this item cures.
-BattleLinkMedicineStatusGate::
-    call BattleLinkMedicineWait
-    jr nz, BattleLinkMedicineCancel
-    xor a                      ; displaced: clear the party status
-    ld [hl], a
-    ld a, b
-    ret
-
-; Patched at .updateInBattleFaintedData, reached only after native code has
-; proved a fainted target was paired with Revive or Max Revive.
-BattleLinkMedicineReviveGate::
-    call BattleLinkMedicineWait
-    jr nz, BattleLinkMedicineCancel
-    ld a, [wIsInBattle]        ; displaced instruction
-    ret
-
-; Patched at .notFullHP, after native code has proved HP can be restored (or
-; a full-HP Full Restore has already been redirected through the status gate).
-BattleLinkMedicineHpGate::
-    call BattleLinkMedicineWait
-    jr nz, BattleLinkMedicineCancel
-    xor a                      ; displaced: disable the low-health alarm
-    ld [wLowHealthAlarm], a
-    ret
-
-; Patched at ItemUsePPRestore.storeNewAmount after native target/move
-; selection and the full-PP no-effect check, but before the PP byte changes.
-; Elixirs pass here once per restorable move; the resolved-turn flag makes
-; every pass after the first immediate.
-BattleLinkPPRestoreGate::
-    call BattleLinkMedicineWait
-    jr nz, BattleLinkPPRestoreCancel
-    ld a, [hl]                 ; displaced instructions
-    and %11000000
-    ret
-
-BattleLinkPPRestoreCancel:
-    pop af                     ; discard the patch CALL return address
-    jp ItemUsePPRestoreDone    ; native cleanup pops saved wWhichPokemon
-
-BattleLinkMedicineCancel:
-    ; Drop the patch CALL's return address, reproduce .canceledItemUse after
-    ; its already-consumed entry pushes, then join the native .done tail.
-    pop af
-    xor a
-    ld [wActionResultOrTookBattleTurn], a
-    jp ItemUseMedicineDone
-
-BattleLinkMedicineEnd::
