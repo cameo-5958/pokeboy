@@ -157,6 +157,7 @@ def main() -> None:
     p.add_argument("--hist-k", type=int, default=0, help="history turns to encode (0=stateless)")
     p.add_argument("--eval-every", type=int, default=0, help="steps between periodic evals (0=off)")
     p.add_argument("--eval-battles", type=int, default=50)
+    p.add_argument("--bf16", action="store_true", help="autocast forward/backward to bfloat16")
     args = p.parse_args()
 
     torch.manual_seed(args.seed)
@@ -205,17 +206,21 @@ def main() -> None:
             ckpt_dir / "model.pt",
         )
 
+    autocast = torch.autocast(
+        device_type="cuda", dtype=torch.bfloat16, enabled=args.bf16 and device == "cuda"
+    )
     step, t0 = 0, time.monotonic()
     model.train()
     while step < args.steps:
         for batch, labels, w in make_batches(train, tok, args.batch_size, device, weights):
             opt.zero_grad()
-            logits = model(**batch)
-            if w is None:
-                loss = F.cross_entropy(logits, labels)
-            else:
-                per_row = F.cross_entropy(logits, labels, reduction="none")
-                loss = (per_row * w).sum() / w.sum().clamp_min(1e-8)
+            with autocast:
+                logits = model(**batch)
+                if w is None:
+                    loss = F.cross_entropy(logits, labels)
+                else:
+                    per_row = F.cross_entropy(logits, labels, reduction="none")
+                    loss = (per_row * w).sum() / w.sum().clamp_min(1e-8)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
