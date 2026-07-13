@@ -109,7 +109,8 @@ BattleLinkSelect::
     xor a
     ld [wBuffer + 2], a
     ld [wBuffer + 4], a
-    ; The AWAITING bar goes into wTileMap, which only reaches VRAM while
+    ld [wBuffer + 5], a
+    ; The AWAITING box goes into wTileMap, which only reaches VRAM while
     ; auto BG transfer is enabled — force it on for the wait and restore the
     ; caller's value on every exit path.
     ldh a, [hAutoBGTransferEnabled]
@@ -130,7 +131,11 @@ BattleLinkHostSlot::
     jr z, BattleLinkCancel
     cp 3
     ret z
-    jr BattleLinkReady
+    cp 1
+    jr z, BattleLinkReady
+    cp 4
+    jr z, BattleLinkReady
+    jr BattleLinkPending
 
 BattleLinkPending:
     call BattleLinkDrawWaiting
@@ -147,8 +152,8 @@ BattleLinkPending:
     ldh a, [hJoyPressed]
     and B_BUTTON
     jr z, BattleLinkPoll
-    ; A cancellation poll lets the host abort its AbortController and advance
-    ; the attempt number before the battle menu is restored.
+    ; A cancellation poll lets the host abort its request and advance the
+    ; attempt number before the battle menu is restored.
     ld a, 1
     ld [wBuffer + 2], a
     jr BattleLinkPoll
@@ -166,7 +171,7 @@ BattleLinkCancel:
 
 BattleLinkReady:
     ; A still holds the host status: flash RECEIVED (1) or REJECTED (4)
-    ; over the bar before the scene is repaired.
+    ; over the box before the scene is repaired.
     call BattleLinkFlashResult
     ; Move the decision out of wBuffer before any animation can clobber the
     ; HP-bar scratch it aliases; the dispatch hooks read the stash.
@@ -354,6 +359,7 @@ BattleLinkAwaitCore::
     xor a
     ld [wBuffer + 2], a
     ld [wBuffer + 4], a
+    ld [wBuffer + 5], a
     ldh a, [hAutoBGTransferEnabled]
     ld [wBuffer + 3], a
     ld a, 1
@@ -367,8 +373,13 @@ BattleLinkAwaitHostSlot::
     cp 2
     jr z, BattleLinkAwaitCancelled
     cp 3
-    jr z, BattleLinkAwaitDone  ; native bypass, first poll, no bar drawn
-    ; 1 = remote decision, 4 = random fallback: flash the outcome, then
+    jr z, BattleLinkAwaitDone  ; native bypass, first poll, no box drawn
+    cp 1
+    jr z, .ready
+    cp 4
+    jr nz, BattleLinkAwaitPending
+.ready
+    ; A still holds the host status for the RECEIVED/REJECTED flash; then
     ; stash the decision before any animation can clobber the HP-bar
     ; scratch that wBuffer aliases.
     call BattleLinkFlashResult
@@ -444,54 +455,91 @@ BattleLinkAwaitMedicine::
     ret
 
 ; The wait UI lives here rather than in the host so dialog changes ship with
-; the package instead of an app rebuild. A single 12-tile status bar on the
-; bottom textbox line of wTileMap; the wait entries have already forced auto
-; BG transfer on, and the ready/cancel exits restore the scene from the tile
-; buffers.
+; the package instead of an app rebuild. A five-row bordered box over the
+; textbox area of wTileMap; the wait hooks force auto BG transfer on and the
+; ready/cancel exits restore the scene from the tile buffers.
 BattleLinkDrawWaiting::
-    ; Remember that the bar reached the screen so a decision that resolves
+    ; Remember that the box reached the screen so a decision that resolves
     ; on the very first poll doesn't flash over an untouched scene.
     ld a, 1
     ld [wBuffer + 4], a
-    ld hl, BattleLinkWaitBar
-    call BattleLinkDrawBar
-    ; A committed turn cannot be cancelled — blank the hint so the bar does
-    ; not offer a B that BattleLinkPending will ignore.
+    ld hl, BattleLinkAwaitingText
+    ; fall through into BattleLinkDrawBox
+
+; Draws the box with the 10-tile message row at hl. The ▶B BACK row is
+; blanked while the turn is committed (BattleLinkPending ignores B then) and
+; during result flashes (wBuffer+5).
+BattleLinkDrawBox:
+    push hl
+    ld de, wTileMap + 12 * 20 + 4
+    ld a, $79
+    ld c, $7b
+    ld hl, BattleLinkBorderRow
+    call BattleLinkBoxRow      ; top border
+    pop hl
+    ld a, $7c
+    ld c, $7c
+    call BattleLinkBoxRow      ; message
+    ld hl, BattleLinkBlankRow
+    ld a, $7c
+    ld c, $7c
+    call BattleLinkBoxRow      ; spacer
+    ld hl, BattleLinkHintRow
+    ld a, [wBuffer + 5]
+    and a
+    jr nz, .blankHint
     ld a, [wActionResultOrTookBattleTurn]
     and a
-    ret z
-    ld hl, wTileMap + 16 * 20 + 4 + 10
-    ld a, $7f
-    ld [hli], a
-    ld [hl], a
-    ret
+    jr z, .hintChosen
+.blankHint
+    ld hl, BattleLinkBlankRow
+.hintChosen
+    ld a, $7c
+    ld c, $7c
+    call BattleLinkBoxRow      ; ▶B BACK (or blank)
+    ld hl, BattleLinkBorderRow
+    ld a, $7d
+    ld c, $7e
+    jr BattleLinkBoxRow        ; bottom border (tail call)
 
-; Copies the 12-tile bar at hl over the bottom textbox line, matching the
-; chatbox alignment of the old AWAITING box.
-BattleLinkDrawBar:
-    ld de, wTileMap + 16 * 20 + 4
-    ld b, 12
-.tile
+; One box row at de: a = left tile, c = right tile, hl = 10 inner tiles.
+; Advances de to the next tilemap row.
+BattleLinkBoxRow:
+    ld [de], a
+    inc de
+    ld b, 10
+.inner
     ld a, [hli]
     ld [de], a
     inc de
     dec b
-    jr nz, .tile
+    jr nz, .inner
+    ld a, c
+    ld [de], a
+    ld a, e
+    add 20 - 11
+    ld e, a
+    ret nc
+    inc d
     ret
 
 ; A holds the host status: 1 flashes RECEIVED, anything else REJECTED (the
-; random fallback, status 4). Skipped when no bar was ever drawn this wait.
+; random fallback, status 4). Skipped when no box was ever drawn this wait.
 ; The caller repairs the screen afterwards; DelayFrame keeps music running.
 BattleLinkFlashResult:
-    ld hl, BattleLinkReceivedBar
+    ld hl, BattleLinkReceivedText
     cp 1
-    jr z, .draw
-    ld hl, BattleLinkRejectedBar
-.draw
+    jr z, .checkDrawn
+    ld hl, BattleLinkRejectedText
+.checkDrawn
     ld a, [wBuffer + 4]
     and a
     ret z
-    call BattleLinkDrawBar
+    ld a, 1
+    ld [wBuffer + 5], a        ; a resolved turn offers no B
+    call BattleLinkDrawBox
+    xor a
+    ld [wBuffer + 5], a
     ld b, 24
 .hold
     call DelayFrame
@@ -499,12 +547,18 @@ BattleLinkFlashResult:
     jr nz, .hold
     ret
 
-BattleLinkWaitBar:
-    db $80, $96, $80, $88, $93, $88, $8d, $86, $75, $7f, $ec, $81 ; AWAITING… ▶B
-BattleLinkReceivedBar:
-    db $7f, $7f, $91, $84, $82, $84, $88, $95, $84, $83, $7f, $7f ;   RECEIVED
-BattleLinkRejectedBar:
-    db $7f, $7f, $91, $84, $89, $84, $82, $93, $84, $83, $7f, $7f ;   REJECTED
+BattleLinkBorderRow:
+    db $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a
+BattleLinkBlankRow:
+    db $7f, $7f, $7f, $7f, $7f, $7f, $7f, $7f, $7f, $7f
+BattleLinkAwaitingText:
+    db $80, $96, $80, $88, $93, $88, $8d, $86, $75, $7f ; AWAITING…
+BattleLinkReceivedText:
+    db $7f, $91, $84, $82, $84, $88, $95, $84, $83, $7f ;  RECEIVED
+BattleLinkRejectedText:
+    db $7f, $91, $84, $89, $84, $82, $93, $84, $83, $7f ;  REJECTED
+BattleLinkHintRow:
+    db $7f, $ec, $81, $7f, $81, $80, $82, $8a, $7f, $7f ;  ▶B BACK
 
 BattleLinkEnd::
 

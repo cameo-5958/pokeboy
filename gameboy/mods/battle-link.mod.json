@@ -4,7 +4,7 @@
   "targetCrc32": "0x9f7fdd53",
   "targetSize": 1048576,
   "metadata": {
-    "version": "1.1.0",
+    "version": "1.1.1",
     "description": "Routes every non-forced Pokemon Red trainer decision through a public Battle Link endpoint.",
     "permissions": [
       "network"
@@ -123,22 +123,22 @@
     {
       "name": "BattleLinkDispatch",
       "section": "battle-link.code",
-      "offset": 159
+      "offset": 170
     },
     {
       "name": "BattleLinkChooseSwitch",
       "section": "battle-link.code",
-      "offset": 281
+      "offset": 292
     },
     {
       "name": "BattleLinkAwaitSwitch",
       "section": "battle-link.code",
-      "offset": 307
+      "offset": 318
     },
     {
       "name": "BattleLinkAwaitItem",
       "section": "battle-link.code",
-      "offset": 330
+      "offset": 341
     },
     {
       "name": "BattleLinkMedicineStatusGate",
@@ -173,7 +173,7 @@
     {
       "target": "section",
       "in": "battle-link.code",
-      "offset": 67,
+      "offset": 70,
       "type": "host16",
       "reference": "host",
       "name": "battle-link.decide"
@@ -181,7 +181,7 @@
     {
       "target": "section",
       "in": "battle-link.code",
-      "offset": 396,
+      "offset": 410,
       "type": "host16",
       "reference": "host",
       "name": "battle-link.decide"

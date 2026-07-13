@@ -34,6 +34,17 @@
     const value = Number(globalThis.PokeboyRuntime?.battleLinkMaxTimeTillRandomMs);
     return Number.isFinite(value) && value >= 0 ? value : DEFAULT_MAX_TIME_TILL_RANDOM_MS;
   };
+  // Decision source: "get" polls the configured HTTPS endpoint from this
+  // page; "discord" hands each snapshot to the native host (which runs the
+  // phone-hosted Discord bot) and waits for a decision message back. The
+  // deadline/random fallback below stays authoritative in both modes.
+  const decisionMode = () =>
+    globalThis.PokeboyRuntime?.battleLinkMode === "discord" ? "discord" : "get";
+  // Host bridge (installed by the embed page). Every call is fire-and-forget:
+  // a missing or throwing bridge must never stall the frame-driven decide().
+  const host = (method, detail) => {
+    try { globalThis.PokeboyBattleLinkHost?.[method]?.(detail); } catch (error) {}
+  };
   const ITEM_CODES = Object.freeze({
     fullRestore: [32, 2, 0x10], potion: [33, 3, 0x14],
     superPotion: [34, 4, 0x13], hyperPotion: [35, 5, 0x12],
@@ -199,7 +210,7 @@
     return {
       snapshot: {
         protocol: 1, battleId: battleId || (battleId = newId()), turn, attempt,
-        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.1.0",
+        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.1.1",
         trainer: { class: memory.read8(A.trainerClass), party: trainerParty, active: trainerActive },
         opponent: { party: opponentParty, active: opponentActive },
         battle: {
@@ -233,6 +244,19 @@
   async function requestDecision(state) {
     const timeoutMs = state.snapshot.timeoutMs;
     const deadline = Date.now() + timeoutMs;
+    if (decisionMode() === "discord") {
+      host("request", state.snapshot);
+      while (!state.cancelled && !state.result && Date.now() < deadline) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(250, Math.max(1, deadline - Date.now()))));
+      }
+      if (!state.cancelled && !state.result) {
+        state.result = randomAction(state.actions);
+        state.resultSource = "random-deadline";
+        modEvent("resolved", { code: state.result.code, source: "random-deadline" });
+      }
+      return;
+    }
     const endpoint = String(globalThis.PokeboyRuntime?.battleLinkEndpoint || "").trim();
     let delay = 250;
     const timeout = setTimeout(() => state.controller.abort("deadline"), timeoutMs);
@@ -262,11 +286,12 @@
             // decision (error status, bad JSON, illegal code): reject the
             // turn with a random legal action instead of retrying.
             state.result = randomAction(state.actions);
-            state.random = true;
+            state.resultSource = "random-invalid";
             modEvent("resolved", { code: state.result.code, source: "random-invalid", status: response.status });
             return;
           }
           state.result = action;
+          state.resultSource = "remote";
           modEvent("resolved", { code: action.code, source: "remote" });
           return;
         } catch (error) {
@@ -278,7 +303,7 @@
       }
     } catch (error) {
       // Missing/invalid configuration follows the same deterministic deadline
-      // contract as a network failure, while leaving B cancellation responsive.
+      // contract as a network failure, while still allowing battle resets.
       while (!state.cancelled && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
       }
@@ -286,7 +311,7 @@
       clearTimeout(timeout);
       if (!state.cancelled && !state.result) {
         state.result = randomAction(state.actions);
-        state.random = true;
+        state.resultSource = "random-deadline";
         modEvent("resolved", { code: state.result.code, source: "random-deadline" });
       }
     }
@@ -299,16 +324,71 @@
     return Boolean((status1 & 0x33) || (status2 & 0x60) || (status & 0x27));
   }
 
-  function resetBattle() {
-    if (pending) {
-      pending.cancelled = true;
-      pending.controller.abort("battle-reset");
+  function cancelPending(reason) {
+    if (!pending) return;
+    pending.cancelled = true;
+    pending.controller.abort(reason);
+    if (decisionMode() === "discord") {
+      const { battleId: id, turn: t, attempt: n } = pending.snapshot;
+      host("cancel", { battleId: id, turn: t, attempt: n, reason });
     }
+  }
+
+  // Discord mode auto-disconnect: decide() only runs on ROM traps, so battle
+  // end (no further decisions) would otherwise go unnoticed. The memory
+  // closure handed to host imports stays valid between traps, letting a 1 Hz
+  // watch report when the trainer battle is over.
+  let battleWatch = 0;
+  let battleWatchId = null;
+  function stopBattleWatch() {
+    if (battleWatch) { clearTimeout(battleWatch); battleWatch = 0; battleWatchId = null; }
+  }
+  function endWatchedBattle(reason) {
+    const id = battleWatchId;
+    stopBattleWatch();
+    host("battleEnd", { battleId: id, reason });
+  }
+  function startBattleWatch(memory) {
+    if (battleWatch) return;
+    battleWatchId = battleId;
+    const tick = () => {
+      battleWatch = 0;
+      if (memory.read8(A.isInBattle) === 2) {
+        battleWatch = setTimeout(tick, 1000);
+        return;
+      }
+      endWatchedBattle("battle-over");
+    };
+    battleWatch = setTimeout(tick, 1000);
+  }
+
+  function resetBattle() {
+    cancelPending("battle-reset");
+    if (battleWatch) endWatchedBattle("battle-reset");
     battleId = newId();
     turn = 0;
     attempt = 0;
     pending = null;
   }
+
+  globalThis.PokeboyBattleLinkDeliver = (message) => {
+    const state = pending;
+    if (!state || state.cancelled || state.result) return false;
+    if (!message
+      || message.battleId !== state.snapshot.battleId
+      || message.turn !== state.snapshot.turn
+      || message.attempt !== state.snapshot.attempt) return false;
+    if (!Number.isInteger(message.action)) return false;
+    const action = state.actions.find((candidate) => candidate.code === message.action);
+    if (!action) {
+      modEvent("discord-illegal-action", { action: message.action });
+      return false;
+    }
+    state.result = action;
+    state.resultSource = "discord";
+    modEvent("resolved", { code: action.code, source: "discord" });
+    return true;
+  };
 
   function decide(cpu, memory) {
     if (cpu.a === 4) {
@@ -317,13 +397,16 @@
       return;
     }
     if (memory.read8(A.isInBattle) !== 2 || memory.read8(A.linkState) !== 0 || forcedAction(memory)) {
-      if (pending) { pending.cancelled = true; pending.controller.abort("native-action"); pending = null; }
+      if (pending) { cancelPending("native-action"); pending = null; }
       memory.write8(A.buffer, 0);
       cpu.a = 3;
       return;
     }
+    // B backs out of a wait while the turn is still open (the ROM only sets
+    // this flag then): abort the in-flight request and advance the attempt
+    // so the re-entered turn opens a fresh one.
     if (memory.read8(A.buffer + 2)) {
-      if (pending) { pending.cancelled = true; pending.controller.abort("player-cancelled"); }
+      if (pending) cancelPending("player-cancelled");
       pending = null;
       attempt += 1;
       cpu.a = 2;
@@ -339,8 +422,9 @@
       const { snapshot, actions } = makeSnapshot(memory);
       pending = {
         snapshot, actions, controller: new AbortController(), cancelled: false, result: null,
-        random: false, deadline: Date.now() + snapshot.timeoutMs,
+        resultSource: null, deadline: Date.now() + snapshot.timeoutMs,
       };
+      if (decisionMode() === "discord") startBattleWatch(memory);
       requestDecision(pending);
     }
     if (!pending.result) {
@@ -356,11 +440,11 @@
       pending.cancelled = true;
       pending.controller.abort("deadline");
       pending.result = randomAction(pending.actions);
-      pending.random = true;
+      pending.resultSource = "random-failsafe";
       modEvent("resolved", { code: pending.result.code, source: "random-failsafe" });
     }
     const action = pending.result;
-    const random = pending.random;
+    const source = pending.resultSource || "unknown";
     memory.write8(A.buffer, action._kind);
     if (action.type === "move") {
       memory.write8(A.enemyMoveListIndex, Math.max(0, action.slot));
@@ -371,14 +455,21 @@
     } else {
       memory.write8(A.buffer + 1, action.item);
     }
+    if (decisionMode() === "discord") {
+      const { battleId: id, turn: t, attempt: n } = pending.snapshot;
+      host("resolved", {
+        battleId: id, turn: t, attempt: n,
+        code: action.code, source,
+      });
+    }
     pending = null;
     turn += 1;
     attempt = 0;
-    // 1 tells the ROM a remote decision landed (RECEIVED); 4 marks a random
+    // 1 tells the ROM a decision landed (RECEIVED); 4 marks a random
     // fallback (REJECTED). Needs package >= 1.1.0 — the registry ships the
     // package ahead of any app build carrying this file, and the new package
     // with an older host simply never sees a 4.
-    cpu.a = random ? 4 : 1;
+    cpu.a = source.startsWith("random") ? 4 : 1;
   }
 
   globalThis.PokeboyModCore = Object.freeze({ "battle-link.decide": decide });
