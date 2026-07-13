@@ -38,6 +38,14 @@ def cmd_pull(args) -> None:
             raise SystemExit(f"unknown source {source!r}")
 
 
+def _clear_parts(processed: "Path") -> None:
+    """Stale higher-numbered parts from a previous, larger run would silently
+    join the training set (workspace/AI-DATA.md) — clear before rewriting."""
+    if processed.is_dir():
+        for part in processed.glob("part-*.parquet"):
+            part.unlink()
+
+
 def cmd_convert(args) -> None:
     import json
 
@@ -53,6 +61,7 @@ def cmd_convert(args) -> None:
     root = Path(args.root)
     raw = root / "raw" / "showdown"
     processed = root / "processed" / "showdown"
+    _clear_parts(processed)
     rejected_dir = root / "rejected" / "showdown"
     rejected_dir.mkdir(parents=True, exist_ok=True)
     reject_log = open(rejected_dir / "reason.jsonl", "a")
@@ -133,6 +142,7 @@ def _convert_pokechamp(args) -> None:
     root = Path(args.root)
     data_dir = root / "raw" / "pokechamp" / "milkkarten__pokechamp" / "data"
     processed = root / "processed" / "pokechamp"
+    _clear_parts(processed)
     rejected_dir = root / "rejected" / "pokechamp"
     rejected_dir.mkdir(parents=True, exist_ok=True)
     reject_log = open(rejected_dir / "reason.jsonl", "a")

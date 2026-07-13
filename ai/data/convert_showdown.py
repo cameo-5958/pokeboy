@@ -10,12 +10,19 @@ Action semantics for replay data (reveal-order, deterministic given state_json):
             state_json's revealed_moves-equivalent "moves" list.
   switches: action = 4 + index of the target in the bench list (team in reveal
             order, minus the active mon).
-A player's decision is only emitted when it is observable: |cant| turns and
-sleep/para full skips produce no row for that player.
+
+Decision boundaries (workspace/AI-DATA.md remediation): normal-turn decisions
+are snapshotted at the START of the turn — both players' rows come from one
+boundary state, so neither sees same-turn effects, reveals, or its own label.
+Forced replacements decide mid-turn and keep execution-time state. A player's
+decision is only emitted when it is observable AND its label is derivable from
+the pre-decision state: |cant|/full-skip turns, first-use moves, and switches
+to not-yet-revealed teammates produce no row.
 """
 
 from __future__ import annotations
 
+import copy
 import re
 from typing import Any
 
@@ -165,6 +172,7 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
     started = False
     hist: list[dict] = []  # closed turns, oldest first
     cur = _new_turn_log()
+    boundary: list[_Side] | None = None  # deep copy of sides at turn start
 
     def record_action(side_ix: int, action: str) -> None:
         # first action of the turn is the side's decision; later same-turn
@@ -200,6 +208,7 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
                     hist.append(cur)
                     cur = _new_turn_log()
                 turn = int(parts[2])
+                boundary = copy.deepcopy(sides)
             elif cmd == "start":
                 started = True
             elif cmd == "switch":
@@ -210,20 +219,20 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
                     raise RejectedReplay(f"unknown species {parts[3]!r}")
                 forced = side.active is not None and side.active.fainted
                 if started and turn >= 1 and side.active is not None:
-                    snap = _snapshot(
-                        sides, side_ix, turn, "force_switch" if forced else "turn"
-                    )
-                    snap["history_tail"] = _tail(hist, side_ix)
-                    target = side.get(species)
-                    bench = [m for m in side.team if m is not side.active]
-                    if target in bench:
-                        emit(
-                            side_ix,
-                            4 + bench.index(target),
-                            species,
-                            "force_switch" if forced else "turn",
-                            snap,
+                    # forced replacements decide mid-turn (execution-time state);
+                    # voluntary switches decide at the turn boundary
+                    view = sides if forced else boundary
+                    if view is not None and view[side_ix].active is not None:
+                        vside = view[side_ix]
+                        bench = [m for m in vside.team if m is not vside.active]
+                        ix = next(
+                            (i for i, m in enumerate(bench) if m.species == species), None
                         )
+                        if ix is not None:  # unrevealed targets are unrecoverable
+                            kind = "force_switch" if forced else "turn"
+                            snap = _snapshot(view, side_ix, turn, kind)
+                            snap["history_tail"] = _tail(hist, side_ix)
+                            emit(side_ix, 4 + ix, species, kind, snap)
                 record_action(side_ix, f"S:{species}")
                 side.active = side.get(species)
                 hp, fnt = _parse_hp(parts[4]) if len(parts) > 4 else (1.0, False)
@@ -241,10 +250,21 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
                         raise RejectedReplay(
                             f"{side.active.species} revealed >4 moves"
                         )
-                    snap = _snapshot(sides, side_ix, turn, "turn")
-                    snap["history_tail"] = _tail(hist, side_ix)
-                    action = 9 if move == "Struggle" else side.active.moves.index(move)
-                    emit(side_ix, action, move, "turn", snap)
+                    # emit from the turn boundary: the decision predates every
+                    # same-turn effect, and a first use (absent from the
+                    # boundary's move list) is unrecoverable → no row
+                    if boundary is not None and turn >= 1 and started:
+                        bactive = boundary[side_ix].active
+                        if bactive is not None and bactive.species == side.active.species:
+                            action = None
+                            if move == "Struggle":
+                                action = 9
+                            elif move in bactive.moves:
+                                action = bactive.moves.index(move)
+                            if action is not None:
+                                snap = _snapshot(boundary, side_ix, turn, "turn")
+                                snap["history_tail"] = _tail(hist, side_ix)
+                                emit(side_ix, action, move, "turn", snap)
                     record_action(side_ix, f"M:{move}")
             elif cmd == "-damage" or cmd == "-heal":
                 # damage/heal idents always refer to the active slot in gen1 singles
