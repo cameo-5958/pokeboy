@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import type { EmulatorAssets } from "@/emulator/assets";
@@ -46,6 +47,10 @@ const PAD_TOP = 28;
 const PAD_BOTTOM = 28;
 const PULL_DIST = 56; // drag distance that fully pulls the cartridge out
 const SPEEDS = ["x0.5", "x1", "x3", "xINF"] as const;
+
+// On-device build identity (AGENTS.md "Versioning"): expo.version from
+// app.json, baked into the binary at build time. "Pull latest" can't touch it.
+const APP_BUILD_VERSION = Constants.expoConfig?.version ?? "unknown";
 
 const DEVICE_ID_KEY = "pokeboy.device-id.v1";
 const TELEMETRY_FLUSH_MS = 5000;
@@ -1619,6 +1624,12 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
             </Pressable>
             <PullResult pull={pull} />
           </View>
+
+          {/* Which IPA is this? Pull latest never changes it — only a new
+              sideload does. See AGENTS.md "Versioning". */}
+          <Text selectable={false} style={styles.settingsBuildStamp}>
+            BUILD v{APP_BUILD_VERSION}
+          </Text>
         </Pressable>
       </Pressable>
     </Modal>
@@ -2589,6 +2600,14 @@ const styles = StyleSheet.create({
   },
   settingsInputError: {
     borderColor: "#8e2f35",
+  },
+  settingsBuildStamp: {
+    marginTop: 12,
+    textAlign: "center",
+    color: "#8b8679",
+    fontSize: 11,
+    letterSpacing: 1,
+    userSelect: "none",
   },
   settingsBackdrop: {
     flex: 1,
