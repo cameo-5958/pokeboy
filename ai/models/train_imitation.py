@@ -35,7 +35,7 @@ def load_rows(limit: int, sources: list[str], seed: int = 0) -> list[dict]:
     rng.shuffle(parts)
     rows: list[dict] = []
     for path in parts:
-        table = pq.read_table(path, columns=["state_json", "action", "elo", "won"])
+        table = pq.read_table(path, columns=["battle_id", "state_json", "action", "elo", "won"])
         rows.extend(table.to_pylist())
         if len(rows) >= limit:
             break
@@ -92,8 +92,15 @@ def main() -> None:
     print(json.dumps({"tier": args.tier, "params": model.num_params(), "device": device}))
 
     rows = load_rows(args.limit_rows, args.sources.split(","), seed=args.seed)
-    n_hold = max(args.batch_size, int(len(rows) * args.holdout))
-    hold, train = rows[:n_hold], rows[n_hold:]
+    # battle-level split: a battle's rows never straddle train/holdout
+    import hashlib
+
+    def is_holdout(r: dict) -> bool:
+        h = hashlib.sha1(r["battle_id"].encode()).digest()[0] / 255.0
+        return h < args.holdout
+
+    hold = [r for r in rows if is_holdout(r)]
+    train = [r for r in rows if not is_holdout(r)]
     print(json.dumps({"rows": len(rows), "train": len(train), "holdout": len(hold)}))
 
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.01)
