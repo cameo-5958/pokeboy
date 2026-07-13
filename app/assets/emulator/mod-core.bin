@@ -188,7 +188,7 @@
     return {
       snapshot: {
         protocol: 1, battleId: battleId || (battleId = newId()), turn, attempt,
-        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.0.0",
+        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.0.10",
         trainer: { class: memory.read8(A.trainerClass), party: trainerParty, active: trainerActive },
         opponent: { party: opponentParty, active: opponentActive },
         battle: {
@@ -252,7 +252,7 @@
       }
     } catch (error) {
       // Missing/invalid configuration follows the same deterministic deadline
-      // contract as a network failure, while leaving B cancellation responsive.
+      // contract as a network failure, while still allowing battle resets.
       while (!state.cancelled && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
       }
@@ -293,13 +293,6 @@
       if (pending) { pending.cancelled = true; pending.controller.abort("native-action"); pending = null; }
       memory.write8(A.buffer, 0);
       cpu.a = 3;
-      return;
-    }
-    if (memory.read8(A.buffer + 2)) {
-      if (pending) { pending.cancelled = true; pending.controller.abort("player-cancelled"); }
-      pending = null;
-      attempt += 1;
-      cpu.a = 2;
       return;
     }
     if (!pending) {
