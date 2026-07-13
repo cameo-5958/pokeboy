@@ -4,7 +4,7 @@
   "targetCrc32": "0x9f7fdd53",
   "targetSize": 1048576,
   "metadata": {
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "Routes every non-forced Pokemon Red trainer decision through a public Battle Link endpoint.",
     "permissions": [
       "network"
@@ -80,12 +80,12 @@
     {
       "name": "BattleLinkDispatch",
       "section": "battle-link.code",
-      "offset": 112
+      "offset": 115
     },
     {
       "name": "BattleLinkChooseSwitch",
       "section": "battle-link.code",
-      "offset": 227
+      "offset": 230
     }
   ],
   "relocations": [
