@@ -91,6 +91,8 @@ export type BattleSnapshot = {
   battleId: string;
   turn: number;
   attempt: number;
+  /** "turn" for a whole-turn decision, "faint-switch" for a forced send-out. */
+  phase?: string;
   timeoutMs: number;
   trainer: { class: number; party: SnapshotMon[]; active: SnapshotMon };
   opponent: { party: SnapshotMon[]; active: SnapshotMon };
@@ -546,10 +548,13 @@ export class DiscordBattleLinkBot {
       const known = typeof mon.slot === "number" ? this.knownOpponent.get(mon.slot) : undefined;
       return `${index + 1}. ${known ? monLine(known) : "???"}`;
     }).join("\n");
+    const faint = snapshot.phase === "faint-switch";
     return {
-      title: `BATTLE LINK — TURN ${snapshot.turn}${snapshot.attempt ? ` · RETRY ${snapshot.attempt}` : ""}`,
+      title: faint
+        ? `BATTLE LINK — SEND OUT NEXT POKÉMON`
+        : `BATTLE LINK — TURN ${snapshot.turn}${snapshot.attempt ? ` · RETRY ${snapshot.attempt}` : ""}`,
       color: footer ? EMBED_COLOR_DONE : EMBED_COLOR,
-      description: `Trainer class ${snapshot.trainer.class} · decide within ${Math.round(snapshot.timeoutMs / 1000)}s`,
+      description: `${faint ? `${snapshot.trainer.active.nickname || "Your Pokémon"} fainted` : `Trainer class ${snapshot.trainer.class}`} · decide within ${Math.round(snapshot.timeoutMs / 1000)}s`,
       fields: [
         { name: "YOUR ACTIVE", value: activeDetail(snapshot.trainer.active), inline: true },
         { name: "OPPONENT ACTIVE", value: activeDetail(snapshot.opponent.active), inline: true },
@@ -583,7 +588,7 @@ export class DiscordBattleLinkBot {
         components: [{
           type: 3, // STRING_SELECT
           custom_id: `bls|${key}`,
-          placeholder: "SWITCH POKÉMON…",
+          placeholder: snapshot.phase === "faint-switch" ? "SEND OUT POKÉMON…" : "SWITCH POKÉMON…",
           options: switches.slice(0, 25).map((action) => ({
             label: actionLabel(action, snapshot).slice(0, 100),
             value: String(action.code),

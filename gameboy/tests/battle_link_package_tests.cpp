@@ -67,6 +67,7 @@ int main(int argc, char** argv) {
     ok &= call_targets_fixed_section(gb, 0x42a6);
     ok &= call_targets_fixed_section(gb, 0x4341);
     ok &= call_targets_fixed_section(gb, 0x4397);
+    ok &= call_targets_fixed_section(gb, 0x4246); // MainInBattleLoop turn-start prime
     ok &= call_targets_fixed_section(gb, 0x4969);
     ok &= call_targets_fixed_section(gb, 0x506f); // UseBagItem's call UseItem
     ok &= call_targets_fixed_section(gb, 0x51b7); // pre-SwitchPlayerMon call
@@ -79,6 +80,7 @@ int main(int argc, char** argv) {
     ok &= gb_mod_unload(gb, handle) == GB_MOD_OK;
     ok &= byte_is(gb, 0x0f, 0x411e, 0xaf);
     ok &= byte_is(gb, 0x0f, 0x42a6, 0xcd);
+    ok &= byte_is(gb, 0x0f, 0x4247, 0x19); // call SaveScreenTilesToBuffer1 restored
     ok &= byte_is(gb, 0x0f, 0x4341, 0x21);
     ok &= byte_is(gb, 0x0f, 0x4397, 0x21);
     ok &= byte_is(gb, 0x0f, 0x4969, 0x06);

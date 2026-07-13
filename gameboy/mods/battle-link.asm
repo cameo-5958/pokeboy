@@ -21,11 +21,17 @@ DEF hJoyPressed               EQU $ffb3
 DEF hAutoBGTransferEnabled    EQU $ffba
 
 DEF wCurItem                  EQU $cf91
+DEF wEnemyMonPartyPos         EQU $cfe8
+DEF wEnemyPartyCount          EQU $d89c
+DEF wEnemyMons                EQU $d8a4
+DEF PARTY_STRUCT_LENGTH       EQU 44
 
 DEF Joypad                    EQU $019a
 DEF RedrawPartyMenu           EQU $14d9
 DEF DelayFrame                EQU $20af
 DEF UseItem                   EQU $30bc
+DEF SaveScreenTilesToBuffer1  EQU $3719
+DEF AddNTimes                 EQU $3a87
 DEF GBPalNormal               EQU $3ddc
 ; ItemUseMedicine.canceledItemUse minus its two `pop af`s. All three
 ; medicine gates run after those entry pushes have already been consumed.
@@ -267,27 +273,147 @@ BattleLinkDispatch::
     scf
     ret
 
-; EnemySendOut normally starts its candidate scan immediately after the
-; current slot. A remote switch carries the exact requested slot in wBuffer+1.
-; Consuming the stash here (not just in dispatch) covers the send-out after a
-; faint, where MainInBattleLoop skips the dispatch site and the pending switch
-; would otherwise be re-applied on a later turn.
+; Replaces EnemySendOut's candidate scan. The ROM's own fainted-mon check
+; right after the patch loops BACK INTO the patched bytes without advancing
+; the candidate, so every slot returned from here must already be alive or
+; the game spins on the same slot forever. A remote switch carries the exact
+; requested slot in the stash (consumed here, not just in dispatch, so it
+; can't be re-applied on a later turn); the send-out after a faint asks the
+; host for a fresh forced-switch decision. The whole stash dies here either
+; way: a send-out is a turn boundary, and a leftover pre-commit move or item
+; from a turn whose dispatch never ran must not leak into the next one.
 BattleLinkChooseSwitch::
     ld a, [wBattleLinkStash]
     cp ACTION_SWITCH
-    jr nz, .native
+    jr nz, BattleLinkChooseFresh
     xor a
     ld [wBattleLinkStash], a
+    ld [wBattleLinkStash + 2], a
     ld a, [wBattleLinkStash + 1]
     ld b, a
-    ret
-.native
+    call BattleLinkSwitchSlotOk
+    ret z
+    jr BattleLinkChooseNative
+BattleLinkChooseFresh:
+    xor a
+    ld [wBattleLinkStash], a
+    ld [wBattleLinkStash + 2], a
+    ; Forced switch-in: poll the host with switch-only legal actions. The
+    ; host bypasses (3) for the battle-opening send-out and anything that
+    ; isn't an eligible trainer battle. No B here — a faint replacement
+    ; cannot be taken back, and the ROM saved the screen to buffer 1 two
+    ; calls before the patch, so the ready path restores it exactly.
+    ld [wBuffer + 2], a
+    ld [wBuffer + 4], a
+    ldh a, [hAutoBGTransferEnabled]
+    ld [wBuffer + 3], a
+    ld a, 1
+    ld [wBuffer + 5], a        ; a forced switch offers no B: keep the hint blank
+    ldh [hAutoBGTransferEnabled], a
+BattleLinkFaintPoll:
+    ld a, 6
+    db $d3
+BattleLinkFaintHostSlot::
+    dw 0
+    and a
+    jr z, BattleLinkFaintPending
+    cp 3
+    jr z, BattleLinkFaintBypass
+    ; 1 = remote decision, 4 = random fallback: flash the verdict, repair
+    ; the scene, then trust the slot only after validating it.
+    call BattleLinkFlashResult
+    ld a, [wBuffer + 3]
+    ldh [hAutoBGTransferEnabled], a
+    call LoadScreenTilesFromBuffer1
+    call DrawHUDsAndHPBars
+    ld a, [wBuffer + 1]
+    ld b, a
+    call BattleLinkSwitchSlotOk
+    ret z
+    jr BattleLinkChooseNative
+BattleLinkFaintPending:
+    call BattleLinkDrawWaiting
+    call DelayFrame
+    jr BattleLinkFaintPoll
+BattleLinkFaintBypass:
+    ld a, [wBuffer + 3]
+    ldh [hAutoBGTransferEnabled], a
+BattleLinkChooseNative:
+    ; Original scan order (ascending, skipping the on-field slot) plus the
+    ; HP and party-count checks the displaced code left to the caller.
+    ld a, [wEnemyPartyCount]
+    ld c, a
     ld b, $ff
-.next
+.scan
     inc b
-    ld a, [$cfe8]
+    ld a, b
+    cp c
+    jr nc, .anyAlive
+    ld a, [wEnemyMonPartyPos]
     cp b
-    jr z, .next
+    jr z, .scan
+    call BattleLinkSlotAlive
+    jr z, .scan
+    ret
+.anyAlive
+    ; No live benched mon found (stale on-field marker): first alive slot.
+    ld b, $ff
+.anyScan
+    inc b
+    ld a, b
+    cp c
+    jr nc, .fallback
+    call BattleLinkSlotAlive
+    jr z, .anyScan
+    ret
+.fallback
+    ld b, 0
+    ret
+
+; b = candidate slot. Returns Z when the slot is inside the party, not the
+; on-field mon, and still alive; NZ otherwise. Preserves b.
+BattleLinkSwitchSlotOk:
+    ld a, [wEnemyPartyCount]
+    ld c, a
+    ld a, b
+    cp c
+    jr nc, .bad
+    ld a, [wEnemyMonPartyPos]
+    cp b
+    jr z, .bad
+    call BattleLinkSlotAlive
+    jr z, .bad
+    xor a
+    ret
+.bad
+    or 1
+    ret
+
+; b = roster slot. NZ when the mon still has HP. The roster is current at
+; send-out time: the faint handler zeroes the fainted slot's HP before the
+; scan runs. Preserves bc.
+BattleLinkSlotAlive:
+    push bc
+    ld hl, wEnemyMons + 1
+    ld a, b
+    ld bc, PARTY_STRUCT_LENGTH
+    call AddNTimes
+    pop bc
+    ld a, [hli]
+    or [hl]
+    ret
+
+; Patched over MainInBattleLoop's `call SaveScreenTilesToBuffer1`, reached
+; once per turn after both faint checks pass: opens this turn's decision
+; request the moment the turn starts instead of waiting for the player to
+; commit an action. The host only starts the request (never resolves one
+; here); the reply is discarded.
+BattleLinkPrime::
+    call SaveScreenTilesToBuffer1
+    ld a, 5
+    db $d3
+BattleLinkPrimeHostSlot::
+    dw 0
     ret
 
 ; Patched over `call GBPalNormal` just before the fall-through into
@@ -455,9 +581,11 @@ BattleLinkAwaitMedicine::
     ret
 
 ; The wait UI lives here rather than in the host so dialog changes ship with
-; the package instead of an app rebuild. A five-row bordered box over the
-; textbox area of wTileMap; the wait hooks force auto BG transfer on and the
-; ready/cancel exits restore the scene from the tile buffers.
+; the package instead of an app rebuild. A three-row bordered box perfectly
+; sized for the nine-tile message over the textbox area of wTileMap, with
+; the ▶B BACK hint on its own row OUTSIDE the box; the wait hooks force auto
+; BG transfer on and the ready/cancel exits restore the scene from the tile
+; buffers.
 BattleLinkDrawWaiting::
     ; Remember that the box reached the screen so a decision that resolves
     ; on the very first poll doesn't flash over an untouched scene.
@@ -466,12 +594,12 @@ BattleLinkDrawWaiting::
     ld hl, BattleLinkAwaitingText
     ; fall through into BattleLinkDrawBox
 
-; Draws the box with the 10-tile message row at hl. The ▶B BACK row is
-; blanked while the turn is committed (BattleLinkPending ignores B then) and
-; during result flashes (wBuffer+5).
+; Draws the box with the 9-tile message row at hl. The ▶B BACK row below the
+; box is blanked while the turn is committed (BattleLinkPending ignores B
+; then) and during result flashes (wBuffer+5).
 BattleLinkDrawBox:
     push hl
-    ld de, wTileMap + 12 * 20 + 4
+    ld de, wTileMap + 13 * 20 + 4
     ld a, $79
     ld c, $7b
     ld hl, BattleLinkBorderRow
@@ -480,10 +608,10 @@ BattleLinkDrawBox:
     ld a, $7c
     ld c, $7c
     call BattleLinkBoxRow      ; message
-    ld hl, BattleLinkBlankRow
-    ld a, $7c
-    ld c, $7c
-    call BattleLinkBoxRow      ; spacer
+    ld hl, BattleLinkBorderRow
+    ld a, $7d
+    ld c, $7e
+    call BattleLinkBoxRow      ; bottom border
     ld hl, BattleLinkHintRow
     ld a, [wBuffer + 5]
     and a
@@ -494,20 +622,16 @@ BattleLinkDrawBox:
 .blankHint
     ld hl, BattleLinkBlankRow
 .hintChosen
-    ld a, $7c
-    ld c, $7c
-    call BattleLinkBoxRow      ; ▶B BACK (or blank)
-    ld hl, BattleLinkBorderRow
-    ld a, $7d
-    ld c, $7e
-    jr BattleLinkBoxRow        ; bottom border (tail call)
+    ld a, $7f
+    ld c, $7f
+    jr BattleLinkBoxRow        ; ▶B BACK outside the box (tail call)
 
-; One box row at de: a = left tile, c = right tile, hl = 10 inner tiles.
+; One box row at de: a = left tile, c = right tile, hl = 9 inner tiles.
 ; Advances de to the next tilemap row.
 BattleLinkBoxRow:
     ld [de], a
     inc de
-    ld b, 10
+    ld b, 9
 .inner
     ld a, [hli]
     ld [de], a
@@ -517,7 +641,7 @@ BattleLinkBoxRow:
     ld a, c
     ld [de], a
     ld a, e
-    add 20 - 11
+    add 20 - 10
     ld e, a
     ret nc
     inc d
@@ -548,17 +672,17 @@ BattleLinkFlashResult:
     ret
 
 BattleLinkBorderRow:
-    db $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a
+    db $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a
 BattleLinkBlankRow:
-    db $7f, $7f, $7f, $7f, $7f, $7f, $7f, $7f, $7f, $7f
+    db $7f, $7f, $7f, $7f, $7f, $7f, $7f, $7f, $7f
 BattleLinkAwaitingText:
-    db $80, $96, $80, $88, $93, $88, $8d, $86, $75, $7f ; AWAITING…
+    db $80, $96, $80, $88, $93, $88, $8d, $86, $75 ; AWAITING…
 BattleLinkReceivedText:
-    db $7f, $91, $84, $82, $84, $88, $95, $84, $83, $7f ;  RECEIVED
+    db $7f, $91, $84, $82, $84, $88, $95, $84, $83 ;  RECEIVED
 BattleLinkRejectedText:
-    db $7f, $91, $84, $89, $84, $82, $93, $84, $83, $7f ;  REJECTED
+    db $7f, $91, $84, $89, $84, $82, $93, $84, $83 ;  REJECTED
 BattleLinkHintRow:
-    db $7f, $ec, $81, $7f, $81, $80, $82, $8a, $7f, $7f ;  ▶B BACK
+    db $ec, $81, $7f, $81, $80, $82, $8a, $7f, $7f ; ▶B BACK
 
 BattleLinkEnd::
 
