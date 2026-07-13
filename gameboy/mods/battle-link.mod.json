@@ -4,7 +4,7 @@
   "targetCrc32": "0x9f7fdd53",
   "targetSize": 1048576,
   "metadata": {
-    "version": "1.0.8",
+    "version": "1.0.9",
     "description": "Routes every non-forced Pokemon Red trainer decision through a public Battle Link endpoint.",
     "permissions": [
       "network"
@@ -30,10 +30,20 @@
       "name": "battle-link.code",
       "placement": "fixed",
       "bank": "0x0f",
-      "address": "0x7e00",
+      "address": "0x7c00",
       "fill": "0x00",
       "data": {
         "file": "battle-link.bin"
+      }
+    },
+    {
+      "name": "battle-link.medicine",
+      "placement": "fixed",
+      "bank": "0x03",
+      "address": "0x7d00",
+      "fill": "0x00",
+      "data": {
+        "file": "battle-link-medicine.bin"
       }
     }
   ],
@@ -76,6 +86,27 @@
       "addend": 26,
       "expected": "cd dc 3d",
       "data": "cd 00 00"
+    },
+    {
+      "symbol": "ItemUseMedicine.checkMonStatus",
+      "addend": 5,
+      "expected": "af 77 78",
+      "data": "cd 00 00"
+    },
+    {
+      "symbol": "ItemUseMedicine.updateInBattleFaintedData",
+      "expected": "fa 57 d0",
+      "data": "cd 00 00"
+    },
+    {
+      "symbol": "ItemUseMedicine.notFullHP",
+      "expected": "af ea 83 d0",
+      "data": "cd 00 00 00"
+    },
+    {
+      "symbol": "ItemUsePPRestore.storeNewAmount",
+      "expected": "7e e6 c0",
+      "data": "cd 00 00"
     }
   ],
   "symbols": [
@@ -108,6 +139,26 @@
       "name": "BattleLinkAwaitItem",
       "section": "battle-link.code",
       "offset": 307
+    },
+    {
+      "name": "BattleLinkMedicineStatusGate",
+      "section": "battle-link.medicine",
+      "offset": 19
+    },
+    {
+      "name": "BattleLinkMedicineReviveGate",
+      "section": "battle-link.medicine",
+      "offset": 28
+    },
+    {
+      "name": "BattleLinkMedicineHpGate",
+      "section": "battle-link.medicine",
+      "offset": 37
+    },
+    {
+      "name": "BattleLinkPPRestoreGate",
+      "section": "battle-link.medicine",
+      "offset": 47
     }
   ],
   "relocations": [
@@ -130,7 +181,7 @@
     {
       "target": "section",
       "in": "battle-link.code",
-      "offset": 333,
+      "offset": 370,
       "type": "host16",
       "reference": "host",
       "name": "battle-link.decide"
@@ -190,6 +241,38 @@
       "type": "call16",
       "reference": "module",
       "name": "BattleLinkAwaitSwitch"
+    },
+    {
+      "target": "patch",
+      "in": "7",
+      "offset": 1,
+      "type": "call16",
+      "reference": "module",
+      "name": "BattleLinkMedicineStatusGate"
+    },
+    {
+      "target": "patch",
+      "in": "8",
+      "offset": 1,
+      "type": "call16",
+      "reference": "module",
+      "name": "BattleLinkMedicineReviveGate"
+    },
+    {
+      "target": "patch",
+      "in": "9",
+      "offset": 1,
+      "type": "call16",
+      "reference": "module",
+      "name": "BattleLinkMedicineHpGate"
+    },
+    {
+      "target": "patch",
+      "in": "10",
+      "offset": 1,
+      "type": "call16",
+      "reference": "module",
+      "name": "BattleLinkPPRestoreGate"
     }
   ]
 }
