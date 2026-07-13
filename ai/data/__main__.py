@@ -44,11 +44,12 @@ def cmd_convert(args) -> None:
     from data.convert_showdown import RejectedReplay, convert_replay
     from data.trajectory import write_rows
 
+    if args.source == "metamon":
+        return _convert_metamon(args)
+    if args.source == "pokechamp":
+        return _convert_pokechamp(args)
     if args.source != "showdown":
-        raise SystemExit(
-            "only the showdown converter exists yet; other corpora ship "
-            "pre-parsed formats handled in a later phase"
-        )
+        raise SystemExit(f"no converter for {args.source!r} yet")
     root = Path(args.root)
     raw = root / "raw" / "showdown"
     processed = root / "processed" / "showdown"
@@ -76,6 +77,86 @@ def cmd_convert(args) -> None:
         write_rows(rows, processed / f"part-{part:04d}.parquet")
     reject_log.close()
     print(json.dumps({"converted": converted, "rejected": rejected, "parts": part + 1}))
+
+
+def _convert_metamon(args) -> None:
+    import json
+
+    from data.convert_metamon import convert_trajectory, iter_tarball
+    from data.convert_showdown import RejectedReplay
+    from data.downloads import Manifest
+    from data.trajectory import write_rows
+
+    root = Path(args.root)
+    raw = root / "raw" / "metamon" / "jakegrigsby__metamon-parsed-replays"
+    processed = root / "processed" / "metamon"
+    rejected_dir = root / "rejected" / "metamon"
+    rejected_dir.mkdir(parents=True, exist_ok=True)
+    manifest = Manifest(processed)  # resumability: one key per finished tarball
+    reject_log = open(rejected_dir / "reason.jsonl", "a")
+
+    totals = {"converted": 0, "rejected": 0, "parts": 0}
+    for tarball in sorted(raw.glob("gen1*.tar.gz")):
+        if manifest.has(tarball.name):
+            continue
+        rows, part = [], 0
+        fmt = tarball.name.removesuffix(".tar.gz")
+        for name, blob in iter_tarball(tarball):
+            try:
+                rows.extend(convert_trajectory(name, blob, source="metamon"))
+                totals["converted"] += 1
+            except RejectedReplay as exc:
+                totals["rejected"] += 1
+                reject_log.write(json.dumps({"file": name, "reason": str(exc)}) + "\n")
+                continue
+            if len(rows) >= args.rows_per_file:
+                write_rows(rows, processed / fmt / f"part-{part:05d}.parquet")
+                part += 1
+                totals["parts"] += 1
+                rows = []
+        if rows:
+            write_rows(rows, processed / fmt / f"part-{part:05d}.parquet")
+            totals["parts"] += 1
+        manifest.add(tarball.name, {"format": fmt})
+        print(f"{tarball.name} done: {totals}", flush=True)
+    reject_log.close()
+    print(json.dumps(totals))
+
+
+def _convert_pokechamp(args) -> None:
+    import json
+
+    from data.convert_pokechamp import convert_row, iter_gen1_rows
+    from data.convert_showdown import RejectedReplay
+    from data.trajectory import write_rows
+
+    root = Path(args.root)
+    data_dir = root / "raw" / "pokechamp" / "milkkarten__pokechamp" / "data"
+    processed = root / "processed" / "pokechamp"
+    rejected_dir = root / "rejected" / "pokechamp"
+    rejected_dir.mkdir(parents=True, exist_ok=True)
+    reject_log = open(rejected_dir / "reason.jsonl", "a")
+
+    rows, part, converted, rejected = [], 0, 0, 0
+    for row in iter_gen1_rows(data_dir):
+        try:
+            rows.extend(convert_row(row))
+            converted += 1
+        except RejectedReplay as exc:
+            rejected += 1
+            reject_log.write(
+                json.dumps({"battle_id": row.get("battle_id"), "reason": str(exc)}) + "\n"
+            )
+            continue
+        if len(rows) >= args.rows_per_file:
+            write_rows(rows, processed / f"part-{part:05d}.parquet")
+            part += 1
+            rows = []
+    if rows:
+        write_rows(rows, processed / f"part-{part:05d}.parquet")
+        part += 1
+    reject_log.close()
+    print(json.dumps({"converted": converted, "rejected": rejected, "parts": part}))
 
 
 def main() -> None:

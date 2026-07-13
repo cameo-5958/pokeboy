@@ -8,6 +8,7 @@ dependencies = [
     "pyarrow>=17.0",
     "huggingface_hub>=0.30",
     "requests>=2.32",
+    "lz4>=4.4.5",
 ]
 
 [dependency-groups]
