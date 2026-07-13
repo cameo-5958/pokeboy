@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import time
 from pathlib import Path
@@ -158,6 +159,7 @@ def main() -> None:
     p.add_argument("--eval-every", type=int, default=0, help="steps between periodic evals (0=off)")
     p.add_argument("--eval-battles", type=int, default=50)
     p.add_argument("--bf16", action="store_true", help="autocast forward/backward to bfloat16")
+    p.add_argument("--ckpt-root", default=str(ROOT / "checkpoints"))
     args = p.parse_args()
 
     torch.manual_seed(args.seed)
@@ -189,21 +191,26 @@ def main() -> None:
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.01)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.steps, eta_min=args.lr / 10)
 
-    ckpt_dir = ROOT / "checkpoints" / args.tier
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-    metrics = open(ckpt_dir / "metrics.jsonl", "a")
     run_id = f"{args.tier}-{args.weighting}-h{args.hist_k}-r{args.limit_rows}-s{args.steps}-seed{args.seed}"
+    tier_dir = Path(args.ckpt_root) / args.tier
+    run_dir = tier_dir / f"{run_id}-{time.strftime('%m%d-%H%M%S')}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    # "latest" always points at the newest run; per-run dirs never clobber
+    tmp_link = tier_dir / f".latest-{os.getpid()}"
+    os.symlink(run_dir.name, tmp_link)
+    os.replace(tmp_link, tier_dir / "latest")
+    metrics = open(run_dir / "metrics.jsonl", "a")
 
     def log_eval(step: int) -> None:
         m = periodic_eval(model, tok, hold, device, battles=args.eval_battles, seed=args.seed)
         line = {"run": run_id, "step": step, **m, "s": round(time.monotonic() - t0, 1)}
         print(json.dumps(line), flush=True)
-        with open(ckpt_dir / "evals.jsonl", "a") as f:
+        with open(tier_dir / "evals.jsonl", "a") as f:
             f.write(json.dumps(line) + "\n")
         torch.save(
             {"model": model.state_dict(), "tier": args.tier, "steps": step,
              "hist_k": args.hist_k, "seq_len": tok.seq_len},
-            ckpt_dir / "model.pt",
+            run_dir / "model.pt",
         )
 
     autocast = torch.autocast(
@@ -253,9 +260,9 @@ def main() -> None:
     torch.save(
         {"model": model.state_dict(), "tier": args.tier, "steps": args.steps,
          "hist_k": args.hist_k, "seq_len": tok.seq_len},
-        ckpt_dir / "model.pt",
+        run_dir / "model.pt",
     )
-    print(f"saved {ckpt_dir / 'model.pt'}")
+    print(f"saved {run_dir / 'model.pt'}")
 
 
 if __name__ == "__main__":
