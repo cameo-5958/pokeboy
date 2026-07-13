@@ -96,6 +96,7 @@ BattleLinkHostSlot::
     ret
 
 BattleLinkPending:
+    call BattleLinkDrawWaiting
     call DelayFrame
     ; VBlank only refreshes the raw joypad state; hJoyPressed is derived by
     ; Joypad, which nothing else calls while this loop owns the CPU.
@@ -219,5 +220,37 @@ BattleLinkChooseSwitch::
     cp b
     jr z, .next
     ret
+
+; The wait UI lives here rather than in the host so dialog changes ship with
+; the package instead of an app rebuild. Copies four 12-tile rows into the
+; centre of wTileMap; BattleLinkSelect has already forced auto BG transfer on,
+; and BattleLinkReady/Cancel restore the scene from the tile buffers.
+BattleLinkDrawWaiting::
+    ld hl, BattleLinkWaitTiles
+    ld de, wTileMap + 7 * 20 + 4
+    ld c, 4
+.row
+    ld b, 12
+.tile
+    ld a, [hli]
+    ld [de], a
+    inc de
+    dec b
+    jr nz, .tile
+    ld a, e
+    add 20 - 12
+    ld e, a
+    jr nc, .nextRow
+    inc d
+.nextRow
+    dec c
+    jr nz, .row
+    ret
+
+BattleLinkWaitTiles:
+    db $79, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7b
+    db $7c, $7f, $80, $96, $80, $88, $93, $88, $8d, $86, $7f, $7c ; | AWAITING |
+    db $7d, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7a, $7e
+    db $7f, $7f, $ec, $81, $7f, $81, $80, $82, $8a, $7f, $7f, $7f ;   >B BACK
 
 BattleLinkEnd::
