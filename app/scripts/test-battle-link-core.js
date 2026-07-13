@@ -112,35 +112,32 @@ setImmediate(() => {
     decide(cpu, memory);
     assert.equal(cpu.a, 1, "remote decision resumes the ROM");
 
-    // B while the turn is still open: the ROM sets the cancel flag (it only
-    // does so while the turn can be undone), the host aborts the in-flight
-    // request, and the re-entered turn opens attempt + 1.
-    const resolvers = [];
+    // A committed local action is independent from Game Boy Back input. Even
+    // an old ROM-side cancellation flag must neither abort nor duplicate the
+    // one request already in flight for this turn.
+    let resolveCommittedRequest;
     context.fetch = async (url) => {
       requests += 1;
       const encoded = new URL(String(url)).searchParams.get("state");
       lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-      return new Promise((resolve) => { resolvers.push(resolve); });
+      return new Promise((resolve) => { resolveCommittedRequest = resolve; });
     };
     context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 5000;
     cpu.a = 0;
     decide(cpu, memory);
-    assert.equal(cpu.a, 0, "cancellable request starts pending");
-    const cancelAttempt = lastState.attempt;
-    ram[0xcee9 + 2] = 1; // the ROM's B-cancel flag
-    cpu.a = 0;
+    assert.equal(cpu.a, 0, "committed request starts pending");
+    const committedRequestCount = requests;
+    ram[0xcee9 + 2] = 1; // legacy B-cancel flag
     decide(cpu, memory);
-    assert.equal(cpu.a, 2, "B cancels the open turn");
-    ram[0xcee9 + 2] = 0; // the ROM cancel path clears the flag
-    cpu.a = 0;
-    decide(cpu, memory);
-    assert.equal(cpu.a, 0, "re-entered turn opens a fresh request");
-    assert.equal(lastState.attempt, cancelAttempt + 1, "attempt advances after a cancel");
-    resolvers[1]({ ok: true, json: async () => ({ action: 1 }) });
+    assert.equal(cpu.a, 0, "Back cannot cancel a committed request");
+    assert.equal(requests, committedRequestCount, "Back cannot duplicate a committed request");
+    resolveCommittedRequest({ ok: true, json: async () => ({ action: 1 }) });
     setImmediate(() => {
       cpu.a = 0;
       decide(cpu, memory);
-      assert.equal(cpu.a, 1, "the re-entered request resolves as remote");
+      assert.equal(cpu.a, 1, "the original committed request still resolves");
+      assert.equal(requests, committedRequestCount, "one request resolves the committed turn");
+      ram[0xcee9 + 2] = 0;
 
       // Frame-driven failsafe: even if fetch never settles (wedged WebView
       // network path), the per-frame decide poll enforces the deadline.

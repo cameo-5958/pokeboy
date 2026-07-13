@@ -210,7 +210,7 @@
     return {
       snapshot: {
         protocol: 1, battleId: battleId || (battleId = newId()), turn, attempt,
-        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.1.1",
+        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.1.0",
         trainer: { class: memory.read8(A.trainerClass), party: trainerParty, active: trainerActive },
         opponent: { party: opponentParty, active: opponentActive },
         battle: {
@@ -400,16 +400,6 @@
       if (pending) { cancelPending("native-action"); pending = null; }
       memory.write8(A.buffer, 0);
       cpu.a = 3;
-      return;
-    }
-    // B backs out of a wait while the turn is still open (the ROM only sets
-    // this flag then): abort the in-flight request and advance the attempt
-    // so the re-entered turn opens a fresh one.
-    if (memory.read8(A.buffer + 2)) {
-      if (pending) cancelPending("player-cancelled");
-      pending = null;
-      attempt += 1;
-      cpu.a = 2;
       return;
     }
     if (!pending) {
