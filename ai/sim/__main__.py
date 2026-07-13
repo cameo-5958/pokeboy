@@ -44,6 +44,10 @@ def make_agent(name: str, seed: int):
         return HumanCLI()
     if name == "jsonl":
         return JsonlSeat()
+    if name.startswith("model:"):
+        from models.agent import ModelAgent  # keep sim torch-free for other seats
+
+        return ModelAgent(name.removeprefix("model:"), seed=seed)
     raise SystemExit(f"unknown agent {name!r}")
 
 
