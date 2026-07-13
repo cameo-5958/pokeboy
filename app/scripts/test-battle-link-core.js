@@ -197,6 +197,17 @@ function runLegalityTests() {
     assert.deepEqual(switches.map((action) => action.partySlot), [1], "benched healthy mon is switchable for any class");
     assert.equal(switches[0].code, 17, "switch codes offset by 16");
 
+    // Trainer battles never write wEnemyMonNicks (only _AddPartyMon's player
+    // branch fills nick arrays), so trainer-side names must be derived from
+    // the species id — the unwritten RAM here would decode as "???????????".
+    assert.equal(lastState.trainer.active.nickname, "RHYDON", "trainer active is named by its species");
+    assert.deepEqual(
+      lastState.trainer.party.map((mon) => mon.nickname),
+      ["RHYDON", "SPEAROW"],
+      "trainer party names come from the species table",
+    );
+    assert.equal(lastState.mod, "battle-link@1.2.0", "snapshot change bumps the mod version");
+
     // Switching is class-agnostic and survives item exhaustion (aiCount 0);
     // items stay gated behind aiCount and the class table.
     ram[0xd072] = 0;
