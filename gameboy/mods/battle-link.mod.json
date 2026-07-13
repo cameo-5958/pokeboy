@@ -4,7 +4,7 @@
   "targetCrc32": "0x9f7fdd53",
   "targetSize": 1048576,
   "metadata": {
-    "version": "1.0.4",
+    "version": "1.0.8",
     "description": "Routes every non-forced Pokemon Red trainer decision through a public Battle Link endpoint.",
     "permissions": [
       "network"
@@ -64,6 +64,18 @@
       "symbol": "EnemySendOutFirstMon.next",
       "expected": "06 ff 04 fa e8 cf b8 28 f9",
       "data": "cd 00 00 00 00 00 00 00 00"
+    },
+    {
+      "symbol": "UseBagItem",
+      "addend": 16,
+      "expected": "cd bc 30",
+      "data": "cd 00 00"
+    },
+    {
+      "symbol": "PartyMenuOrRockOrRun.notAlreadyOut",
+      "addend": 26,
+      "expected": "cd dc 3d",
+      "data": "cd 00 00"
     }
   ],
   "symbols": [
@@ -75,17 +87,27 @@
     {
       "name": "BattleLinkSelect",
       "section": "battle-link.code",
-      "offset": 16
+      "offset": 19
     },
     {
       "name": "BattleLinkDispatch",
       "section": "battle-link.code",
-      "offset": 112
+      "offset": 147
     },
     {
       "name": "BattleLinkChooseSwitch",
       "section": "battle-link.code",
-      "offset": 227
+      "offset": 262
+    },
+    {
+      "name": "BattleLinkAwaitSwitch",
+      "section": "battle-link.code",
+      "offset": 284
+    },
+    {
+      "name": "BattleLinkAwaitItem",
+      "section": "battle-link.code",
+      "offset": 307
     }
   ],
   "relocations": [
@@ -100,7 +122,15 @@
     {
       "target": "section",
       "in": "battle-link.code",
-      "offset": 44,
+      "offset": 58,
+      "type": "host16",
+      "reference": "host",
+      "name": "battle-link.decide"
+    },
+    {
+      "target": "section",
+      "in": "battle-link.code",
+      "offset": 333,
       "type": "host16",
       "reference": "host",
       "name": "battle-link.decide"
@@ -144,6 +174,22 @@
       "type": "call16",
       "reference": "module",
       "name": "BattleLinkChooseSwitch"
+    },
+    {
+      "target": "patch",
+      "in": "5",
+      "offset": 1,
+      "type": "call16",
+      "reference": "module",
+      "name": "BattleLinkAwaitItem"
+    },
+    {
+      "target": "patch",
+      "in": "6",
+      "offset": 1,
+      "type": "call16",
+      "reference": "module",
+      "name": "BattleLinkAwaitSwitch"
     }
   ]
 }
