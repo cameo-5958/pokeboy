@@ -5,11 +5,15 @@
  * from the WebView mod core) to a Discord channel:
  *
  *  - /connect binds the invoking channel to the battle currently awaiting or
- *    producing decisions. With no current battle the interaction is left
- *    unacknowledged on purpose.
- *  - every decision poll posts an embed with the battle state known so far
- *    plus move / switch / item selections as message components.
+ *    producing decisions.
+ *  - the session owns ONE widget message; every decision poll, resolution and
+ *    battle end edits that same message in place (state embed plus move /
+ *    switch / item components) instead of posting a new one.
  *  - a component click resolves the pending decision back into the emulator.
+ *    Clicks are acknowledged before any other work: the 3-second callback
+ *    window is the whole budget on a phone network, and each ack also chains
+ *    the widget onto the click's fresh webhook token, so a user-installed app
+ *    with no channel access can keep editing the widget indefinitely.
  *  - /disconnect — or the battle ending — tears the session down.
  *
  * Opponent knowledge is accumulated per battle: a player mon appears in the
@@ -21,6 +25,7 @@ import { DiscordGateway } from "./gateway";
 import {
   createChannelMessage,
   createFollowup,
+  DiscordRestError,
   editChannelMessage,
   editWebhookMessage,
   interactionCallback,
@@ -101,9 +106,9 @@ export type BotEvents = {
   onEvent?: (kind: string, detail?: unknown) => void;
 };
 
-type MessageRef =
+type Widget =
   | { kind: "channel"; channelId: string; messageId: string }
-  | { kind: "webhook"; token: string; messageId: string };
+  | { kind: "webhook"; token: string; messageId: string; at: number };
 
 type Session = {
   channelId: string | null;
@@ -113,7 +118,6 @@ type Session = {
 
 type PendingPoll = {
   snapshot: BattleSnapshot;
-  posted: MessageRef | null;
   decided: boolean;
 };
 
@@ -169,6 +173,12 @@ export class DiscordBattleLinkBot {
   private session: Session | null = null;
   private activeBattleId: string | null = null;
   private pendingPoll: PendingPoll | null = null;
+  /** The one message this session edits in place. */
+  private widget: Widget | null = null;
+  /** The poll whose content the widget currently shows. */
+  private displayed: PendingPoll | null = null;
+  /** Serializes widget edits so turns can't render out of order. */
+  private queue: Promise<void> = Promise.resolve();
   private knownOpponent = new Map<number, SnapshotMon>();
   private stopped = false;
 
@@ -195,6 +205,9 @@ export class DiscordBattleLinkBot {
     this.session = null;
     this.pendingPoll = null;
     this.activeBattleId = null;
+    this.widget = null;
+    this.displayed = null;
+    this.queue = Promise.resolve();
     this.knownOpponent.clear();
   }
 
@@ -236,39 +249,49 @@ export class DiscordBattleLinkBot {
       if (fresh) this.knownOpponent.set(seen, fresh);
       else this.knownOpponent.set(seen, previous);
     }
-    this.pendingPoll = { snapshot, posted: null, decided: false };
-    if (this.session) void this.postPoll(this.pendingPoll);
+    this.pendingPoll = { snapshot, decided: false };
+    if (this.session) this.schedulePoll(this.pendingPoll);
   }
 
   handleCancel(detail: { battleId?: unknown; turn?: unknown; attempt?: unknown; reason?: unknown }): void {
     const poll = this.matchPoll(detail);
     if (!poll) return;
     this.pendingPoll = null;
-    void this.finalizePollMessage(poll, `CANCELLED (${String(detail.reason || "cancelled")})`);
+    this.finalizePoll(poll, `CANCELLED (${String(detail.reason || "cancelled")})`);
   }
 
   handleResolved(detail: { battleId?: unknown; turn?: unknown; attempt?: unknown; code?: unknown; source?: unknown }): void {
     const poll = this.matchPoll(detail);
     this.pendingPoll = null;
     if (!poll) return;
-    // A Discord-sourced decision already rewrote the message via the
-    // component ack; only fallback resolutions need an edit here.
+    // A Discord-sourced decision already rewrote the widget via the
+    // component click; only fallback resolutions need an edit here.
     if (detail.source === "discord" && poll.decided) return;
     const action = poll.snapshot.legalActions.find((candidate) => candidate.code === detail.code);
     const label = action ? actionLabel(action, poll.snapshot) : `ACTION ${String(detail.code)}`;
-    void this.finalizePollMessage(poll, `RESOLVED: ${label} (${String(detail.source || "unknown")})`);
+    this.finalizePoll(poll, `RESOLVED: ${label} (${String(detail.source || "unknown")})`);
   }
 
   handleBattleEnd(detail: { battleId?: unknown; reason?: unknown }): void {
     if (this.activeBattleId && detail.battleId && detail.battleId !== this.activeBattleId) return;
     const hadSession = this.session !== null;
-    const poll = this.pendingPoll;
     this.pendingPoll = null;
     this.activeBattleId = null;
     this.knownOpponent.clear();
-    if (poll) void this.finalizePollMessage(poll, "BATTLE ENDED");
     if (hadSession) {
-      void this.postNote("**BATTLE LINK** — battle ended, disconnected.");
+      // Close out whatever the widget is showing; a dead session must not
+      // leave live-looking components behind.
+      const shown = this.displayed;
+      this.enqueue(async () => {
+        if (shown) {
+          await this.editWidget({
+            embeds: [this.pollEmbed(shown.snapshot, "BATTLE ENDED — DISCONNECTED")],
+            components: [],
+          });
+        }
+        this.widget = null;
+        this.displayed = null;
+      });
       this.session = null;
       this.emit("auto-disconnected", detail);
     }
@@ -308,36 +331,55 @@ export class DiscordBattleLinkBot {
   private async onCommand(interaction: any): Promise<void> {
     const name = interaction?.data?.name;
     if (name === "connect") {
-      // No current battle: deliberately leave the interaction unacknowledged.
       if (!this.activeBattleId && !this.pendingPoll) {
+        // An unacknowledged command renders as "This interaction failed" in
+        // the client; decline out loud instead.
         this.emit("connect-ignored");
-        return;
-      }
-      this.session = {
-        channelId: this.channelIdOf(interaction),
-        interactionToken: interaction.token,
-        interactionAt: Date.now(),
-      };
-      const poll = this.pendingPoll;
-      if (poll && !poll.decided) {
         await interactionCallback(interaction.id, interaction.token, {
           type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
-          data: this.pollMessage(poll.snapshot),
+          data: {
+            embeds: [this.infoEmbed("No active battle. Start a trainer battle, then /connect again.")],
+            flags: 64, // ephemeral
+          },
         });
-        poll.posted = { kind: "webhook", token: interaction.token, messageId: "@original" };
-      } else {
-        await interactionCallback(interaction.id, interaction.token, {
-          type: 4,
-          data: { embeds: [this.infoEmbed("Connected. Waiting for the next decision…")] },
-        });
+        return;
       }
-      this.emit("connected", { channelId: this.session.channelId });
+      const channelId = this.channelIdOf(interaction);
+      const poll = this.pendingPoll;
+      const showPoll = poll !== null && !poll.decided;
+      await interactionCallback(interaction.id, interaction.token, {
+        type: 4,
+        data: showPoll
+          ? this.pollMessage(poll.snapshot)
+          : { embeds: [this.infoEmbed("Connected. Waiting for the next decision…")] },
+      });
+      // Only a delivered response becomes the session widget; a failed
+      // callback (stale replay) must not bind us to a dead token.
+      this.session = { channelId, interactionToken: interaction.token, interactionAt: Date.now() };
+      this.widget = { kind: "webhook", token: interaction.token, messageId: "@original", at: Date.now() };
+      this.displayed = showPoll ? poll : null;
+      this.emit("connected", { channelId });
     } else if (name === "disconnect") {
       if (!this.session) {
         this.emit("disconnect-ignored");
+        await interactionCallback(interaction.id, interaction.token, {
+          type: 4,
+          data: { embeds: [this.infoEmbed("Not connected.")], flags: 64 },
+        });
         return;
       }
       this.session = null;
+      const shown = this.displayed;
+      this.enqueue(async () => {
+        if (shown) {
+          await this.editWidget({
+            embeds: [this.pollEmbed(shown.snapshot, "DISCONNECTED")],
+            components: [],
+          });
+        }
+        this.widget = null;
+        this.displayed = null;
+      });
       await interactionCallback(interaction.id, interaction.token, {
         type: 4,
         data: { embeds: [this.infoEmbed("Disconnected from the battle.")], flags: 64 }, // ephemeral
@@ -351,24 +393,29 @@ export class DiscordBattleLinkBot {
     const parts = customId.split("|");
     const kind = parts[0];
     if (kind !== "bl" && kind !== "bls") return;
-    if (this.session) {
-      // Any interaction refreshes the webhook fallback token.
+    // Ack before any other work: the 3-second callback window is the whole
+    // budget on a phone network, and a late ack renders as "This interaction
+    // failed" even when the decision goes through.
+    let acked = true;
+    try {
+      await interactionCallback(interaction.id, interaction.token, { type: 6 }); // DEFERRED_UPDATE_MESSAGE
+    } catch (error) {
+      // Stale replay after a gateway resume, or network flake: the click is
+      // still a decision — only this token is unusable for edits.
+      acked = false;
+      this.emit("interaction-ack-failed", { message: String(error) });
+    }
+    if (this.session && acked) {
+      // Any acknowledged interaction refreshes the webhook fallback token.
       this.session.interactionToken = interaction.token;
       this.session.interactionAt = Date.now();
     }
     const [, battleId, turnText, attemptText] = parts;
     const code = kind === "bl" ? Number(parts[4]) : Number(interaction?.data?.values?.[0]);
     const poll = this.matchPoll({ battleId, turn: Number(turnText), attempt: Number(attemptText) });
-    if (!poll || poll.decided || !Number.isInteger(code)) {
-      // Stale click: silently ack so Discord doesn't flag a failure.
-      await interactionCallback(interaction.id, interaction.token, { type: 6 }); // DEFERRED_UPDATE_MESSAGE
-      return;
-    }
+    if (!poll || poll.decided || !Number.isInteger(code)) return; // stale click, already acked
     const action = poll.snapshot.legalActions.find((candidate) => candidate.code === code);
-    if (!action) {
-      await interactionCallback(interaction.id, interaction.token, { type: 6 });
-      return;
-    }
+    if (!action) return;
     poll.decided = true;
     this.events.sendDecision({
       battleId: poll.snapshot.battleId,
@@ -376,14 +423,21 @@ export class DiscordBattleLinkBot {
       attempt: poll.snapshot.attempt,
       action: code,
     });
-    await interactionCallback(interaction.id, interaction.token, {
-      type: 7, // UPDATE_MESSAGE
-      data: {
-        embeds: [this.pollEmbed(poll.snapshot, `CHOSEN: ${actionLabel(action, poll.snapshot)}`)],
-        components: [],
-      },
-    });
     this.emit("decision", { code });
+    this.enqueue(async () => {
+      if (acked && this.widget?.kind === "webhook") {
+        // Chain the widget onto the click's token: after a deferred update
+        // ack, @original is the component's own message, and every click
+        // buys another 15-minute editing window.
+        this.widget = { kind: "webhook", token: interaction.token, messageId: "@original", at: Date.now() };
+      }
+      if (this.displayed === poll) {
+        await this.editWidget({
+          embeds: [this.pollEmbed(poll.snapshot, `CHOSEN: ${actionLabel(action, poll.snapshot)}`)],
+          components: [],
+        });
+      }
+    });
   }
 
   // ---- Message delivery -----------------------------------------------------
@@ -392,63 +446,90 @@ export class DiscordBattleLinkBot {
     return this.session !== null && Date.now() - this.session.interactionAt < INTERACTION_TOKEN_TTL_MS;
   }
 
-  private async postPoll(poll: PendingPoll): Promise<void> {
+  private enqueue(task: () => Promise<void>): void {
+    this.queue = this.queue.then(async () => {
+      try {
+        await task();
+      } catch (error) {
+        this.emit("widget-op-failed", { message: String(error) });
+      }
+    });
+  }
+
+  /** Render a new decision poll onto the widget (creating it if needed). */
+  private schedulePoll(poll: PendingPoll): void {
+    this.enqueue(async () => {
+      // Superseded before it reached the front of the queue.
+      if (poll !== this.pendingPoll || poll.decided) return;
+      const payload = this.pollMessage(poll.snapshot);
+      if ((await this.editWidget(payload)) || (await this.createWidget(payload))) {
+        this.displayed = poll;
+      } else {
+        this.emit("poll-post-failed", { battleId: poll.snapshot.battleId, turn: poll.snapshot.turn });
+      }
+    });
+  }
+
+  /** Close out a poll's components with a footer, if the widget shows it. */
+  private finalizePoll(poll: PendingPoll, footer: string): void {
+    this.enqueue(async () => {
+      if (this.displayed !== poll) return;
+      await this.editWidget({
+        embeds: [this.pollEmbed(poll.snapshot, footer)],
+        components: [],
+      });
+    });
+  }
+
+  private async editWidget(payload: unknown): Promise<boolean> {
+    const widget = this.widget;
+    if (!widget || !this.applicationId) return false;
+    if (widget.kind === "webhook" && Date.now() - widget.at >= INTERACTION_TOKEN_TTL_MS) return false;
+    try {
+      if (widget.kind === "channel") {
+        await editChannelMessage(this.token, widget.channelId, widget.messageId, payload);
+      } else {
+        await editWebhookMessage(this.applicationId, widget.token, widget.messageId, payload);
+      }
+      return true;
+    } catch (error) {
+      this.emit("widget-edit-failed", { message: String(error) });
+      return false;
+    }
+  }
+
+  private async createWidget(payload: unknown): Promise<boolean> {
     const session = this.session;
-    if (!session || !this.applicationId) return;
-    const payload = this.pollMessage(poll.snapshot);
+    if (!session || !this.applicationId) return false;
     if (session.channelId) {
       try {
         const message = await createChannelMessage(this.token, session.channelId, payload);
-        poll.posted = { kind: "channel", channelId: session.channelId, messageId: message.id };
-        return;
+        this.widget = { kind: "channel", channelId: session.channelId, messageId: message.id };
+        return true;
       } catch (error) {
         this.emit("channel-post-failed", { message: String(error) });
+        // A user-installed app has no channel access; that never heals
+        // mid-session, so stop burning a round trip on it every turn.
+        if (error instanceof DiscordRestError && (error.status === 403 || error.status === 404)) {
+          session.channelId = null;
+        }
       }
     }
     if (this.webhookTokenFresh()) {
       try {
         const message = await createFollowup(this.applicationId, session.interactionToken, payload);
-        poll.posted = { kind: "webhook", token: session.interactionToken, messageId: message.id };
-        return;
+        this.widget = {
+          kind: "webhook",
+          token: session.interactionToken,
+          messageId: message.id,
+          at: session.interactionAt,
+        };
+        return true;
       } catch (error) {
         this.emit("followup-post-failed", { message: String(error) });
       }
     }
-    this.emit("poll-post-failed", { battleId: poll.snapshot.battleId, turn: poll.snapshot.turn });
-  }
-
-  private async finalizePollMessage(poll: PendingPoll, footer: string): Promise<void> {
-    const posted = poll.posted;
-    if (!posted || !this.applicationId) return;
-    const payload = {
-      embeds: [this.pollEmbed(poll.snapshot, footer)],
-      components: [],
-    };
-    try {
-      if (posted.kind === "channel") {
-        await editChannelMessage(this.token, posted.channelId, posted.messageId, payload);
-      } else {
-        await editWebhookMessage(this.applicationId, posted.token, posted.messageId, payload);
-      }
-    } catch (error) {
-      this.emit("finalize-failed", { message: String(error) });
-    }
-  }
-
-  private async postNote(content: string): Promise<void> {
-    const session = this.session;
-    if (!session) return;
-    try {
-      if (session.channelId) {
-        await createChannelMessage(this.token, session.channelId, { content });
-        return;
-      }
-      if (this.applicationId && this.webhookTokenFresh()) {
-        await createFollowup(this.applicationId, session.interactionToken, { content });
-      }
-    } catch (error) {
-      this.emit("note-post-failed", { message: String(error) });
-    }
+    return false;
   }
 
   // ---- Embed / component building -------------------------------------------

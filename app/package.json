@@ -11,7 +11,7 @@
     "prebuild": "expo prebuild",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test:battle-link": "node scripts/test-battle-link-core.js"
+    "test:battle-link": "node scripts/test-battle-link-core.js && node scripts/test-battle-link-bot.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",
@@ -37,6 +37,7 @@
     "@types/react": "~18.3.12",
     "eslint": "^8.57.0",
     "eslint-config-expo": "~8.0.1",
+    "sucrase": "^3.35.1",
     "typescript": "~5.3.3"
   }
 }

@@ -165,7 +165,13 @@ setImmediate(() => {
 function runLegalityTests() {
   // wAICount seeding + disabled-move legality. Brock (0x22) has 5 AI uses
   // in TrainerAIPointers; wEnemyDisabledMove keeps the disabled move number
-  // in its high nibble.
+  // in its high nibble. A second healthy benched mon must be switchable
+  // regardless of trainer class.
+  ram[0xd89c] = 2;
+  ram[0xd8d0] = 5; // slot 1: species
+  write16(0xd8d1, 25); // slot 1: hp
+  write16(0xd8f2, 25); // slot 1: max hp
+  ram[0xd8f1] = 9; // slot 1: level
   context.fetch = async (url) => {
     requests += 1;
     const encoded = new URL(String(url)).searchParams.get("state");
@@ -187,7 +193,55 @@ function runLegalityTests() {
     const moves = lastState.legalActions.filter((action) => action.type === "move");
     assert.deepEqual(moves.map((move) => move.slot), [0], "disabled move slot is excluded");
     assert.equal(ram[0xccdd], 10, "remaining legal move is selected");
+    const switches = lastState.legalActions.filter((action) => action.type === "switch");
+    assert.deepEqual(switches.map((action) => action.partySlot), [1], "benched healthy mon is switchable for any class");
+    assert.equal(switches[0].code, 17, "switch codes offset by 16");
 
+    // Trainer battles never write wEnemyMonNicks (only _AddPartyMon's player
+    // branch fills nick arrays), so trainer-side names must be derived from
+    // the species id — the unwritten RAM here would decode as "???????????".
+    assert.equal(lastState.trainer.active.nickname, "RHYDON", "trainer active is named by its species");
+    assert.deepEqual(
+      lastState.trainer.party.map((mon) => mon.nickname),
+      ["RHYDON", "SPEAROW"],
+      "trainer party names come from the species table",
+    );
+    assert.equal(lastState.mod, "battle-link@1.2.0", "snapshot change bumps the mod version");
+
+    // Switching is class-agnostic and survives item exhaustion (aiCount 0);
+    // items stay gated behind aiCount and the class table.
+    ram[0xd072] = 0;
+    ram[0xccdf] = 0;
+    ram[0xd031] = 0x27; // Rocker: unconditional SUPER POTION while aiCount > 0
+    cpu.a = 0;
+    decide(cpu, memory);
+    setImmediate(() => {
+      cpu.a = 0;
+      decide(cpu, memory);
+      assert.equal(cpu.a, 1, "aiCount-0 turn resolves as remote");
+      const kinds = new Set(lastState.legalActions.map((action) => action.type));
+      assert.ok(kinds.has("switch"), "aiCount 0 keeps switching legal");
+      assert.ok(!kinds.has("item"), "aiCount 0 exhausts items");
+      ram[0xccdf] = 3;
+      cpu.a = 0;
+      decide(cpu, memory);
+      setImmediate(() => {
+        cpu.a = 0;
+        decide(cpu, memory);
+        assert.equal(cpu.a, 1, "restocked turn resolves as remote");
+        assert.ok(
+          lastState.legalActions.some((action) => action.itemName === "superPotion"),
+          "aiCount > 0 restores class items",
+        );
+        runResponseTests();
+      });
+    });
+  });
+}
+
+// GET-mode response handling: invalid responses rejecting immediately and
+// 204 re-polling.
+function runResponseTests() {
     // An endpoint response that is not a legal decision rejects the turn
     // immediately with a random action — no retries.
     ram[0xd072] = 0;
@@ -225,7 +279,6 @@ function runLegalityTests() {
         runDiscordTests();
       });
     });
-  });
 }
 
 // Discord mode: decisions travel over the host bridge (native Discord bot)
