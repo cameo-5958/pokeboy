@@ -9,6 +9,7 @@ dependencies = [
     "huggingface_hub>=0.30",
     "requests>=2.32",
     "lz4>=4.4.5",
+    "torch>=2.13.0",
 ]
 
 [dependency-groups]
