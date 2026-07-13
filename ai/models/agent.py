@@ -35,6 +35,25 @@ class ModelAgent:
         self.model.eval()
         self._gen = torch.Generator().manual_seed(seed)
 
+    @classmethod
+    def from_model(
+        cls,
+        model,
+        tokenizer: Tokenizer,
+        seed: int = 0,
+        device: str | None = None,
+        temperature: float = 1.0,
+    ) -> "ModelAgent":
+        """Wrap an already-built model in place (no checkpoint round-trip);
+        the caller keeps ownership of train/eval mode and device."""
+        self = cls.__new__(cls)
+        self.device = device or next(model.parameters()).device.type
+        self.temperature = temperature
+        self.tok = tokenizer
+        self.model = model
+        self._gen = torch.Generator().manual_seed(seed)
+        return self
+
     @torch.no_grad()
     def choose(self, state: State) -> int:
         enc = self.tok.encode(state.to_json())
