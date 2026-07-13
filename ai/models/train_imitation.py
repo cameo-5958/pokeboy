@@ -51,6 +51,8 @@ def make_batches(
     device: str,
     weights: list[float] | None = None,
 ):
+    if not rows:
+        raise ValueError("empty rows for make_batches")
     batch_size = min(batch_size, len(rows))
     for i in range(0, len(rows) - batch_size + 1, batch_size):
         chunk = rows[i : i + batch_size]
@@ -161,6 +163,12 @@ def main() -> None:
     p.add_argument("--bf16", action="store_true", help="autocast forward/backward to bfloat16")
     p.add_argument("--ckpt-root", default=str(ROOT / "checkpoints"))
     args = p.parse_args()
+    if args.steps <= 0 or args.batch_size <= 0 or args.limit_rows <= 0:
+        p.error("--steps, --batch-size and --limit-rows must be positive")
+    if not 0 < args.holdout < 1:
+        p.error("--holdout must be in (0, 1)")
+    if args.eval_every < 0 or args.eval_battles < 0 or args.hist_k < 0:
+        p.error("--eval-every, --eval-battles and --hist-k must be >= 0")
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -182,6 +190,11 @@ def main() -> None:
     if args.weighting in ("winners", "elo+winners"):  # drop dead rows up front
         train = [r for r, w in zip(train, weights) if w > 0]
         weights = [w for w in weights if w > 0]
+    if not train or not hold:
+        raise SystemExit(
+            f"degenerate split: train={len(train)} holdout={len(hold)} "
+            f"(rows={len(rows)}, weighting={args.weighting})"
+        )
     print(
         json.dumps(
             {"rows": len(rows), "train": len(train), "holdout": len(hold), "weighting": args.weighting}
@@ -195,11 +208,26 @@ def main() -> None:
     tier_dir = Path(args.ckpt_root) / args.tier
     run_dir = tier_dir / f"{run_id}-{time.strftime('%m%d-%H%M%S')}"
     run_dir.mkdir(parents=True, exist_ok=True)
-    # "latest" always points at the newest run; per-run dirs never clobber
-    tmp_link = tier_dir / f".latest-{os.getpid()}"
-    os.symlink(run_dir.name, tmp_link)
-    os.replace(tmp_link, tier_dir / "latest")
     metrics = open(run_dir / "metrics.jsonl", "a")
+
+    published = False
+
+    def save_ckpt(step: int) -> None:
+        """Atomic checkpoint write; "latest" is published only once a real
+        checkpoint exists, so it never points at an empty/partial run."""
+        nonlocal published
+        tmp = run_dir / ".model.pt.tmp"
+        torch.save(
+            {"model": model.state_dict(), "tier": args.tier, "steps": step,
+             "hist_k": args.hist_k, "seq_len": tok.seq_len},
+            tmp,
+        )
+        os.replace(tmp, run_dir / "model.pt")
+        if not published:
+            tmp_link = tier_dir / f".latest-{os.getpid()}"
+            os.symlink(run_dir.name, tmp_link)
+            os.replace(tmp_link, tier_dir / "latest")
+            published = True
 
     def log_eval(step: int) -> None:
         m = periodic_eval(model, tok, hold, device, battles=args.eval_battles, seed=args.seed)
@@ -207,11 +235,7 @@ def main() -> None:
         print(json.dumps(line), flush=True)
         with open(tier_dir / "evals.jsonl", "a") as f:
             f.write(json.dumps(line) + "\n")
-        torch.save(
-            {"model": model.state_dict(), "tier": args.tier, "steps": step,
-             "hist_k": args.hist_k, "seq_len": tok.seq_len},
-            run_dir / "model.pt",
-        )
+        save_ckpt(step)
 
     autocast = torch.autocast(
         device_type="cuda", dtype=torch.bfloat16, enabled=args.bf16 and device == "cuda"
@@ -257,11 +281,7 @@ def main() -> None:
     metrics.close()
     if args.eval_every:
         log_eval(args.steps)
-    torch.save(
-        {"model": model.state_dict(), "tier": args.tier, "steps": args.steps,
-         "hist_k": args.hist_k, "seq_len": tok.seq_len},
-        run_dir / "model.pt",
-    )
+    save_ckpt(args.steps)
     print(f"saved {run_dir / 'model.pt'}")
 
 

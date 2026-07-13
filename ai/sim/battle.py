@@ -77,7 +77,8 @@ class Battle:
     def __init__(self, team1: list[PokemonSpec], team2: list[PokemonSpec], seed: int):
         self.teams = (team1, team2)
         packed = pack_battle(team1, team2, seed)
-        self.battle_id = "b_" + hashlib.sha1(packed).hexdigest()[:8]
+        # 128 bits: battle-level train/holdout splits rely on id uniqueness
+        self.battle_id = "b_" + hashlib.sha1(packed).hexdigest()[:32]
         self.raw = RawBattle(packed, seed=seed)
         # revealed[side] = set of party indexes seen; revealed_moves[side][ix]
         self._revealed: tuple[set[int], set[int]] = (set(), set())
