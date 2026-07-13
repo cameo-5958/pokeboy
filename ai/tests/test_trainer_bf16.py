@@ -15,7 +15,8 @@ CORPUS = Path(__file__).parents[1] / "datasets" / "processed"
 def test_bf16_flag_trains_and_loss_decreases(tmp_path):
     p = subprocess.run(
         [sys.executable, "-m", "models.train_imitation", "--tier", "snack",
-         "--limit-rows", "6000", "--steps", "30", "--bf16", "--eval-battles", "0"],
+         "--limit-rows", "6000", "--steps", "30", "--bf16", "--eval-battles", "0",
+         "--ckpt-root", str(tmp_path)],
         capture_output=True, text=True, timeout=600,
         cwd=Path(__file__).parents[1],
     )
