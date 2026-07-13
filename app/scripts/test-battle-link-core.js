@@ -112,20 +112,48 @@ setImmediate(() => {
     decide(cpu, memory);
     assert.equal(cpu.a, 1, "remote decision resumes the ROM");
 
-    // Frame-driven failsafe: even if fetch never settles (wedged WebView
-    // network path), the per-frame decide poll enforces the deadline.
-    context.fetch = () => new Promise(() => {});
-    context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 80;
+    // A committed local action is independent from Game Boy Back input. Even
+    // an old ROM-side cancellation flag must neither abort nor duplicate the
+    // one request already in flight for this turn.
+    let resolveCommittedRequest;
+    context.fetch = async (url) => {
+      requests += 1;
+      const encoded = new URL(String(url)).searchParams.get("state");
+      lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+      return new Promise((resolve) => { resolveCommittedRequest = resolve; });
+    };
+    context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 5000;
     cpu.a = 0;
     decide(cpu, memory);
-    assert.equal(cpu.a, 0, "wedged fetch leaves the request pending");
-    setTimeout(() => {
+    assert.equal(cpu.a, 0, "committed request starts pending");
+    const committedRequestCount = requests;
+    ram[0xcee9 + 2] = 1; // legacy B-cancel flag
+    decide(cpu, memory);
+    assert.equal(cpu.a, 0, "Back cannot cancel a committed request");
+    assert.equal(requests, committedRequestCount, "Back cannot duplicate a committed request");
+    resolveCommittedRequest({ ok: true, json: async () => ({ action: 1 }) });
+    setImmediate(() => {
       cpu.a = 0;
       decide(cpu, memory);
-      assert.equal(cpu.a, 1, "frame poll enforces the deadline despite a wedged fetch");
-      assert.ok([10, 20].includes(ram[0xccdd]), "failsafe selects a legal move");
-      runDiscordTests();
-    }, 150);
+      assert.equal(cpu.a, 1, "the original committed request still resolves");
+      assert.equal(requests, committedRequestCount, "one request resolves the committed turn");
+      ram[0xcee9 + 2] = 0;
+
+      // Frame-driven failsafe: even if fetch never settles (wedged WebView
+      // network path), the per-frame decide poll enforces the deadline.
+      context.fetch = () => new Promise(() => {});
+      context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 80;
+      cpu.a = 0;
+      decide(cpu, memory);
+      assert.equal(cpu.a, 0, "wedged fetch leaves the request pending");
+      setTimeout(() => {
+        cpu.a = 0;
+        decide(cpu, memory);
+        assert.equal(cpu.a, 1, "frame poll enforces the deadline despite a wedged fetch");
+        assert.ok([10, 20].includes(ram[0xccdd]), "failsafe selects a legal move");
+        runDiscordTests();
+      }, 150);
+    });
   });
 });
 
@@ -181,18 +209,19 @@ function runDiscordTests() {
   assert.equal(resolved[1].source, "discord");
   assert.equal(resolved[1].code, 1);
 
-  // The player backing out (B) must tell the host so the embed can be closed.
+  // A forced turn cancels the outstanding request and must tell the host so
+  // the Discord embed can be closed.
   cpu.a = 0;
   decide(cpu, memory);
   assert.equal(cpu.a, 0, "next turn opens a new pending decision");
-  ram[0xcee9 + 2] = 1;
+  ram[0xd068] = 0x20; // Hyper Beam recharge forces the action
   cpu.a = 0;
   decide(cpu, memory);
-  assert.equal(cpu.a, 2, "player cancel keeps its native contract");
-  ram[0xcee9 + 2] = 0;
+  assert.equal(cpu.a, 3, "forced turns keep their native contract");
+  ram[0xd068] = 0;
   const cancel = hostCalls.find((call) => call[0] === "cancel");
   assert.ok(cancel, "cancellation is reported to the host");
-  assert.equal(cancel[1].reason, "player-cancelled");
+  assert.equal(cancel[1].reason, "native-action");
 
   // Battle watch: once the battle leaves trainer-battle state the host gets
   // a battle-end so the Discord session can auto-disconnect.

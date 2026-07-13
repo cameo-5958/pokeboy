@@ -54,12 +54,14 @@ picks randomly. The endpoint
 must allow the app's WebView origin through CORS and support the encoded query
 length.
 
-While waiting, the ROM displays `AWAITING MOVE DECISION` and `B BACK` in the
-battle textbox, and music keeps playing: the wait loop is `DelayFrame` (halt
-with interrupts enabled), so the VBlank handler continues to run the audio
-engine and the auto BG-map transfer every frame. Pressing B aborts the request
-and returns to the player's battle menu; the reselected turn retains its
-battle/turn identity and increments `attempt`.
+The remote request starts only after the player has committed the local action.
+For medicine and PP-restoring items, that means the native party and move
+selection screens run first and native code verifies the item can have an
+effect. While waiting, the ROM displays `AWAITING MOVE DECISION`, and music
+keeps playing: the wait loop is `DelayFrame` (halt with interrupts enabled),
+so the VBlank handler continues to run the audio engine and the auto BG-map
+transfer every frame. Game Boy input cannot cancel or duplicate a committed
+request; exactly one request remains in flight until that turn resolves.
 
 ## Action codes
 

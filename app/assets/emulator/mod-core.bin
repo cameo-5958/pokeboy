@@ -3,7 +3,6 @@
   "use strict";
 
   const A = Object.freeze({
-    tileMap: 0xc3a0,
     enemySelectedMove: 0xccdd,
     aiCount: 0xccdf,
     enemyMoveListIndex: 0xcce2,
@@ -200,7 +199,7 @@
     return {
       snapshot: {
         protocol: 1, battleId: battleId || (battleId = newId()), turn, attempt,
-        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.0.0",
+        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.0.10",
         trainer: { class: memory.read8(A.trainerClass), party: trainerParty, active: trainerActive },
         opponent: { party: opponentParty, active: opponentActive },
         battle: {
@@ -278,7 +277,7 @@
       }
     } catch (error) {
       // Missing/invalid configuration follows the same deterministic deadline
-      // contract as a network failure, while leaving B cancellation responsive.
+      // contract as a network failure, while still allowing battle resets.
       while (!state.cancelled && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
       }
@@ -290,35 +289,6 @@
         modEvent("resolved", { code: state.result.code, source: "random-deadline" });
       }
     }
-  }
-
-  function drawWaiting(memory) {
-    // Centered over the battlefield: AWAITING alone inside a textbox
-    // ($79-$7E border tiles), with the cancel hint on its own cleared strip
-    // below. $EC is the open right-pointing triangle. BattleLinkReady/Cancel
-    // restore the scene from the tile buffers when the wait ends.
-    const width = 12;
-    const left = (20 - width) >> 1;
-    const top = 7;
-    const put = (row, column, tile) =>
-      memory.write8(A.tileMap + (top + row) * 20 + left + column, tile);
-    const glyph = (char) => char === ">" ? 0xec :
-      char >= "A" && char <= "Z" ? 0x80 + char.charCodeAt(0) - 65 : 0x7f;
-    const text = (row, value) => {
-      const start = (width - value.length) >> 1;
-      for (let index = 0; index < width; index += 1)
-        put(row, index, glyph(value[index - start] || " "));
-    };
-    for (let column = 0; column < width; column += 1) {
-      const edge = column === 0 ? 0 : column === width - 1 ? 2 : 1;
-      put(0, column, [0x79, 0x7a, 0x7b][edge]);
-      put(2, column, [0x7d, 0x7a, 0x7e][edge]);
-    }
-    put(1, 0, 0x7c);
-    put(1, width - 1, 0x7c);
-    for (let index = 1; index < width - 1; index += 1)
-      put(1, index, glyph("AWAITING"[index - 2] || " "));
-    text(3, ">B BACK");
   }
 
   function forcedAction(memory) {
@@ -406,13 +376,6 @@
       cpu.a = 3;
       return;
     }
-    if (memory.read8(A.buffer + 2)) {
-      cancelPending("player-cancelled");
-      pending = null;
-      attempt += 1;
-      cpu.a = 2;
-      return;
-    }
     if (!pending) {
       const { snapshot, actions } = makeSnapshot(memory);
       pending = {
@@ -424,7 +387,8 @@
     }
     if (!pending.result) {
       if (Date.now() < pending.deadline) {
-        drawWaiting(memory);
+        // The AWAITING dialog is drawn by the .gbmod itself
+        // (BattleLinkDrawWaiting) so UI changes ship via the registry.
         cpu.a = 0;
         return;
       }
