@@ -51,6 +51,7 @@ def _parse_pokemon(buf: bytes, side: int, ix: int) -> dict[str, Any]:
         "max_hp": hp_max,
         "status": _status_name(buf[o + 20]),
         "moves": moves,
+        "fainted": hp == 0,
     }
 
 
@@ -148,6 +149,7 @@ class Battle:
                         "hp_fraction": round(p["hp"] / p["max_hp"], 4) if p["max_hp"] else 0.0,
                         "status": p["status"],
                         "revealed_moves": sorted(self._revealed_moves[opp].get(i, set())),
+                        "fainted": p["fainted"],
                     }
                 )
             else:
