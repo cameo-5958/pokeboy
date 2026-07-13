@@ -118,6 +118,27 @@ def test_switch_action_targets_listed_bench_mon():
     assert checks > 100, f"only {checks} switch decisions exercised"
 
 
+def test_fainted_flag_matches_hp():
+    """schema_v1 corpus rows all carry a fainted flag; live states must too."""
+    rng = random.Random(2)
+    saw_fainted = False
+    for _ in range(10):
+        b = Battle(sample_team(rng), sample_team(rng), seed=rng.randrange(2**63))
+        for _ in range(200):
+            if b.winner:
+                break
+            s1, s2 = b.state(1), b.state(2)
+            for s in (s1, s2):
+                for mon in s.my_side["pokemon"]:
+                    assert mon["fainted"] == (mon["hp"] == 0)
+                    saw_fainted = saw_fainted or mon["fainted"]
+                for mon in s.opp_side["pokemon"]:
+                    if mon["species"] is not None:
+                        assert mon["fainted"] == (mon["hp_fraction"] == 0)
+            b.step(rng.choice(s1.legal_actions), rng.choice(s2.legal_actions))
+    assert saw_fainted, "no faint ever observed; test exercised nothing"
+
+
 def test_maxdamage_beats_random_usually():
     wins = 0
     for i in range(30):
