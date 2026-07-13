@@ -206,7 +206,7 @@ function runLegalityTests() {
       ["RHYDON", "SPEAROW"],
       "trainer party names come from the species table",
     );
-    assert.equal(lastState.mod, "battle-link@1.2.0", "snapshot change bumps the mod version");
+    assert.equal(lastState.mod, "battle-link@1.3.0", "snapshot change bumps the mod version");
 
     // Switching is class-agnostic and survives item exhaustion (aiCount 0);
     // items stay gated behind aiCount and the class table.
@@ -354,6 +354,94 @@ function runDiscordTests() {
     const end = hostCalls.find((call) => call[0] === "battleEnd");
     assert.ok(end, "battle watch reports the battle end");
     assert.equal(end[1].reason, "battle-over");
-    console.log("Battle Link browser host tests passed");
+    runPrimeAndFaintTests();
   }, 1300);
+}
+
+// Turn-start priming (trap status 5) and forced faint switch-ins (status 6).
+function runPrimeAndFaintTests() {
+  context.PokeboyRuntime.battleLinkMode = "get";
+  context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 5000;
+  ram[0xd057] = 2;
+  ram[0xd068] = 0;
+  ram[0xd89c] = 2;
+  write16(0xd8a5, 30); // roster slot 0 restored
+  write16(0xd8d1, 25); // roster slot 1 alive
+  ram[0xcfe8] = 0;
+  write16(0xcfe6, 12); // live battle-struct HP diverges from the stale roster
+
+  const cpu = { a: 4 };
+  decide(cpu, memory);
+  assert.equal(cpu.a, 0, "battle-start trap resets the host state");
+
+  // The battle-opening send-out reaches the faint trap before any decision
+  // has resolved: it must stay native.
+  cpu.a = 6;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 3, "battle-opening send-out bypasses to the native scan");
+
+  context.fetch = async (url) => {
+    requests += 1;
+    const encoded = new URL(String(url)).searchParams.get("state");
+    lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    return { ok: true, status: 200, json: async () => ({ action: 0 }) };
+  };
+  const before = requests;
+  cpu.a = 5;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 0, "prime returns immediately");
+  assert.equal(requests, before + 1, "prime opens the turn request");
+  setImmediate(() => {
+    cpu.a = 5;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 0, "prime never consumes a resolved request");
+    cpu.a = 0;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 1, "the later poll consumes the primed request");
+    assert.equal(lastState.phase, "turn", "turn snapshots carry their phase");
+    assert.equal(lastState.trainer.party[0].hp, 12,
+      "the on-field roster row shows live battle-struct HP");
+
+    // Forced switch with a single healthy replacement: resolved on the spot,
+    // no round trip.
+    const noChoice = requests;
+    write16(0xcfe6, 0); // active fainted
+    write16(0xd8a5, 0); // the faint handler zeroed its roster HP
+    cpu.a = 6;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 1, "single-option faint switch resolves immediately");
+    assert.equal(requests, noChoice, "no request is opened for a forced-only switch");
+    assert.equal(ram[0xcee9], 1, "faint resolution marks a switch");
+    assert.equal(ram[0xcee9 + 1], 1, "faint resolution carries the party slot");
+
+    // Forced switch with a real choice goes to the decision source with
+    // switch-only legal actions.
+    ram[0xd89c] = 3;
+    ram[0xd8fc] = 7; // roster slot 2: species
+    write16(0xd8fd, 20); // roster slot 2: hp
+    write16(0xd91e, 20); // roster slot 2: max hp
+    ram[0xd91d] = 8; // roster slot 2: level
+    context.fetch = async (url) => {
+      requests += 1;
+      const encoded = new URL(String(url)).searchParams.get("state");
+      lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+      return { ok: true, status: 200, json: async () => ({ action: 18 }) };
+    };
+    cpu.a = 6;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 0, "multi-option faint switch opens a request");
+    setImmediate(() => {
+      cpu.a = 6;
+      decide(cpu, memory);
+      assert.equal(cpu.a, 1, "remote faint decision resumes the ROM");
+      assert.equal(lastState.phase, "faint-switch", "faint snapshots carry their phase");
+      assert.ok(lastState.legalActions.every((action) => action.type === "switch"),
+        "faint snapshots offer only switches");
+      assert.deepEqual(lastState.legalActions.map((action) => action.code), [17, 18],
+        "fainted and on-field mons are excluded");
+      assert.equal(ram[0xcee9 + 1], 2, "the chosen replacement slot reaches the ROM");
+      assert.equal(lastState.mod, "battle-link@1.3.0", "snapshot change bumps the mod version");
+      console.log("Battle Link browser host tests passed");
+    });
+  });
 }

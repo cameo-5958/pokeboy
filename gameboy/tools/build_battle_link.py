@@ -43,14 +43,15 @@ def main() -> None:
             if name in {"BattleLinkBattleStart", "BattleLinkSelect",
                         "BattleLinkDispatch", "BattleLinkChooseSwitch",
                         "BattleLinkAwaitSwitch", "BattleLinkAwaitItem",
-                        "BattleLinkEnd", "BattleLinkHostSlot",
+                        "BattleLinkPrime", "BattleLinkEnd", "BattleLinkHostSlot",
                         "BattleLinkStartHostSlot", "BattleLinkAwaitHostSlot",
+                        "BattleLinkFaintHostSlot", "BattleLinkPrimeHostSlot",
                         "BattleLinkMedicineStatusGate",
                         "BattleLinkMedicineReviveGate",
                         "BattleLinkMedicineHpGate", "BattleLinkPPRestoreGate",
                         "BattleLinkMedicineEnd"}:
                 exported[name] = int(raw_address, 16)
-        if len(exported) != 15:
+        if len(exported) != 18:
             raise RuntimeError("assembler did not export required Battle Link symbols")
         code = rom[start:start + exported["BattleLinkEnd"] - ADDRESS]
         medicine_start = MEDICINE_BANK * 0x4000 + (MEDICINE_ADDRESS - 0x4000)
@@ -70,9 +71,10 @@ def main() -> None:
         if symbol["offset"] != actual:
             raise RuntimeError(f"manifest offset for {symbol['name']} is {symbol['offset']}, expected {actual}")
     for relocation, label in zip(
-        manifest["relocations"][:3],
+        manifest["relocations"][:5],
         ("BattleLinkStartHostSlot", "BattleLinkHostSlot",
-         "BattleLinkAwaitHostSlot"),
+         "BattleLinkAwaitHostSlot", "BattleLinkFaintHostSlot",
+         "BattleLinkPrimeHostSlot"),
     ):
         actual = exported[label] - ADDRESS
         if relocation["offset"] != actual:
