@@ -6,6 +6,7 @@ DEF wTileMap                  EQU $c3a0
 DEF wEnemySelectedMove        EQU $ccdd
 DEF wEnemyMoveListIndex       EQU $cce2
 DEF wBuffer                   EQU $cee9
+DEF wActionResultOrTookBattleTurn EQU $cd6a
 DEF wIsInBattle               EQU $d057
 DEF wLinkState                EQU $d12b
 DEF hJoyPressed               EQU $ffb3
@@ -98,6 +99,12 @@ BattleLinkHostSlot::
 BattleLinkPending:
     call BattleLinkDrawWaiting
     call DelayFrame
+    ; A switch or item spends the turn before SelectEnemyMove runs, and the
+    ; cancel path restarts the battle menu without undoing it — a free
+    ; take-back. Only poll B while the turn is still open.
+    ld a, [wActionResultOrTookBattleTurn]
+    and a
+    jr nz, BattleLinkPoll
     ; VBlank only refreshes the raw joypad state; hJoyPressed is derived by
     ; Joypad, which nothing else calls while this loop owns the CPU.
     call Joypad
@@ -246,6 +253,18 @@ BattleLinkDrawWaiting::
 .nextRow
     dec c
     jr nz, .row
+    ; A committed turn cannot be cancelled — blank the hint row so the box
+    ; does not offer a B that BattleLinkPending will ignore.
+    ld a, [wActionResultOrTookBattleTurn]
+    and a
+    ret z
+    ld hl, wTileMap + 16 * 20 + 4
+    ld a, $7f
+    ld b, 12
+.blankHint
+    ld [hli], a
+    dec b
+    jr nz, .blankHint
     ret
 
 BattleLinkWaitTiles:
