@@ -51,6 +51,14 @@ def _mon(p: dict[str, Any], mine: bool) -> dict[str, Any]:
     return out
 
 
+def _prev_move(p: dict[str, Any] | None) -> str | None:
+    name = (p or {}).get("name")
+    if not name or name == "nomove":
+        return None
+    canon = canon_move(name)
+    return f"M:{canon}" if canon else None
+
+
 def _state_json(s: dict[str, Any]) -> dict[str, Any]:
     mine = [_mon(s["player_active_pokemon"], mine=True)]
     mine += [_mon(p, mine=True) for p in s.get("available_switches", [])]
@@ -59,11 +67,21 @@ def _state_json(s: dict[str, Any]) -> dict[str, Any]:
     opp = [opp_active] + [
         {"species": None, "hp_fraction": None, "status": None, "revealed_moves": []}
     ] * unrevealed
+    # metamon states only carry each side's previous move → K=1 tail,
+    # damage/events unknown (None), same entry shape as convert_showdown
+    my_prev = _prev_move(s.get("player_prev_move"))
+    op_prev = _prev_move(s.get("opponent_prev_move"))
+    tail = (
+        [{"o": -1, "my": my_prev, "op": op_prev, "dm": None, "do": None, "ev": []}]
+        if (my_prev or op_prev)
+        else []
+    )
     return {
         "schema_v": 1,
         "request_kind": "force_switch" if s.get("forced_switch") else "turn",
         "my_side": {"active_ix": 0, "pokemon": mine},
         "opp_side": {"active_ix": 0, "pokemon": opp},
+        "history_tail": tail,
     }
 
 

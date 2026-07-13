@@ -65,6 +65,46 @@ def _parse_hp(text: str) -> tuple[float, bool]:
     return num / den, False
 
 
+HIST_K = 20
+_EVENT_LINES = {
+    "-crit": "crit",
+    "-supereffective": "se",
+    "-resisted": "re",
+    "-immune": "im",
+    "-miss": "miss",
+    "-status": "st",
+    "-boost": "sc",
+    "-unboost": "sc",
+}
+
+
+def _dmg_bucket(frac: float) -> int:
+    """SPECS §4.1 damage buckets: 0, (0,10%], …, (50,60%], >60% (KO=8 set by caller)."""
+    if frac <= 0:
+        return 0
+    return min(7, 1 + int(min(frac, 0.6999) * 10))
+
+
+def _new_turn_log() -> dict:
+    return {"act": [None, None], "dmg": [0.0, 0.0], "ko": [False, False], "ev": set()}
+
+
+def _tail(hist: list[dict], me: int, k: int = HIST_K) -> list[dict]:
+    out = []
+    for i, t in enumerate(reversed(hist[-k:])):
+        out.append(
+            {
+                "o": -(i + 1),
+                "my": t["act"][me],
+                "op": t["act"][1 - me],
+                "dm": 8 if t["ko"][me] else _dmg_bucket(t["dmg"][me]),
+                "do": 8 if t["ko"][1 - me] else _dmg_bucket(t["dmg"][1 - me]),
+                "ev": sorted(t["ev"]),
+            }
+        )
+    return out
+
+
 def _ident_side(ident: str) -> int:
     # "p1a: Jynx" -> 0
     if not ident.startswith(("p1", "p2")):
@@ -123,6 +163,14 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
     turn = 0
     winner_side: int | None = None
     started = False
+    hist: list[dict] = []  # closed turns, oldest first
+    cur = _new_turn_log()
+
+    def record_action(side_ix: int, action: str) -> None:
+        # first action of the turn is the side's decision; later same-turn
+        # lines (forced replacement after a KO) don't overwrite it
+        if turn >= 1 and started and cur["act"][side_ix] is None:
+            cur["act"][side_ix] = action
 
     def emit(side: int, action: int, detail: str, request_kind: str, snap: dict) -> None:
         rows.append(
@@ -148,6 +196,9 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
         cmd = parts[1] if len(parts) > 1 else ""
         try:
             if cmd == "turn":
+                if turn >= 1:
+                    hist.append(cur)
+                    cur = _new_turn_log()
                 turn = int(parts[2])
             elif cmd == "start":
                 started = True
@@ -162,6 +213,7 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
                     snap = _snapshot(
                         sides, side_ix, turn, "force_switch" if forced else "turn"
                     )
+                    snap["history_tail"] = _tail(hist, side_ix)
                     target = side.get(species)
                     bench = [m for m in side.team if m is not side.active]
                     if target in bench:
@@ -172,6 +224,7 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
                             "force_switch" if forced else "turn",
                             snap,
                         )
+                record_action(side_ix, f"S:{species}")
                 side.active = side.get(species)
                 hp, fnt = _parse_hp(parts[4]) if len(parts) > 4 else (1.0, False)
                 side.active.hp, side.active.fainted = hp, fnt
@@ -189,27 +242,38 @@ def convert_replay(replay: dict, source: str) -> list[dict]:
                             f"{side.active.species} revealed >4 moves"
                         )
                     snap = _snapshot(sides, side_ix, turn, "turn")
+                    snap["history_tail"] = _tail(hist, side_ix)
                     action = 9 if move == "Struggle" else side.active.moves.index(move)
                     emit(side_ix, action, move, "turn", snap)
+                    record_action(side_ix, f"M:{move}")
             elif cmd == "-damage" or cmd == "-heal":
                 # damage/heal idents always refer to the active slot in gen1 singles
-                mon = sides[_ident_side(parts[2])].active
+                dmg_side = _ident_side(parts[2])
+                mon = sides[dmg_side].active
                 if mon is not None:
-                    mon.hp, fnt = _parse_hp(parts[3])
-                    mon.fainted = mon.fainted or fnt
+                    new_hp, fnt = _parse_hp(parts[3])
+                    if cmd == "-damage" and turn >= 1:
+                        cur["dmg"][dmg_side] += max(0.0, mon.hp - new_hp)
+                    mon.hp, mon.fainted = new_hp, mon.fainted or fnt
             elif cmd == "-status":
                 side = sides[_ident_side(parts[2])]
                 if side.active is not None:
                     side.active.status = _STATUS.get(parts[3], parts[3].upper())
+                cur["ev"].add("st")
             elif cmd == "-curestatus":
                 side = sides[_ident_side(parts[2])]
                 if side.active is not None:
                     side.active.status = None
             elif cmd == "faint":
-                side = sides[_ident_side(parts[2])]
+                faint_side = _ident_side(parts[2])
+                side = sides[faint_side]
                 if side.active is not None:
                     side.active.fainted = True
                     side.active.hp = 0.0
+                cur["ko"][faint_side] = True
+                cur["ev"].add("ft")
+            elif cmd in _EVENT_LINES:
+                cur["ev"].add(_EVENT_LINES[cmd])
             elif cmd == "win":
                 name = parts[2]
                 players = replay.get("players") or []
