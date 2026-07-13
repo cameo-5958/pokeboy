@@ -29,7 +29,7 @@ class ModelAgent:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.temperature = temperature
         ckpt = torch.load(checkpoint, map_location=self.device, weights_only=True)
-        self.tok = Tokenizer()
+        self.tok = Tokenizer(seq_len=ckpt.get("seq_len"), hist_k=ckpt.get("hist_k", 0))
         self.model = FieldValueEncoder(TIERS[ckpt["tier"]], self.tok).to(self.device)
         self.model.load_state_dict(ckpt["model"])
         self.model.eval()

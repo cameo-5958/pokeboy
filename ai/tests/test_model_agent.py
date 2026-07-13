@@ -59,6 +59,27 @@ def test_deterministic_given_seed(ckpt):
     assert [a.choose(s) for _ in range(10)] == [b.choose(s) for _ in range(10)]
 
 
+def test_hist_checkpoint_roundtrip(tmp_path):
+    from models.tokenizer import Tokenizer
+
+    tok = Tokenizer(hist_k=20)
+    torch.manual_seed(0)
+    model = FieldValueEncoder(TIERS["snack"], tok)
+    path = tmp_path / "model.pt"
+    torch.save(
+        {"model": model.state_dict(), "tier": "snack", "steps": 0,
+         "hist_k": 20, "seq_len": tok.seq_len},
+        path,
+    )
+    agent = ModelAgent(path, seed=1, device="cpu")
+    assert agent.tok.hist_k == 20 and agent.tok.seq_len == 256
+    s = _state([0, 1, 9])
+    s.history_tail = [
+        {"o": -1, "my": "M:Body Slam", "op": None, "dm": 0, "do": 3, "ev": ["se"]}
+    ]
+    assert all(agent.choose(s) in (0, 1, 9) for _ in range(5))
+
+
 def test_cli_model_seat_smoke(ckpt):
     env = {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
     p = subprocess.run(

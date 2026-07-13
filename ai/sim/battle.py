@@ -9,9 +9,19 @@ from typing import Any
 
 from sim import engine
 from sim.engine import MOVE, PASS, RESULT_NONE, SWITCH, RawBattle
-from sim.gen1data import MOVES, SPECIES
+from sim.gen1data import MOVES, SPECIES, TYPE_CHART
 from sim.pack import PokemonSpec, max_pp, pack_battle
 from sim.schema import ACTION_PASS, ACTION_SWITCH_BASE, State
+
+HIST_K = 20
+
+
+def _dmg_bucket(frac: float) -> int:
+    # same buckets as data/convert_showdown.py (SPECS §4.1); duplicated to
+    # keep sim free of data/ imports
+    if frac <= 0:
+        return 0
+    return min(7, 1 + int(min(frac, 0.6999) * 10))
 
 SPECIES_BY_ID = {v[0]: k for k, v in SPECIES.items()}
 MOVES_BY_ID = {v[0]: k for k, v in MOVES.items()}
@@ -76,6 +86,7 @@ class Battle:
             {ix: {m: max_pp(m) for m in p.moves} for ix, p in enumerate(team)}
             for team in (team1, team2)
         )
+        self._hist: list[dict] = []  # one merged entry per game turn
         self.raw.update(0, 0)  # initial switch-in of both leads
         self._track_reveals()
 
@@ -129,6 +140,92 @@ class Battle:
                 mapping[ACTION_PASS] = choice
         return mapping
 
+    # -- per-turn history from engine-observable diffs (SPECS §4.1 HIST) --
+
+    def _turn_no(self) -> int:
+        return int.from_bytes(self.raw.bytes[_TURN_OFF : _TURN_OFF + 2], "little")
+
+    def _side_snapshot(self, side: int) -> dict[str, Any]:
+        mons = [_parse_pokemon(self.raw.bytes, side, i) for i in range(len(self.teams[side]))]
+        active = self._active_ix(side)
+        return {
+            "active": active,
+            "species": [m["species"] for m in mons],
+            "frac": [m["hp"] / m["max_hp"] if m["max_hp"] else 0.0 for m in mons],
+            "status": [m["status"] for m in mons],
+            "pp": {mv["id"]: mv["pp"] for mv in mons[active]["moves"]},
+        }
+
+    @staticmethod
+    def _observed_action(pre: dict, post: dict) -> str | None:
+        """What the opponent could see this side do: a switch (active species
+        changed) or a move (PP visibly spent); blocked/idle turns are None."""
+        if post["active"] != pre["active"]:
+            return f"S:{post['species'][post['active']]}"
+        for name, pp0 in pre["pp"].items():
+            if post["pp"].get(name, pp0) < pp0:
+                return f"M:{name}"
+        return None
+
+    def _record_step(self, turn: int, pre: tuple[dict, dict], post: tuple[dict, dict]) -> None:
+        if not self._hist or self._hist[-1]["turn"] != turn:
+            self._hist.append(
+                {"turn": turn, "act": [None, None], "dmg": [0.0, 0.0],
+                 "ko": [False, False], "ev": set()}
+            )
+        t = self._hist[-1]
+        for s in (0, 1):
+            obs = self._observed_action(pre[s], post[s])
+            if t["act"][s] is None:  # first observable action of the turn wins
+                t["act"][s] = obs
+            t["dmg"][s] += sum(
+                max(0.0, a - b) for a, b in zip(pre[s]["frac"], post[s]["frac"])
+            )
+            if any(a > 0 and b == 0 for a, b in zip(pre[s]["frac"], post[s]["frac"])):
+                t["ko"][s] = True
+                t["ev"].add("ft")
+            if any(
+                a is None and b is not None for a, b in zip(pre[s]["status"], post[s]["status"])
+            ):
+                t["ev"].add("st")
+            if obs and obs.startswith("M:"):
+                self._effectiveness_events(t, obs[2:], pre[1 - s])
+
+    @staticmethod
+    def _effectiveness_events(t: dict, move: str, defender_pre: dict) -> None:
+        if MOVES[move][2] <= 0:  # status move, no matchup to report
+            return
+        species = defender_pre["species"][defender_pre["active"]]
+        if species is None:
+            return
+        mtype = MOVES[move][4]
+        t1, t2 = SPECIES[species][6], SPECIES[species][7]
+        eff = TYPE_CHART[mtype][t1] * (TYPE_CHART[mtype][t2] if t2 != t1 else 1.0)
+        if eff == 0:
+            t["ev"].add("im")
+        elif eff > 1:
+            t["ev"].add("se")
+        elif eff < 1:
+            t["ev"].add("re")
+
+    def _history_tail(self, side: int, k: int = HIST_K) -> list[dict[str, Any]]:
+        cur = self._turn_no()
+        done = [t for t in self._hist if t["turn"] < cur]
+        out = []
+        for i, t in enumerate(reversed(done[-k:])):
+            me, opp = side, 1 - side
+            out.append(
+                {
+                    "o": -(i + 1),
+                    "my": t["act"][me],
+                    "op": t["act"][opp],
+                    "dm": 8 if t["ko"][me] else _dmg_bucket(t["dmg"][me]),
+                    "do": 8 if t["ko"][opp] else _dmg_bucket(t["dmg"][opp]),
+                    "ev": sorted(t["ev"]),
+                }
+            )
+        return out
+
     @property
     def winner(self) -> str | None:
         return self.raw.winner()
@@ -164,6 +261,7 @@ class Battle:
             my_side={"active_ix": self._active_ix(side), "pokemon": my_pokemon},
             opp_side={"active_ix": self._active_ix(opp), "pokemon": opp_pokemon},
             legal_actions=sorted(self._choice_map(side)),
+            history_tail=self._history_tail(side),
         )
 
     def step(self, a1: int, a2: int) -> None:
@@ -177,7 +275,10 @@ class Battle:
                     f"illegal action {action} for p{side + 1}; legal: {sorted(maps[side])}"
                 )
             choices.append(maps[side][action])
+        turn = self._turn_no()
+        pre = (self._side_snapshot(0), self._side_snapshot(1))
         self.raw.update(choices[0], choices[1])
+        self._record_step(turn, pre, (self._side_snapshot(0), self._side_snapshot(1)))
         self._track_reveals()
 
 
