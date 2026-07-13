@@ -9,11 +9,20 @@ DEF wBuffer                   EQU $cee9
 DEF wActionResultOrTookBattleTurn EQU $cd6a
 DEF wIsInBattle               EQU $d057
 DEF wLinkState                EQU $d12b
+; Tail of wLinkBattleRandomNumberList ($d148-$d151): the whole $d141-$d151
+; union holds only link-serial exchange data, Game Corner prize prices, and
+; the link-battle RNG list, all idle during the non-link battles this mod
+; runs in. wBuffer aliases wHPBarMaxHP, so a resolved decision parked there
+; is destroyed by any HP-bar animation; it is copied here the moment the
+; host reports ready. +0 = action kind, +1 = payload, +2 = resolved flag.
+DEF wBattleLinkStash          EQU $d14f
 DEF hJoyPressed               EQU $ffb3
 DEF hAutoBGTransferEnabled    EQU $ffba
 
 DEF Joypad                    EQU $019a
 DEF DelayFrame                EQU $20af
+DEF UseItem                   EQU $30bc
+DEF GBPalNormal               EQU $3ddc
 DEF LoadScreenTilesFromBuffer1 EQU $3725
 DEF DrawHUDsAndHPBars         EQU $4d5a
 DEF SelectEnemyMove           EQU $5564
@@ -60,11 +69,22 @@ BattleLinkStartHostSlot::
     ld [$d058], a
     ld [$ccf5], a
     ld [$cd6a], a
+    ld [wBattleLinkStash + 2], a
     ret
 
 ; Replaces `call SelectEnemyMove`.  Native selection still establishes
 ; Struggle/disabled-move behavior and gives forced turns a safe fallback.
 BattleLinkSelect::
+    ; A pre-commit hook may have already resolved this turn. The stashed
+    ; action feeds BattleLinkDispatch, and the host wrote the enemy move
+    ; registers when it resolved, so native selection must not run.
+    ld a, [wBattleLinkStash + 2]
+    and a
+    jr z, .fresh
+    xor a
+    ld [wBattleLinkStash + 2], a
+    ret
+.fresh
     call SelectEnemyMove
     ld a, [wIsInBattle]
     cp 2
@@ -129,6 +149,12 @@ BattleLinkCancel:
     jp MainInBattleLoop
 
 BattleLinkReady:
+    ; Move the decision out of wBuffer before any animation can clobber the
+    ; HP-bar scratch it aliases; the dispatch hooks read the stash.
+    ld a, [wBuffer]
+    ld [wBattleLinkStash], a
+    ld a, [wBuffer + 1]
+    ld [wBattleLinkStash + 1], a
     xor a
     ld [wBuffer + 2], a
     ld a, [wBuffer + 3]
@@ -142,7 +168,7 @@ BattleLinkReady:
 ; original bank-$0e routine so animations, text, HP/status changes, switching,
 ; and AI item-count accounting stay native.
 BattleLinkDispatch::
-    ld a, [wBuffer]
+    ld a, [wBattleLinkStash]
     and a
     ret z
     cp ACTION_SWITCH
@@ -206,17 +232,17 @@ BattleLinkDispatch::
     ld b, $0e
     call Bankswitch
     xor a
-    ld [wBuffer], a
+    ld [wBattleLinkStash], a
     scf
     ret
 
 ; EnemySendOut normally starts its candidate scan immediately after the
 ; current slot. A remote switch carries the exact requested slot in wBuffer+1.
 BattleLinkChooseSwitch::
-    ld a, [wBuffer]
+    ld a, [wBattleLinkStash]
     cp ACTION_SWITCH
     jr nz, .native
-    ld a, [wBuffer + 1]
+    ld a, [wBattleLinkStash + 1]
     ld b, a
     ret
 .native
@@ -227,6 +253,94 @@ BattleLinkChooseSwitch::
     cp b
     jr z, .next
     ret
+
+; Patched over `call GBPalNormal` just before the fall-through into
+; SwitchPlayerMon: the mon must not leave the field until the decision is in.
+; The turn was committed two instructions earlier; reopen it for the wait so
+; B still cancels, and only re-commit once the host answers.
+BattleLinkAwaitSwitch::
+    call GBPalNormal
+    xor a
+    ld [wActionResultOrTookBattleTurn], a
+    call BattleLinkAwait
+    jr c, .cancelled
+    ld a, 1
+    ld [wActionResultOrTookBattleTurn], a
+    ret
+.cancelled
+    ; PartyMenuOrRockOrRun is jumped to from DisplayBattleMenu, so the stack
+    ; holds our patch-call frame plus DisplayBattleMenu's return address.
+    pop hl
+    pop hl
+    jp MainInBattleLoop
+
+; Patched over `call UseItem` in UseBagItem: the item effect must not run
+; until the decision is in. A cancelled wait returns with the turn still
+; open, so UseBagItem's own "was the item used?" check reopens the bag.
+BattleLinkAwaitItem::
+    call BattleLinkAwait
+    ret c
+    jp UseItem
+
+; Polls the host for this turn's decision before a committed switch or item
+; executes. Returns carry set if the player backed out with B, carry clear
+; once the decision arrived (stashed for the dispatch path) or the host chose
+; native handling. The battle scene is restored on both resolved exits.
+BattleLinkAwait::
+    ld a, [wBattleLinkStash + 2]
+    and a
+    ret nz                     ; already resolved this turn (menu re-entry)
+    xor a
+    ld [wBuffer + 2], a
+    ldh a, [hAutoBGTransferEnabled]
+    ld [wBuffer + 3], a
+    ld a, 1
+    ldh [hAutoBGTransferEnabled], a
+BattleLinkAwaitPoll:
+    db $d3
+BattleLinkAwaitHostSlot::
+    dw 0
+    and a
+    jr z, BattleLinkAwaitPending
+    cp 1
+    jr z, BattleLinkAwaitReady
+    cp 2
+    jr z, BattleLinkAwaitCancelled
+    ; Native bypass arrives on the first poll, before any box is drawn.
+    ld a, [wBuffer + 3]
+    ldh [hAutoBGTransferEnabled], a
+    ret
+BattleLinkAwaitPending:
+    call BattleLinkDrawWaiting
+    call DelayFrame
+    call Joypad
+    ldh a, [hJoyPressed]
+    and B_BUTTON
+    jr z, BattleLinkAwaitPoll
+    ld a, 1
+    ld [wBuffer + 2], a
+    jr BattleLinkAwaitPoll
+BattleLinkAwaitReady:
+    ld a, [wBuffer]
+    ld [wBattleLinkStash], a
+    ld a, [wBuffer + 1]
+    ld [wBattleLinkStash + 1], a
+    ld a, 1
+    ld [wBattleLinkStash + 2], a
+    call BattleLinkAwaitRestore
+    and a
+    ret
+BattleLinkAwaitCancelled:
+    call BattleLinkAwaitRestore
+    scf
+    ret
+BattleLinkAwaitRestore:
+    xor a
+    ld [wBuffer + 2], a
+    ld a, [wBuffer + 3]
+    ldh [hAutoBGTransferEnabled], a
+    call LoadScreenTilesFromBuffer1
+    jp DrawHUDsAndHPBars
 
 ; The wait UI lives here rather than in the host so dialog changes ship with
 ; the package instead of an app rebuild. Copies four 12-tile rows over the
