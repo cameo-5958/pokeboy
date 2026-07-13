@@ -80,12 +80,15 @@ class Battle:
 
     # -- revealed-information tracking (engine-truth based, no protocol logs) --
 
+    def _order(self, side: int) -> bytes:
+        """order[pos] = 1-based party id of the mon at battle position pos+1;
+        position 1 is the active mon (engine data.zig get()/switchIn)."""
+        o = _SIDE[side] + _ORDER_OFF
+        return self.raw.bytes[o : o + 6]
+
     def _active_ix(self, side: int) -> int:
-        order = self.raw.bytes[_SIDE[side] + _ORDER_OFF : _SIDE[side] + _ORDER_OFF + 6]
-        for i, slot in enumerate(order):
-            if slot == 1:
-                return i
-        return 0
+        first = self._order(side)[0]
+        return first - 1 if first else 0
 
     def _track_reveals(self) -> None:
         buf = self.raw.bytes
@@ -107,6 +110,8 @@ class Battle:
 
     def _choice_map(self, side: int) -> dict[int, int]:
         request = self.raw.requests()[side]
+        order = self._order(side)
+        active = self._active_ix(side)
         mapping: dict[int, int] = {}
         for choice in self.raw.choices(side, request):
             kind = engine.choice_type(choice)
@@ -114,7 +119,11 @@ class Battle:
             if kind == MOVE:
                 mapping[data - 1 if data else ACTION_PASS] = choice
             elif kind == SWITCH:
-                mapping[ACTION_SWITCH_BASE + data - 2] = choice
+                # schema_v1: action 4+j = j-th mon of the party listing minus
+                # the active one; engine switch data d targets order[d-1]
+                target = order[data - 1] - 1
+                j = target - 1 if target > active else target
+                mapping[ACTION_SWITCH_BASE + j] = choice
             elif kind == PASS:
                 mapping[ACTION_PASS] = choice
         return mapping
