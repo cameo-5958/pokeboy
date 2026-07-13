@@ -79,6 +79,10 @@
           if(typeof msg.battleLinkEndpoint==='string'){
             runtime.battleLinkEndpoint=msg.battleLinkEndpoint.trim();
           }
+          const maxWait=Number(msg.battleLinkMaxTimeTillRandomMs);
+          if(Number.isFinite(maxWait)&&maxWait>=0){
+            runtime.battleLinkMaxTimeTillRandomMs=maxWait;
+          }
           AudioSystem.resume().catch(()=>{});
           const tel=Boolean(msg.telemetry);
           if(tel!==telemetry){
