@@ -39,7 +39,15 @@
     superPotion: [34, 4, 0x13], hyperPotion: [35, 5, 0x12],
     fullHeal: [36, 6, 0x34], guardSpec: [37, 7, 0x31],
     xAttack: [38, 8, 0x41], xDefend: [39, 9, 0x42],
-    xSpeed: [40, 10, 0x43], xSpecial: [41, 11, 0x45],
+    xSpeed: [40, 10, 0x43], xSpecial: [41, 11, 0x44],
+  });
+  // Per-class AI use counts from TrainerAIPointers (0e:655c); every class
+  // not listed uses the generic count of 3. Native TrainerAI lazily writes
+  // this into wAICount, but both its callsites are patched out.
+  const AI_ITEM_USES = Object.freeze({
+    0x18: 2, 0x1b: 1, 0x1d: 1, 0x1f: 2, 0x20: 1, 0x21: 2, 0x22: 5, 0x23: 1,
+    0x24: 1, 0x25: 1, 0x26: 2, 0x27: 2, 0x28: 1, 0x2a: 1, 0x2b: 1, 0x2c: 2,
+    0x2e: 2, 0x2f: 1,
   });
 
   // Diagnostics: forwarded by the embed page into opt-in telemetry events so
@@ -127,7 +135,10 @@
 
   function legalActions(memory, trainerParty, trainerActive) {
     const actions = [];
-    const disabled = memory.read8(A.enemyDisabledMoveNumber) & 0x0f;
+    // wEnemyDisabledMove keeps the disabled move's number (1-4) in the high
+    // nibble and the turns left in the low nibble; wEnemyDisabledMoveNumber
+    // is the move ID, not a slot.
+    const disabled = memory.read8(A.enemyDisabledMove) >> 4;
     trainerActive.moves.forEach((move) => {
       if (move.move && move.current && disabled !== move.slot + 1) {
         actions.push({ code: move.slot, type: "move", ...move, _kind: 0 });
@@ -188,7 +199,7 @@
     return {
       snapshot: {
         protocol: 1, battleId: battleId || (battleId = newId()), turn, attempt,
-        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.0.0",
+        timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.1.0",
         trainer: { class: memory.read8(A.trainerClass), party: trainerParty, active: trainerActive },
         opponent: { party: opponentParty, active: opponentActive },
         battle: {
@@ -236,10 +247,25 @@
           url.searchParams.set("state", base64url(state.snapshot));
           modEvent("fetch-start", { attempt: state.snapshot.attempt, urlLength: url.toString().length });
           const response = await fetch(url.toString(), { method: "GET", signal: state.controller.signal });
-          if (!response.ok) throw new Error(`Battle Link HTTP ${response.status}`);
-          const body = await response.json();
-          const action = state.actions.find((candidate) => candidate.code === body?.action);
-          if (!action || !Number.isInteger(body.action)) throw new Error("Battle Link returned an illegal action");
+          // 204 is the long-poll cycling upstream, not an answer — reopen it
+          // immediately with no backoff.
+          if (response.status === 204) continue;
+          let body = null;
+          if (response.ok) {
+            try { body = await response.json(); } catch (error) { body = null; }
+          }
+          const action = Number.isInteger(body?.action)
+            ? state.actions.find((candidate) => candidate.code === body.action)
+            : null;
+          if (!action) {
+            // The endpoint completed a response but it isn't a legal
+            // decision (error status, bad JSON, illegal code): reject the
+            // turn with a random legal action instead of retrying.
+            state.result = randomAction(state.actions);
+            state.random = true;
+            modEvent("resolved", { code: state.result.code, source: "random-invalid", status: response.status });
+            return;
+          }
           state.result = action;
           modEvent("resolved", { code: action.code, source: "remote" });
           return;
@@ -260,6 +286,7 @@
       clearTimeout(timeout);
       if (!state.cancelled && !state.result) {
         state.result = randomAction(state.actions);
+        state.random = true;
         modEvent("resolved", { code: state.result.code, source: "random-deadline" });
       }
     }
@@ -303,10 +330,16 @@
       return;
     }
     if (!pending) {
+      // Native TrainerAI lazily seeded wAICount from the per-class table
+      // ($ff sentinel, reset on every send-out); with its callsites patched
+      // out, seed it here or trainers keep 255 item uses.
+      if (memory.read8(A.aiCount) === 0xff) {
+        memory.write8(A.aiCount, AI_ITEM_USES[memory.read8(A.trainerClass)] ?? 3);
+      }
       const { snapshot, actions } = makeSnapshot(memory);
       pending = {
         snapshot, actions, controller: new AbortController(), cancelled: false, result: null,
-        deadline: Date.now() + snapshot.timeoutMs,
+        random: false, deadline: Date.now() + snapshot.timeoutMs,
       };
       requestDecision(pending);
     }
@@ -323,9 +356,11 @@
       pending.cancelled = true;
       pending.controller.abort("deadline");
       pending.result = randomAction(pending.actions);
+      pending.random = true;
       modEvent("resolved", { code: pending.result.code, source: "random-failsafe" });
     }
     const action = pending.result;
+    const random = pending.random;
     memory.write8(A.buffer, action._kind);
     if (action.type === "move") {
       memory.write8(A.enemyMoveListIndex, Math.max(0, action.slot));
@@ -339,7 +374,11 @@
     pending = null;
     turn += 1;
     attempt = 0;
-    cpu.a = 1;
+    // 1 tells the ROM a remote decision landed (RECEIVED); 4 marks a random
+    // fallback (REJECTED). Needs package >= 1.1.0 — the registry ships the
+    // package ahead of any app build carrying this file, and the new package
+    // with an older host simply never sees a 4.
+    cpu.a = random ? 4 : 1;
   }
 
   globalThis.PokeboyModCore = Object.freeze({ "battle-link.decide": decide });
