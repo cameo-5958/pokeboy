@@ -34,6 +34,17 @@
     const value = Number(globalThis.PokeboyRuntime?.battleLinkMaxTimeTillRandomMs);
     return Number.isFinite(value) && value >= 0 ? value : DEFAULT_MAX_TIME_TILL_RANDOM_MS;
   };
+  // Decision source: "get" polls the configured HTTPS endpoint from this
+  // page; "discord" hands each snapshot to the native host (which runs the
+  // phone-hosted Discord bot) and waits for a decision message back. The
+  // deadline/random fallback below stays authoritative in both modes.
+  const decisionMode = () =>
+    globalThis.PokeboyRuntime?.battleLinkMode === "discord" ? "discord" : "get";
+  // Host bridge (installed by the embed page). Every call is fire-and-forget:
+  // a missing or throwing bridge must never stall the frame-driven decide().
+  const host = (method, detail) => {
+    try { globalThis.PokeboyBattleLinkHost?.[method]?.(detail); } catch (error) {}
+  };
   const ITEM_CODES = Object.freeze({
     fullRestore: [32, 2, 0x10], potion: [33, 3, 0x14],
     superPotion: [34, 4, 0x13], hyperPotion: [35, 5, 0x12],
@@ -222,6 +233,19 @@
   async function requestDecision(state) {
     const timeoutMs = state.snapshot.timeoutMs;
     const deadline = Date.now() + timeoutMs;
+    if (decisionMode() === "discord") {
+      host("request", state.snapshot);
+      while (!state.cancelled && !state.result && Date.now() < deadline) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(250, Math.max(1, deadline - Date.now()))));
+      }
+      if (!state.cancelled && !state.result) {
+        state.result = randomAction(state.actions);
+        state.resultSource = "random-deadline";
+        modEvent("resolved", { code: state.result.code, source: "random-deadline" });
+      }
+      return;
+    }
     const endpoint = String(globalThis.PokeboyRuntime?.battleLinkEndpoint || "").trim();
     let delay = 250;
     const timeout = setTimeout(() => state.controller.abort("deadline"), timeoutMs);
@@ -241,6 +265,7 @@
           const action = state.actions.find((candidate) => candidate.code === body?.action);
           if (!action || !Number.isInteger(body.action)) throw new Error("Battle Link returned an illegal action");
           state.result = action;
+          state.resultSource = "remote";
           modEvent("resolved", { code: action.code, source: "remote" });
           return;
         } catch (error) {
@@ -260,6 +285,7 @@
       clearTimeout(timeout);
       if (!state.cancelled && !state.result) {
         state.result = randomAction(state.actions);
+        state.resultSource = "random-deadline";
         modEvent("resolved", { code: state.result.code, source: "random-deadline" });
       }
     }
@@ -272,16 +298,71 @@
     return Boolean((status1 & 0x33) || (status2 & 0x60) || (status & 0x27));
   }
 
-  function resetBattle() {
-    if (pending) {
-      pending.cancelled = true;
-      pending.controller.abort("battle-reset");
+  function cancelPending(reason) {
+    if (!pending) return;
+    pending.cancelled = true;
+    pending.controller.abort(reason);
+    if (decisionMode() === "discord") {
+      const { battleId: id, turn: t, attempt: n } = pending.snapshot;
+      host("cancel", { battleId: id, turn: t, attempt: n, reason });
     }
+  }
+
+  // Discord mode auto-disconnect: decide() only runs on ROM traps, so battle
+  // end (no further decisions) would otherwise go unnoticed. The memory
+  // closure handed to host imports stays valid between traps, letting a 1 Hz
+  // watch report when the trainer battle is over.
+  let battleWatch = 0;
+  let battleWatchId = null;
+  function stopBattleWatch() {
+    if (battleWatch) { clearTimeout(battleWatch); battleWatch = 0; battleWatchId = null; }
+  }
+  function endWatchedBattle(reason) {
+    const id = battleWatchId;
+    stopBattleWatch();
+    host("battleEnd", { battleId: id, reason });
+  }
+  function startBattleWatch(memory) {
+    if (battleWatch) return;
+    battleWatchId = battleId;
+    const tick = () => {
+      battleWatch = 0;
+      if (memory.read8(A.isInBattle) === 2) {
+        battleWatch = setTimeout(tick, 1000);
+        return;
+      }
+      endWatchedBattle("battle-over");
+    };
+    battleWatch = setTimeout(tick, 1000);
+  }
+
+  function resetBattle() {
+    cancelPending("battle-reset");
+    if (battleWatch) endWatchedBattle("battle-reset");
     battleId = newId();
     turn = 0;
     attempt = 0;
     pending = null;
   }
+
+  globalThis.PokeboyBattleLinkDeliver = (message) => {
+    const state = pending;
+    if (!state || state.cancelled || state.result) return false;
+    if (!message
+      || message.battleId !== state.snapshot.battleId
+      || message.turn !== state.snapshot.turn
+      || message.attempt !== state.snapshot.attempt) return false;
+    if (!Number.isInteger(message.action)) return false;
+    const action = state.actions.find((candidate) => candidate.code === message.action);
+    if (!action) {
+      modEvent("discord-illegal-action", { action: message.action });
+      return false;
+    }
+    state.result = action;
+    state.resultSource = "discord";
+    modEvent("resolved", { code: action.code, source: "discord" });
+    return true;
+  };
 
   function decide(cpu, memory) {
     if (cpu.a === 4) {
@@ -290,7 +371,7 @@
       return;
     }
     if (memory.read8(A.isInBattle) !== 2 || memory.read8(A.linkState) !== 0 || forcedAction(memory)) {
-      if (pending) { pending.cancelled = true; pending.controller.abort("native-action"); pending = null; }
+      if (pending) { cancelPending("native-action"); pending = null; }
       memory.write8(A.buffer, 0);
       cpu.a = 3;
       return;
@@ -299,8 +380,9 @@
       const { snapshot, actions } = makeSnapshot(memory);
       pending = {
         snapshot, actions, controller: new AbortController(), cancelled: false, result: null,
-        deadline: Date.now() + snapshot.timeoutMs,
+        resultSource: null, deadline: Date.now() + snapshot.timeoutMs,
       };
+      if (decisionMode() === "discord") startBattleWatch(memory);
       requestDecision(pending);
     }
     if (!pending.result) {
@@ -316,6 +398,7 @@
       pending.cancelled = true;
       pending.controller.abort("deadline");
       pending.result = randomAction(pending.actions);
+      pending.resultSource = "random-failsafe";
       modEvent("resolved", { code: pending.result.code, source: "random-failsafe" });
     }
     const action = pending.result;
@@ -328,6 +411,13 @@
       memory.write8(A.buffer + 1, action.partySlot);
     } else {
       memory.write8(A.buffer + 1, action.item);
+    }
+    if (decisionMode() === "discord") {
+      const { battleId: id, turn: t, attempt: n } = pending.snapshot;
+      host("resolved", {
+        battleId: id, turn: t, attempt: n,
+        code: action.code, source: pending.resultSource || "unknown",
+      });
     }
     pending = null;
     turn += 1;
