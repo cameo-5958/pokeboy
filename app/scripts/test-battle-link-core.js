@@ -124,7 +124,83 @@ setImmediate(() => {
       decide(cpu, memory);
       assert.equal(cpu.a, 1, "frame poll enforces the deadline despite a wedged fetch");
       assert.ok([10, 20].includes(ram[0xccdd]), "failsafe selects a legal move");
-      console.log("Battle Link browser host tests passed");
+      runDiscordTests();
     }, 150);
   });
 });
+
+// Discord mode: decisions travel over the host bridge (native Discord bot)
+// instead of the GET endpoint; the deadline fallback stays authoritative.
+function runDiscordTests() {
+  const hostCalls = [];
+  context.PokeboyBattleLinkHost = {
+    request: (detail) => hostCalls.push(["request", detail]),
+    cancel: (detail) => hostCalls.push(["cancel", detail]),
+    resolved: (detail) => hostCalls.push(["resolved", detail]),
+    battleEnd: (detail) => hostCalls.push(["battleEnd", detail]),
+  };
+  context.PokeboyRuntime.battleLinkMode = "discord";
+  context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 5000;
+  context.fetch = () => { throw new Error("discord mode must never fetch"); };
+
+  const cpu = { a: 4 };
+  decide(cpu, memory);
+  assert.equal(cpu.a, 0, "battle-start trap resets the host state");
+
+  cpu.a = 0;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 0, "discord decision stays pending");
+  const request = hostCalls.find((call) => call[0] === "request");
+  assert.ok(request, "discord mode hands the snapshot to the host bridge");
+  const snapshot = request[1];
+  assert.equal(snapshot.timeoutMs, 5000, "snapshot advertises the configured deadline");
+  assert.ok(Array.isArray(snapshot.legalActions) && snapshot.legalActions.length >= 2);
+
+  const key = { battleId: snapshot.battleId, turn: snapshot.turn, attempt: snapshot.attempt };
+  assert.equal(
+    context.PokeboyBattleLinkDeliver({ ...key, action: 999 }),
+    false,
+    "illegal actions are rejected",
+  );
+  assert.equal(
+    context.PokeboyBattleLinkDeliver({ ...key, battleId: "someone-else", action: 1 }),
+    false,
+    "stale battle ids are rejected",
+  );
+  assert.equal(
+    context.PokeboyBattleLinkDeliver({ ...key, action: 1 }),
+    true,
+    "legal deliveries are accepted",
+  );
+  cpu.a = 0;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 1, "discord decision resumes the ROM");
+  assert.equal(ram[0xccdd], 20, "discord decision selects the delivered move");
+  const resolved = hostCalls.find((call) => call[0] === "resolved");
+  assert.ok(resolved, "resolution is reported back to the host");
+  assert.equal(resolved[1].source, "discord");
+  assert.equal(resolved[1].code, 1);
+
+  // The player backing out (B) must tell the host so the embed can be closed.
+  cpu.a = 0;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 0, "next turn opens a new pending decision");
+  ram[0xcee9 + 2] = 1;
+  cpu.a = 0;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 2, "player cancel keeps its native contract");
+  ram[0xcee9 + 2] = 0;
+  const cancel = hostCalls.find((call) => call[0] === "cancel");
+  assert.ok(cancel, "cancellation is reported to the host");
+  assert.equal(cancel[1].reason, "player-cancelled");
+
+  // Battle watch: once the battle leaves trainer-battle state the host gets
+  // a battle-end so the Discord session can auto-disconnect.
+  ram[0xd057] = 0;
+  setTimeout(() => {
+    const end = hostCalls.find((call) => call[0] === "battleEnd");
+    assert.ok(end, "battle watch reports the battle end");
+    assert.equal(end[1].reason, "battle-over");
+    console.log("Battle Link browser host tests passed");
+  }, 1300);
+}
