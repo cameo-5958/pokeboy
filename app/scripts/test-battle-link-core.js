@@ -90,12 +90,12 @@ setImmediate(() => {
   assert.equal(requests, 1);
 
   // maxTimeTillRandom: 0 resolves immediately with a random legal action and
-  // never touches the network.
+  // never touches the network. Random resolutions report 4 (REJECTED).
   ram[0xd068] = 0;
   context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 0;
   cpu.a = 0;
   decide(cpu, memory);
-  assert.equal(cpu.a, 1, "zero maxTimeTillRandom resumes the ROM immediately");
+  assert.equal(cpu.a, 4, "zero maxTimeTillRandom resumes the ROM immediately as random");
   assert.equal(requests, 1, "zero maxTimeTillRandom skips the endpoint");
   assert.ok([10, 20].includes(ram[0xccdd]), "random fallback selects a legal move");
 
@@ -122,9 +122,72 @@ setImmediate(() => {
     setTimeout(() => {
       cpu.a = 0;
       decide(cpu, memory);
-      assert.equal(cpu.a, 1, "frame poll enforces the deadline despite a wedged fetch");
+      assert.equal(cpu.a, 4, "frame poll enforces the deadline as a random rejection");
       assert.ok([10, 20].includes(ram[0xccdd]), "failsafe selects a legal move");
-      console.log("Battle Link browser host tests passed");
+
+      // wAICount seeding + disabled-move legality. Brock (0x22) has 5 AI
+      // uses in TrainerAIPointers; wEnemyDisabledMove keeps the disabled
+      // move number in its high nibble.
+      context.fetch = async (url) => {
+        requests += 1;
+        const encoded = new URL(String(url)).searchParams.get("state");
+        lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+        return { ok: true, status: 200, json: async () => ({ action: 0 }) };
+      };
+      context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 5000;
+      ram[0xccdf] = 0xff;
+      ram[0xd031] = 0x22;
+      ram[0xd072] = 0x21; // move 2 disabled, one turn left
+      cpu.a = 0;
+      decide(cpu, memory);
+      assert.equal(ram[0xccdf], 5, "wAICount is seeded from the class table");
+      assert.equal(cpu.a, 0, "seeded snapshot long-polls as usual");
+      setImmediate(() => {
+        cpu.a = 0;
+        decide(cpu, memory);
+        assert.equal(cpu.a, 1, "remote decision after seeding resumes the ROM");
+        const moves = lastState.legalActions.filter((action) => action.type === "move");
+        assert.deepEqual(moves.map((move) => move.slot), [0], "disabled move slot is excluded");
+        assert.equal(ram[0xccdd], 10, "remaining legal move is selected");
+
+        // An endpoint response that is not a legal decision rejects the
+        // turn immediately with a random action — no retries.
+        ram[0xd072] = 0;
+        const before = requests;
+        context.fetch = async () => {
+          requests += 1;
+          return { ok: true, status: 200, json: async () => ({ action: 99 }) };
+        };
+        cpu.a = 0;
+        decide(cpu, memory);
+        assert.equal(cpu.a, 0, "invalid response test opens a request");
+        setImmediate(() => {
+          cpu.a = 0;
+          decide(cpu, memory);
+          assert.equal(cpu.a, 4, "illegal decision resolves as an immediate random rejection");
+          assert.equal(requests, before + 1, "an invalid response is not retried");
+          assert.ok([10, 20].includes(ram[0xccdd]), "random rejection selects a legal move");
+
+          // 204 marks an upstream long-poll cycle: reopen immediately, no
+          // backoff, and accept the eventual decision as remote.
+          let calls = 0;
+          context.fetch = async () => {
+            requests += 1;
+            calls += 1;
+            if (calls < 3) return { ok: true, status: 204, json: async () => { throw new Error("no body"); } };
+            return { ok: true, status: 200, json: async () => ({ action: 0 }) };
+          };
+          cpu.a = 0;
+          decide(cpu, memory);
+          setImmediate(() => {
+            cpu.a = 0;
+            decide(cpu, memory);
+            assert.equal(calls, 3, "204 responses re-poll without backoff");
+            assert.equal(cpu.a, 1, "decision after 204 cycles is a normal remote resolution");
+            console.log("Battle Link browser host tests passed");
+          });
+        });
+      });
     }, 150);
   });
 });
