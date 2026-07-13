@@ -154,13 +154,14 @@ def main() -> None:
     p.add_argument("--holdout", type=float, default=0.05)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--weighting", default="none", choices=["none", "elo", "winners", "elo+winners"])
+    p.add_argument("--hist-k", type=int, default=0, help="history turns to encode (0=stateless)")
     p.add_argument("--eval-every", type=int, default=0, help="steps between periodic evals (0=off)")
     p.add_argument("--eval-battles", type=int, default=50)
     args = p.parse_args()
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    tok = Tokenizer()
+    tok = Tokenizer(hist_k=args.hist_k)
     model = FieldValueEncoder(TIERS[args.tier], tok).to(device)
     print(json.dumps({"tier": args.tier, "params": model.num_params(), "device": device}))
 
@@ -190,7 +191,7 @@ def main() -> None:
     ckpt_dir = ROOT / "checkpoints" / args.tier
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     metrics = open(ckpt_dir / "metrics.jsonl", "a")
-    run_id = f"{args.tier}-{args.weighting}-r{args.limit_rows}-s{args.steps}-seed{args.seed}"
+    run_id = f"{args.tier}-{args.weighting}-h{args.hist_k}-r{args.limit_rows}-s{args.steps}-seed{args.seed}"
 
     def log_eval(step: int) -> None:
         m = periodic_eval(model, tok, hold, device, battles=args.eval_battles, seed=args.seed)
@@ -199,7 +200,9 @@ def main() -> None:
         with open(ckpt_dir / "evals.jsonl", "a") as f:
             f.write(json.dumps(line) + "\n")
         torch.save(
-            {"model": model.state_dict(), "tier": args.tier, "steps": step}, ckpt_dir / "model.pt"
+            {"model": model.state_dict(), "tier": args.tier, "steps": step,
+             "hist_k": args.hist_k, "seq_len": tok.seq_len},
+            ckpt_dir / "model.pt",
         )
 
     step, t0 = 0, time.monotonic()
@@ -243,7 +246,8 @@ def main() -> None:
     if args.eval_every:
         log_eval(args.steps)
     torch.save(
-        {"model": model.state_dict(), "tier": args.tier, "steps": args.steps},
+        {"model": model.state_dict(), "tier": args.tier, "steps": args.steps,
+         "hist_k": args.hist_k, "seq_len": tok.seq_len},
         ckpt_dir / "model.pt",
     )
     print(f"saved {ckpt_dir / 'model.pt'}")
