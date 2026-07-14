@@ -44,6 +44,11 @@ def make_agent(name: str, seed: int):
         return HumanCLI()
     if name == "jsonl":
         return JsonlSeat()
+    if name == "search" or name.startswith("search:"):
+        from sim.search import SearchTeacher
+
+        depth = int(name.partition(":")[2] or 1)
+        return SearchTeacher(depth=depth, seed=seed)
     if name.startswith("model:"):
         from models.agent import ModelAgent  # keep sim torch-free for other seats
 
