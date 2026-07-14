@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { config } from "../config.js";
 import {
   fileChecksum,
   modPath,
@@ -18,7 +19,7 @@ export const registryRouter = Router();
 registryRouter.get("/", async (req, res, next) => {
   try {
     const origin = `${req.protocol}://${req.get("host")}`;
-    const { roms, mods } = await readRegistry();
+    const { roms, mods, host } = await readRegistry();
 
     const romDtos = await Promise.all(
       roms.map(async (r) => ({
@@ -41,7 +42,17 @@ registryRouter.get("/", async (req, res, next) => {
       })),
     );
 
-    res.json({ roms: romDtos, mods: modDtos });
+    // The emulator host core (mod-core JS) ships over the air like a mod;
+    // clients cache it by version and fall back to their bundled copy.
+    const hostDto = host
+      ? {
+          id: host.id,
+          version: host.version,
+          checksum: await fileChecksum(config.hostCoreFile),
+        }
+      : null;
+
+    res.json({ roms: romDtos, mods: modDtos, host: hostDto });
   } catch (e) {
     next(e);
   }

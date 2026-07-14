@@ -206,7 +206,7 @@ function runLegalityTests() {
       ["RHYDON", "SPEAROW"],
       "trainer party names come from the species table",
     );
-    assert.equal(lastState.mod, "battle-link@1.2.0", "snapshot change bumps the mod version");
+    assert.equal(lastState.mod, "battle-link@1.3.0", "snapshot change bumps the mod version");
 
     // Switching is class-agnostic and survives item exhaustion (aiCount 0);
     // items stay gated behind aiCount and the class table.
@@ -281,19 +281,31 @@ function runResponseTests() {
     });
 }
 
-// Discord mode: decisions travel over the host bridge (native Discord bot)
-// instead of the GET endpoint; the deadline fallback stays authoritative.
+// Discord mode: the bot runs on the backend. The mod core long-polls its own
+// backend's decision endpoint (which mirrors the snapshot to the bot) and
+// posts lifecycle events; the deadline fallback stays authoritative.
 function runDiscordTests() {
-  const hostCalls = [];
-  context.PokeboyBattleLinkHost = {
-    request: (detail) => hostCalls.push(["request", detail]),
-    cancel: (detail) => hostCalls.push(["cancel", detail]),
-    resolved: (detail) => hostCalls.push(["resolved", detail]),
-    battleEnd: (detail) => hostCalls.push(["battleEnd", detail]),
-  };
+  const events = [];
   context.PokeboyRuntime.battleLinkMode = "discord";
+  context.PokeboyRuntime.backendUrl = "https://backend.test/"; // trailing slash on purpose
   context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 5000;
-  context.fetch = () => { throw new Error("discord mode must never fetch"); };
+  context.fetch = async (url, options) => {
+    const target = String(url);
+    if (target === "https://backend.test/battle-link/event") {
+      events.push(JSON.parse(options.body));
+      return { ok: true, json: async () => ({ ok: true }) };
+    }
+    assert.ok(
+      target.startsWith("https://backend.test/battle-link/decision?"),
+      "discord mode polls its own backend's decision endpoint",
+    );
+    requests += 1;
+    const encoded = new URL(target).searchParams.get("state");
+    lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    // The backend long-poll never settles in this test; decisions arrive
+    // through the injection path instead.
+    return new Promise(() => {});
+  };
 
   const cpu = { a: 4 };
   decide(cpu, memory);
@@ -302,11 +314,11 @@ function runDiscordTests() {
   cpu.a = 0;
   decide(cpu, memory);
   assert.equal(cpu.a, 0, "discord decision stays pending");
-  const request = hostCalls.find((call) => call[0] === "request");
-  assert.ok(request, "discord mode hands the snapshot to the host bridge");
-  const snapshot = request[1];
+  const snapshot = lastState;
+  assert.ok(snapshot, "discord mode sends the snapshot to the backend");
   assert.equal(snapshot.timeoutMs, 5000, "snapshot advertises the configured deadline");
   assert.ok(Array.isArray(snapshot.legalActions) && snapshot.legalActions.length >= 2);
+  assert.ok(String(snapshot.core || "").startsWith("mod-core@"), "snapshot names the host core version");
 
   const key = { battleId: snapshot.battleId, turn: snapshot.turn, attempt: snapshot.attempt };
   assert.equal(
@@ -328,13 +340,13 @@ function runDiscordTests() {
   decide(cpu, memory);
   assert.equal(cpu.a, 1, "discord decision resumes the ROM");
   assert.equal(ram[0xccdd], 20, "discord decision selects the delivered move");
-  const resolved = hostCalls.find((call) => call[0] === "resolved");
-  assert.ok(resolved, "resolution is reported back to the host");
-  assert.equal(resolved[1].source, "discord");
-  assert.equal(resolved[1].code, 1);
+  const resolved = events.find((event) => event.type === "resolved");
+  assert.ok(resolved, "resolution is posted to the backend");
+  assert.equal(resolved.detail.source, "discord");
+  assert.equal(resolved.detail.code, 1);
 
-  // A forced turn cancels the outstanding request and must tell the host so
-  // the Discord embed can be closed.
+  // A forced turn cancels the outstanding request and must tell the backend
+  // so the Discord widget can be closed.
   cpu.a = 0;
   decide(cpu, memory);
   assert.equal(cpu.a, 0, "next turn opens a new pending decision");
@@ -343,17 +355,105 @@ function runDiscordTests() {
   decide(cpu, memory);
   assert.equal(cpu.a, 3, "forced turns keep their native contract");
   ram[0xd068] = 0;
-  const cancel = hostCalls.find((call) => call[0] === "cancel");
-  assert.ok(cancel, "cancellation is reported to the host");
-  assert.equal(cancel[1].reason, "native-action");
+  const cancel = events.find((event) => event.type === "cancel");
+  assert.ok(cancel, "cancellation is posted to the backend");
+  assert.equal(cancel.detail.reason, "native-action");
 
-  // Battle watch: once the battle leaves trainer-battle state the host gets
-  // a battle-end so the Discord session can auto-disconnect.
+  // Battle watch: once the battle leaves trainer-battle state the backend
+  // gets a battle-end so the Discord session can auto-disconnect.
   ram[0xd057] = 0;
   setTimeout(() => {
-    const end = hostCalls.find((call) => call[0] === "battleEnd");
+    const end = events.find((event) => event.type === "battle-end");
     assert.ok(end, "battle watch reports the battle end");
-    assert.equal(end[1].reason, "battle-over");
-    console.log("Battle Link browser host tests passed");
+    assert.equal(end.detail.reason, "battle-over");
+    runPrimeAndFaintTests();
   }, 1300);
+}
+
+// Turn-start priming (trap status 5) and forced faint switch-ins (status 6).
+function runPrimeAndFaintTests() {
+  context.PokeboyRuntime.battleLinkMode = "get";
+  context.PokeboyRuntime.battleLinkMaxTimeTillRandomMs = 5000;
+  ram[0xd057] = 2;
+  ram[0xd068] = 0;
+  ram[0xd89c] = 2;
+  write16(0xd8a5, 30); // roster slot 0 restored
+  write16(0xd8d1, 25); // roster slot 1 alive
+  ram[0xcfe8] = 0;
+  write16(0xcfe6, 12); // live battle-struct HP diverges from the stale roster
+
+  const cpu = { a: 4 };
+  decide(cpu, memory);
+  assert.equal(cpu.a, 0, "battle-start trap resets the host state");
+
+  // The battle-opening send-out reaches the faint trap before any decision
+  // has resolved: it must stay native.
+  cpu.a = 6;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 3, "battle-opening send-out bypasses to the native scan");
+
+  context.fetch = async (url) => {
+    requests += 1;
+    const encoded = new URL(String(url)).searchParams.get("state");
+    lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    return { ok: true, status: 200, json: async () => ({ action: 0 }) };
+  };
+  const before = requests;
+  cpu.a = 5;
+  decide(cpu, memory);
+  assert.equal(cpu.a, 0, "prime returns immediately");
+  assert.equal(requests, before + 1, "prime opens the turn request");
+  setImmediate(() => {
+    cpu.a = 5;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 0, "prime never consumes a resolved request");
+    cpu.a = 0;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 1, "the later poll consumes the primed request");
+    assert.equal(lastState.phase, "turn", "turn snapshots carry their phase");
+    assert.equal(lastState.trainer.party[0].hp, 12,
+      "the on-field roster row shows live battle-struct HP");
+
+    // Forced switch with a single healthy replacement: resolved on the spot,
+    // no round trip.
+    const noChoice = requests;
+    write16(0xcfe6, 0); // active fainted
+    write16(0xd8a5, 0); // the faint handler zeroed its roster HP
+    cpu.a = 6;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 1, "single-option faint switch resolves immediately");
+    assert.equal(requests, noChoice, "no request is opened for a forced-only switch");
+    assert.equal(ram[0xcee9], 1, "faint resolution marks a switch");
+    assert.equal(ram[0xcee9 + 1], 1, "faint resolution carries the party slot");
+
+    // Forced switch with a real choice goes to the decision source with
+    // switch-only legal actions.
+    ram[0xd89c] = 3;
+    ram[0xd8fc] = 7; // roster slot 2: species
+    write16(0xd8fd, 20); // roster slot 2: hp
+    write16(0xd91e, 20); // roster slot 2: max hp
+    ram[0xd91d] = 8; // roster slot 2: level
+    context.fetch = async (url) => {
+      requests += 1;
+      const encoded = new URL(String(url)).searchParams.get("state");
+      lastState = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+      return { ok: true, status: 200, json: async () => ({ action: 18 }) };
+    };
+    cpu.a = 6;
+    decide(cpu, memory);
+    assert.equal(cpu.a, 0, "multi-option faint switch opens a request");
+    setImmediate(() => {
+      cpu.a = 6;
+      decide(cpu, memory);
+      assert.equal(cpu.a, 1, "remote faint decision resumes the ROM");
+      assert.equal(lastState.phase, "faint-switch", "faint snapshots carry their phase");
+      assert.ok(lastState.legalActions.every((action) => action.type === "switch"),
+        "faint snapshots offer only switches");
+      assert.deepEqual(lastState.legalActions.map((action) => action.code), [17, 18],
+        "fainted and on-field mons are excluded");
+      assert.equal(ram[0xcee9 + 1], 2, "the chosen replacement slot reaches the ROM");
+      assert.equal(lastState.mod, "battle-link@1.3.0", "snapshot change bumps the mod version");
+      console.log("Battle Link browser host tests passed");
+    });
+  });
 }

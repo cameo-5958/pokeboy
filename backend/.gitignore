@@ -5,6 +5,9 @@ dist/
 # Issued device API keys — secrets, never commit.
 data/keys.json
 
+# Battle Link Discord bot token — secret, never commit.
+data/discord.json
+
 # ROM binaries and user-supplied mod payloads are never committed.
 # ROM symbol documents (.sym) are fine to track — they contain no ROM data.
 roms/*.gb
