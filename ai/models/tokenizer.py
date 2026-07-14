@@ -15,6 +15,13 @@ Layout (stateless snapshot; history segment is added in a later phase):
 
 Engineered continuous features on MY_ACTIVE move tokens: gen1 type-effect
 multiplier vs opp active (scaled /4) and STAB flag — public info only.
+
+With dmg_feats=True (skill-probe remediation), four more channels on
+MY_ACTIVE move tokens: dmg_frac (approx. L100 standard-stat damage as a
+fraction of the defender's max HP), kills (min roll KOs at current HP),
+acc (accuracy/100), wasted (pure status move that must fail — target
+already statused or type-immune — or heal at full HP). All computable
+from public info; the model previously had to memorize these per move id.
 """
 
 from __future__ import annotations
@@ -44,6 +51,22 @@ SLOTS = (
 )
 
 CONT_CHANNELS = ["hp_frac", "pp_frac", "turn", "fainted", "type_eff", "stab", "force_switch"]
+DMG_CHANNELS = ["dmg_frac", "kills", "acc", "wasted"]
+
+# gen1 damage model at L100 with standard competitive stats (max DV + stat exp)
+_PHYSICAL_TYPES = {"Normal", "Fighting", "Flying", "Ground", "Rock", "Bug", "Ghost", "Poison"}
+_STATUS_EFFECTS = {"Sleep", "Poison", "Paralyze"}
+_HEAL_EFFECTS = {"Heal"}
+_FIXED_DAMAGE = {"Seismic Toss": 100, "Night Shade": 100, "Sonic Boom": 20,
+                 "Dragon Rage": 40, "Psywave": 50, "Super Fang": 0}  # SuperFang handled by hp
+
+
+def _l100_stat(base: int) -> int:
+    return 2 * base + 98
+
+
+def _l100_hp(base: int) -> int:
+    return 2 * base + 203
 
 # history event flags, highest-priority first — one EV_* token per turn
 EV_PRIORITY = ["ft", "crit", "se", "st", "sc", "miss", "re", "im"]
@@ -64,16 +87,18 @@ def _build_value_vocab(hist: bool = False) -> list[str]:
 
 
 class Tokenizer:
-    def __init__(self, seq_len: int | None = None, hist_k: int = 0):
+    def __init__(self, seq_len: int | None = None, hist_k: int = 0, dmg_feats: bool = False):
         self.hist_k = hist_k
+        self.dmg_feats = dmg_feats
         self.seq_len = seq_len if seq_len is not None else (HIST_SEQ_LEN if hist_k else SEQ_LEN)
         self._values = _build_value_vocab(hist=bool(hist_k))
         fields = FIELDS + (HIST_FIELDS if hist_k else [])
         slots = SLOTS + [f"HIST_-{i}" for i in range(1, hist_k + 1)]
+        channels = CONT_CHANNELS + (DMG_CHANNELS if dmg_feats else [])
         self._value_ix = {v: i for i, v in enumerate(self._values)}
         self._field_ix = {f: i for i, f in enumerate(fields)}
         self._slot_ix = {s: i for i, s in enumerate(slots)}
-        self._cont_ix = {c: i for i, c in enumerate(CONT_CHANNELS)}
+        self._cont_ix = {c: i for i, c in enumerate(channels)}
 
     # -- vocab introspection --
 
@@ -91,7 +116,7 @@ class Tokenizer:
 
     @property
     def n_cont(self) -> int:
-        return len(CONT_CHANNELS)
+        return len(self._cont_ix)
 
     def value_id(self, name: str) -> int:
         return self._value_ix[name]
@@ -115,7 +140,7 @@ class Tokenizer:
             fields.append(self._field_ix[field])
             values.append(self._value_ix[value])
             slots.append(self._slot_ix[slot])
-            c = np.zeros(len(CONT_CHANNELS), dtype=np.float32)
+            c = np.zeros(len(self._cont_ix), dtype=np.float32)
             for k, v in channels.items():
                 c[self._cont_ix[k]] = v
             cont.append(c)
@@ -128,11 +153,11 @@ class Tokenizer:
             force_switch=1.0 if state.get("request_kind") == "force_switch" else 0.0,
         )
 
-        opp_active_species = self._active_species(state["opp_side"])
-        my_active_species = self._active_species(state["my_side"])
+        opp_active = self._active_mon(state["opp_side"])
+        my_active = self._active_mon(state["my_side"])
 
-        self._emit_side(emit, state["my_side"], "MY", mine=True, opp_species=opp_active_species)
-        self._emit_side(emit, state["opp_side"], "OPP", mine=False, opp_species=my_active_species)
+        self._emit_side(emit, state["my_side"], "MY", mine=True, opp_active=opp_active)
+        self._emit_side(emit, state["opp_side"], "OPP", mine=False, opp_active=my_active)
 
         if self.hist_k:
             for entry in state.get("history_tail", [])[: self.hist_k]:
@@ -146,7 +171,7 @@ class Tokenizer:
             "field_ids": np.asarray(fields + [0] * pad, dtype=np.int16),
             "value_ids": np.asarray(values + [0] * pad, dtype=np.int16),
             "slot_ids": np.asarray(slots + [0] * pad, dtype=np.int16),
-            "cont": np.vstack(cont + [np.zeros((pad, len(CONT_CHANNELS)), dtype=np.float32)]),
+            "cont": np.vstack(cont + [np.zeros((pad, len(self._cont_ix)), dtype=np.float32)]),
             "length": n,
         }
 
@@ -178,21 +203,21 @@ class Tokenizer:
         emit("HIST_EVENT", ev, slot)
 
     @staticmethod
-    def _active_species(side: dict[str, Any]) -> str | None:
+    def _active_mon(side: dict[str, Any]) -> dict[str, Any] | None:
         mons = side["pokemon"]
         ix = side.get("active_ix", 0)
-        return mons[ix]["species"] if 0 <= ix < len(mons) else None
+        return mons[ix] if 0 <= ix < len(mons) else None
 
-    def _emit_side(self, emit, side: dict[str, Any], prefix: str, mine: bool, opp_species) -> None:
+    def _emit_side(self, emit, side: dict[str, Any], prefix: str, mine: bool, opp_active) -> None:
         mons = list(side["pokemon"])
         ix = side.get("active_ix", 0)
         if 0 <= ix < len(mons):
             mons = [mons[ix]] + mons[:ix] + mons[ix + 1 :]
         for i, mon in enumerate(mons[:6]):
             slot = f"{prefix}_ACTIVE" if i == 0 else f"{prefix}_BENCH_{i}"
-            self._emit_mon(emit, mon, slot, mine=mine, opp_species=opp_species if i == 0 else None)
+            self._emit_mon(emit, mon, slot, mine=mine, opp_active=opp_active if i == 0 else None)
 
-    def _emit_mon(self, emit, mon: dict[str, Any], slot: str, mine: bool, opp_species) -> None:
+    def _emit_mon(self, emit, mon: dict[str, Any], slot: str, mine: bool, opp_active) -> None:
         species = mon.get("species")
         if species is None:
             emit("SPECIES", UNREVEALED, slot)
@@ -226,12 +251,54 @@ class Tokenizer:
                 elif isinstance(moves[slot_ix], dict):
                     frac = moves[slot_ix].get("pp", 0) / max(1, max_pp(name))
                     channels["pp_frac"] = min(1.0, frac)
+                opp_species = (opp_active or {}).get("species")
                 if mine and slot == "MY_ACTIVE" and opp_species is not None:
                     channels["type_eff"] = self._effectiveness(name, opp_species) / 4.0
                     channels["stab"] = 1.0 if self._is_stab(name, mon["species"]) else 0.0
+                    if self.dmg_feats:
+                        channels.update(self._dmg_channels(name, mon, opp_active))
                 emit("MOVE", f"MOVE:{name}", slot, **channels)
             else:
                 emit("MOVE", NONE if mine else UNREVEALED, slot)
+
+    def _dmg_channels(self, move: str, attacker: dict[str, Any], defender: dict[str, Any]) -> dict[str, float]:
+        """dmg_frac / kills / acc / wasted for one of my active's moves vs the
+        opp active — approximate L100 standard-stat gen1 damage, public info only."""
+        if move not in MOVES:
+            return {}
+        _, _, bp, acc, mtype, effect = MOVES[move]
+        d_species = defender["species"]
+        out = {"acc": acc / 100.0}
+        eff = self._effectiveness(move, d_species)
+        if effect in _STATUS_EFFECTS:
+            out["wasted"] = 1.0 if (defender.get("status") or eff == 0) else 0.0
+            return out
+        if effect in _HEAL_EFFECTS:
+            out["wasted"] = 1.0 if (attacker.get("hp_fraction") or 0.0) >= 0.99 else 0.0
+            return out
+        sp_d = SPECIES[d_species]
+        hp_max = _l100_hp(sp_d[1])
+        if effect == "SuperFang":
+            dmg = (defender.get("hp_fraction") or 0.0) * hp_max / 2 if eff else 0.0
+        elif move in _FIXED_DAMAGE:
+            dmg = float(_FIXED_DAMAGE[move])  # gen1: fixed damage ignores type
+        elif bp <= 0:
+            dmg = 0.0
+        else:
+            sp_a = SPECIES[attacker["species"]]
+            phys = mtype in _PHYSICAL_TYPES
+            a = _l100_stat(sp_a[2] if phys else sp_a[5])
+            d = _l100_stat(sp_d[3] if phys else sp_d[5])
+            if effect == "Explode":
+                d = max(1, d // 2)
+            stab = 1.5 if self._is_stab(move, attacker["species"]) else 1.0
+            dmg = ((42 * bp * a / d) / 50 + 2) * stab * eff
+        frac = dmg / hp_max
+        out["dmg_frac"] = min(1.0, frac)
+        cur = defender.get("hp_fraction")
+        if cur is not None and frac * 0.85 >= cur > 0:
+            out["kills"] = 1.0
+        return out
 
     @staticmethod
     def _effectiveness(move: str, defender_species: str) -> float:
