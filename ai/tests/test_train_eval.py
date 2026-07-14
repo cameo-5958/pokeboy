@@ -54,10 +54,10 @@ def test_tail_augmentation_varies_history_length():
         for i in range(20)
     ]
     rows = [{"state_json": _json.dumps(s), "action": 0} for _ in range(32)]
-    batch, _, _ = next(make_batches(rows, tok, 32, "cpu"))
+    batch, _, _, _ = next(make_batches(rows, tok, 32, "cpu"))
     assert len(set(batch["lengths"].tolist())) == 1  # no augment → constant
 
-    batch, _, _ = next(make_batches(rows, tok, 32, "cpu", augment_rng=_random.Random(0)))
+    batch, _, _, _ = next(make_batches(rows, tok, 32, "cpu", augment_rng=_random.Random(0)))
     lengths = batch["lengths"].tolist()
     assert len(set(lengths)) > 3, f"tail augment did not vary lengths: {lengths}"
 
