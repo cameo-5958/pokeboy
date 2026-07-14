@@ -83,6 +83,23 @@ def cmd_battle(args) -> None:
     print(json.dumps({"battles": args.battles, **tally}))
 
 
+def cmd_generate(args) -> None:
+    from pathlib import Path
+
+    from sim.generate import generate_corpus
+
+    stats = generate_corpus(
+        Path(args.out),
+        battles=args.battles,
+        seed=args.seed,
+        workers=args.workers or os.cpu_count() or 1,
+        depth=args.depth,
+        rolls=args.rolls,
+        alpha=args.alpha,
+    )
+    print(json.dumps(stats))
+
+
 def _bench_worker(worker_args) -> tuple[int, int]:
     seed, seconds = worker_args
     rng = random.Random(seed)
@@ -140,6 +157,16 @@ def main() -> None:
     e.add_argument("--seconds", type=float, default=10.0)
     e.add_argument("--workers", type=int, default=0)
     e.set_defaults(fn=cmd_bench)
+
+    g = sub.add_parser("generate", help="generate a SearchTeacher demonstration corpus")
+    g.add_argument("--battles", type=int, required=True)
+    g.add_argument("--out", default="datasets/processed/teacher")
+    g.add_argument("--seed", type=int, default=0)
+    g.add_argument("--workers", type=int, default=0, help="0 = all cores")
+    g.add_argument("--depth", type=int, default=2)
+    g.add_argument("--rolls", type=int, default=2)
+    g.add_argument("--alpha", type=float, default=0.3)
+    g.set_defaults(fn=cmd_generate)
 
     args = p.parse_args()
     args.fn(args)
