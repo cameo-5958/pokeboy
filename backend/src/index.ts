@@ -11,7 +11,7 @@ import { keysRouter } from "./routes/keys.js";
 import { modsRouter } from "./routes/mods.js";
 import { registryRouter } from "./routes/registry.js";
 import { telemetryRouter } from "./routes/telemetry.js";
-import { battleLinkRouter } from "./routes/battle-link.js";
+import { battleLinkRouter, initBattleLinkDiscord } from "./routes/battle-link.js";
 
 const app = express();
 
@@ -78,6 +78,7 @@ app.use(
 async function start(): Promise<void> {
   await pruneOrphans();
   watchRegistryForPrune();
+  initBattleLinkDiscord();
 
   app.listen(config.port, () => {
     console.log(`pokeboy backend listening on http://localhost:${config.port}`);

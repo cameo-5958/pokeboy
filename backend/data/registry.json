@@ -8,6 +8,10 @@
       "version": "1.0.0"
     }
   ],
+  "host": {
+    "id": "mod-core",
+    "version": "1.0.0"
+  },
   "mods": [
     {
       "id": "tradeback-npc",

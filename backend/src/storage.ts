@@ -26,9 +26,17 @@ export type ModRecord = {
   version: string;
 };
 
+export type HostRecord = {
+  id: string;
+  /** Catalog version, bumped when the host core content changes. */
+  version: string;
+};
+
 type Registry = {
   roms: CartridgeRecord[];
   mods: ModRecord[];
+  /** Emulator host core (mod-core JS), served over the air. */
+  host?: HostRecord;
 };
 
 /** Reads the combined registry catalog. Returns empty lists if none exists. */
@@ -36,7 +44,7 @@ export async function readRegistry(): Promise<Registry> {
   try {
     const raw = await fs.readFile(paths.registry(), "utf8");
     const parsed = JSON.parse(raw) as Partial<Registry>;
-    return { roms: parsed.roms ?? [], mods: parsed.mods ?? [] };
+    return { roms: parsed.roms ?? [], mods: parsed.mods ?? [], host: parsed.host };
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return { roms: [], mods: [] };
     throw e;

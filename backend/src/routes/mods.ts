@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Router } from "express";
 
-import { paths } from "../config.js";
+import { config, paths } from "../config.js";
+import { readRegistry } from "../storage.js";
 
 export const modsRouter = Router();
 
@@ -25,6 +26,23 @@ modsRouter.get("/", async (_req, res, next) => {
     );
   } catch (e) {
     next(e);
+  }
+});
+
+// Emulator host core (mod-core JS) named by the registry's host entry. Served
+// from the tracked app asset (config.hostCoreFile), so updating the checkout
+// updates what every device runs — no app build involved.
+modsRouter.get("/host/:id", async (req, res) => {
+  const host = (await readRegistry()).host;
+  if (!host || host.id !== req.params.id) {
+    res.status(404).json({ error: "Host core not in registry" });
+    return;
+  }
+  try {
+    await fs.access(config.hostCoreFile);
+    res.type("text/javascript").sendFile(config.hostCoreFile);
+  } catch {
+    res.status(404).json({ error: "Host core file not installed" });
   }
 });
 

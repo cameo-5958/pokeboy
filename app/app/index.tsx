@@ -26,7 +26,6 @@ import WebView, { type WebViewMessageEvent } from "react-native-webview";
 import * as SecureStore from "expo-secure-store";
 
 import { createApi, type Cartridge as CartridgeInfo, type RegistryMod } from "@/api/client";
-import { DiscordBattleLinkBot, type BattleSnapshot } from "@/discord/battleLink";
 import { playSfx } from "@/sfx";
 import {
   diffSection,
@@ -64,7 +63,8 @@ const DEFAULT_BATTLE_LINK_ENDPOINT = "https://pokeboy.cameo.moe/battle-link/deci
 const BATTLE_LINK_MAX_WAIT_KEY = "pokeboy.mod.battle-link.maxTimeTillRandom.v1";
 const DEFAULT_BATTLE_LINK_MAX_WAIT_S = 30;
 const BATTLE_LINK_MODE_KEY = "pokeboy.mod.battle-link.mode.v1";
-// Bot token lives in the device keychain (SecureStore), never AsyncStorage.
+// The Discord bot moved to the backend; any token an older build stored in
+// the device keychain is deleted on startup (the phone never needs it again).
 const BATTLE_LINK_DISCORD_TOKEN_KEY = "pokeboy.mod.battle-link.discord-token.v1";
 
 type BattleLinkMode = "get" | "discord";
@@ -229,7 +229,6 @@ export default function EmulatorScreen() {
   const [battleLinkEndpoint, setBattleLinkEndpoint] = useState(DEFAULT_BATTLE_LINK_ENDPOINT);
   const [battleLinkMaxWaitS, setBattleLinkMaxWaitS] = useState(DEFAULT_BATTLE_LINK_MAX_WAIT_S);
   const [battleLinkMode, setBattleLinkMode] = useState<BattleLinkMode>("get");
-  const [battleLinkDiscordToken, setBattleLinkDiscordToken] = useState("");
   const [cartridges, setCartridges] = useState<CartridgeInfo[]>([]);
   const [mods, setMods] = useState<readonly RegistryMod[]>([]);
   const [cartridgeIdx, setCartridgeIdx] = useState(0);
@@ -328,9 +327,7 @@ export default function EmulatorScreen() {
         if (alive && (value === "get" || value === "discord")) setBattleLinkMode(value);
       })
       .catch(() => {});
-    SecureStore.getItemAsync(BATTLE_LINK_DISCORD_TOKEN_KEY)
-      .then((value) => { if (alive && value) setBattleLinkDiscordToken(value); })
-      .catch(() => {});
+    SecureStore.deleteItemAsync(BATTLE_LINK_DISCORD_TOKEN_KEY).catch(() => {});
     AsyncStorage.getItem(ENABLED_MODS_KEY)
       .then((value) => {
         if (!alive || !value) return;
@@ -354,14 +351,6 @@ export default function EmulatorScreen() {
   const saveBattleLinkMode = useCallback((mode: BattleLinkMode) => {
     setBattleLinkMode(mode);
     AsyncStorage.setItem(BATTLE_LINK_MODE_KEY, mode).catch(() => {});
-  }, []);
-  const saveBattleLinkDiscordToken = useCallback((value: string) => {
-    const token = value.trim();
-    setBattleLinkDiscordToken(token);
-    (token
-      ? SecureStore.setItemAsync(BATTLE_LINK_DISCORD_TOKEN_KEY, token)
-      : SecureStore.deleteItemAsync(BATTLE_LINK_DISCORD_TOKEN_KEY)
-    ).catch(() => {});
   }, []);
   const emulatorSettings = useMemo(
     () => ({
@@ -504,32 +493,8 @@ export default function EmulatorScreen() {
       dpad: inputRef.current.dpad | devInputRef.current.dpad,
     });
   }, [postToEmulator]);
-  // Phone-hosted Discord bot (Battle Link DISC mode). Lives at screen level so
-  // it survives WebView reloads; the emulator only exchanges snapshot and
-  // decision messages with it. The token itself never enters the WebView.
-  const discordBotRef = useRef<DiscordBattleLinkBot | null>(null);
-  const telemetryEnabledRef = useRef(settings.telemetry);
-  useEffect(() => { telemetryEnabledRef.current = settings.telemetry; }, [settings.telemetry]);
-  useEffect(() => {
-    const token = battleLinkDiscordToken.trim();
-    if (battleLinkMode !== "discord" || !token) return;
-    const bot = new DiscordBattleLinkBot(token, {
-      sendDecision: (decision) => postToEmulator({ type: "battle-link-decision", ...decision }),
-      onEvent: (kind, detail) => {
-        console.log("Pokeboy battle-link discord", kind, detail);
-        if (telemetryEnabledRef.current) {
-          telemetryEventsRef.current.push({ t: Date.now(), kind: `discord-${kind}`, detail });
-        }
-      },
-    });
-    discordBotRef.current = bot;
-    bot.start();
-    return () => {
-      bot.stop();
-      if (discordBotRef.current === bot) discordBotRef.current = null;
-    };
-  }, [battleLinkMode, battleLinkDiscordToken, postToEmulator]);
-
+  // Battle Link DISC mode runs its Discord bot on the backend; the WebView
+  // mod core talks to it over HTTP directly. Nothing to host on the phone.
   const onMessage = useCallback((event: WebViewMessageEvent) => {
     let message: { type?: unknown; detail?: unknown };
     try {
@@ -571,19 +536,7 @@ export default function EmulatorScreen() {
       }
     } else if (message?.type === "telemetry") {
       if (settings.telemetry) telemetrySnapshotsRef.current.push(detail);
-    } else if (message?.type === "battle-link-request") {
-      if (detail && typeof detail === "object") {
-        discordBotRef.current?.handleRequest(detail as BattleSnapshot);
-      }
-    } else if (message?.type === "battle-link-cancel") {
-      discordBotRef.current?.handleCancel(detail && typeof detail === "object" ? detail : {});
-    } else if (message?.type === "battle-link-resolved") {
-      discordBotRef.current?.handleResolved(detail && typeof detail === "object" ? detail : {});
-    } else if (message?.type === "battle-link-end") {
-      discordBotRef.current?.handleBattleEnd(detail && typeof detail === "object" ? detail : {});
     } else if (message?.type === "ready") {
-      // Fresh WebView boot: any battle the bot was tracking is gone.
-      discordBotRef.current?.handleEmulatorReset();
       console.log("Pokeboy ready", detail);
     } else if (message?.type === "dev-frame") {
       if (!detail || typeof detail !== "object") return;
@@ -919,8 +872,6 @@ export default function EmulatorScreen() {
             onBattleLinkMaxWait={saveBattleLinkMaxWait}
             battleLinkMode={battleLinkMode}
             onBattleLinkMode={saveBattleLinkMode}
-            battleLinkDiscordToken={battleLinkDiscordToken}
-            onBattleLinkDiscordToken={saveBattleLinkDiscordToken}
           />
         </Animated.View>
 
@@ -1287,8 +1238,6 @@ function ModChanger({
   onBattleLinkMaxWait,
   battleLinkMode,
   onBattleLinkMode,
-  battleLinkDiscordToken,
-  onBattleLinkDiscordToken,
 }: {
   u: Unit;
   anim: AnimValue;
@@ -1302,8 +1251,6 @@ function ModChanger({
   onBattleLinkEndpoint: (value: string) => void;
   battleLinkMode: BattleLinkMode;
   onBattleLinkMode: (mode: BattleLinkMode) => void;
-  battleLinkDiscordToken: string;
-  onBattleLinkDiscordToken: (value: string) => void;
   battleLinkMaxWaitS: number;
   onBattleLinkMaxWait: (seconds: number) => void;
 }) {
@@ -1405,8 +1352,6 @@ function ModChanger({
           onBattleLinkMaxWait={onBattleLinkMaxWait}
           battleLinkMode={battleLinkMode}
           onBattleLinkMode={onBattleLinkMode}
-          battleLinkDiscordToken={battleLinkDiscordToken}
-          onBattleLinkDiscordToken={onBattleLinkDiscordToken}
         />
       ) : null}
 
@@ -1707,8 +1652,6 @@ function ModConfigModal({
   onBattleLinkMaxWait,
   battleLinkMode,
   onBattleLinkMode,
-  battleLinkDiscordToken,
-  onBattleLinkDiscordToken,
 }: {
   open: boolean;
   mod: RegistryMod;
@@ -1719,30 +1662,24 @@ function ModConfigModal({
   onBattleLinkMaxWait: (seconds: number) => void;
   battleLinkMode: BattleLinkMode;
   onBattleLinkMode: (mode: BattleLinkMode) => void;
-  battleLinkDiscordToken: string;
-  onBattleLinkDiscordToken: (value: string) => void;
 }) {
   const { width } = useWindowDimensions();
   const cardWidth = Math.min(width * 0.86, 380);
   const [draft, setDraft] = useState(battleLinkEndpoint);
   const [maxWaitDraft, setMaxWaitDraft] = useState(String(battleLinkMaxWaitS));
   const [modeDraft, setModeDraft] = useState<BattleLinkMode>(battleLinkMode);
-  const [tokenDraft, setTokenDraft] = useState(battleLinkDiscordToken);
   useEffect(() => { if (open) setDraft(battleLinkEndpoint); }, [open, battleLinkEndpoint]);
   useEffect(() => { if (open) setMaxWaitDraft(String(battleLinkMaxWaitS)); }, [open, battleLinkMaxWaitS]);
   useEffect(() => { if (open) setModeDraft(battleLinkMode); }, [open, battleLinkMode]);
-  useEffect(() => { if (open) setTokenDraft(battleLinkDiscordToken); }, [open, battleLinkDiscordToken]);
   const endpointError = modeDraft === "get" && !/^https:\/\/[^\s]+$/i.test(draft.trim());
-  const tokenError = modeDraft === "discord" && !/^\S{20,}$/.test(tokenDraft.trim());
   const maxWaitSeconds = Number(maxWaitDraft.trim());
   const maxWaitError =
     maxWaitDraft.trim() === "" || !Number.isFinite(maxWaitSeconds) || maxWaitSeconds < 0 || maxWaitSeconds > 300;
-  const saveError = endpointError || tokenError || maxWaitError;
+  const saveError = endpointError || maxWaitError;
   const save = () => {
     if (saveError) return;
     onBattleLinkMode(modeDraft);
     if (modeDraft === "get") onBattleLinkEndpoint(draft);
-    else onBattleLinkDiscordToken(tokenDraft);
     onBattleLinkMaxWait(maxWaitSeconds);
     onClose();
   };
@@ -1813,26 +1750,11 @@ function ModConfigModal({
                   ) : null}
                 </>
               ) : (
-                <>
-                  <Text selectable={false} style={styles.settingsFieldLabel}>DISCORD BOT TOKEN</Text>
-                  <TextInput
-                    value={tokenDraft}
-                    onChangeText={setTokenDraft}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    secureTextEntry
-                    placeholder="Bot token"
-                    placeholderTextColor="#8b8679"
-                    style={[styles.settingsInput, tokenError && styles.settingsInputError]}
-                  />
-                  <Text selectable={false} style={styles.modConfigHelp}>
-                    The bot runs on this phone; the token is kept in the device keychain.
-                    Invite the bot as a user app, then /connect during a battle.
-                  </Text>
-                  {tokenError ? (
-                    <Text selectable={false} style={styles.modConfigError}>Enter a Discord bot token.</Text>
-                  ) : null}
-                </>
+                <Text selectable={false} style={styles.modConfigHelp}>
+                  The bot runs on the Pokeboy server. Put the bot token in
+                  backend/data/discord.json there, invite the bot as a user
+                  app, then /connect during a battle.
+                </Text>
               )}
               <Text selectable={false} style={styles.settingsFieldLabel}>MAX TIME TILL RANDOM (SECONDS)</Text>
               <TextInput

@@ -25,7 +25,6 @@
       });
     }
     await loadScript(runtime.gbcoreUri);
-    await loadScript(runtime.modCoreUri);
     const apiUrl=path=>runtime.backendUrl+path;
     const W=160,H=144,FRAME_MS=1000/59.7275,MAX_CATCHUP_FRAMES=4,AUDIO_MAX_FRAMES=4096;
     const palette=new Uint8ClampedArray([
@@ -50,15 +49,9 @@
     function notify(type,detail){
       window.ReactNativeWebView?.postMessage(JSON.stringify({type,detail}));
     }
-    // Battle Link discord mode: the mod core hands decision snapshots up
-    // through this bridge; the native host answers with battle-link-decision
-    // messages that receive() feeds back into the core.
-    window.PokeboyBattleLinkHost={
-      request:detail=>notify('battle-link-request',detail),
-      cancel:detail=>notify('battle-link-cancel',detail),
-      resolved:detail=>notify('battle-link-resolved',detail),
-      battleEnd:detail=>notify('battle-link-end',detail)
-    };
+    // Battle Link discord mode talks HTTP to the backend directly (the bot
+    // runs there); battle-link-decision messages remain as a dev-tooling
+    // injection point that receive() feeds into the core.
     function errorDetail(error,stage=bootStage){
       const value=error instanceof Error?error:new Error(String(error));
       const detail={message:value.message,name:value.name||'Error',stack:value.stack||null,stage};
@@ -201,11 +194,12 @@
     async function evictStaleCache(registry){
       let db=null;
       try{
-        const roms=registry.roms||[],mods=registry.mods||[];
+        const roms=registry.roms||[],mods=registry.mods||[],host=registry.host;
         const liveRoms=new Set(roms.map(rom=>rom.id+'@'+rom.version));
         const livePayloads=new Set([
           ...mods.map(mod=>'mod:'+mod.id+'@'+mod.version),
-          ...roms.map(rom=>'symbols:'+rom.id+'@'+rom.version)
+          ...roms.map(rom=>'symbols:'+rom.id+'@'+rom.version),
+          ...(host&&host.id?['host:'+host.id+'@'+(host.version||'0')]:[])
         ]);
         db=await openRomCache();
         await Promise.all([
@@ -635,6 +629,28 @@
       }
       modHandlers.set(handle,handlers);
     }
+    async function loadModCore(registry){
+      // The mod host core ships over the air like a mod payload (cached by
+      // registry version); the bundled copy is only the first-boot / offline
+      // fallback. Indirect eval avoids blob-URL quirks on file:// pages;
+      // sourceURL keeps stack traces readable.
+      const host=registry&&registry.host;
+      if(host&&host.id){
+        try{
+          const bytes=await localFirstPayload(
+            'host:'+host.id+'@'+(host.version||'0'),
+            '/api/mods/host/'+encodeURIComponent(host.id),
+            'HOST CORE NOT INSTALLED'
+          );
+          (0,eval)(new TextDecoder().decode(bytes)+'\n//# sourceURL=pokeboy-mod-core.js');
+          if(window.PokeboyModCore)return;
+          notify('cache-error','HOST CORE DID NOT INSTALL');
+        }catch(error){
+          notify('cache-error','HOST CORE FALLBACK: '+String(error&&error.message||error));
+        }
+      }
+      await loadScript(runtime.modCoreUri);
+    }
     async function reconcileMods(){
       if(!gb)return;
       modsBusy++; pauseEmulation();
@@ -710,6 +726,15 @@
       const registry=await localFirstJson('registry','/api/registry');
       void evictStaleCache(registry);
       modVersions=new Map((registry.mods||[]).map(mod=>[mod.id,mod.version]));
+      bootStage='host-core-load';
+      await loadModCore(registry);
+      // A fresh WebView means any battle the backend bot was tracking is gone.
+      if(runtime.battleLinkMode==='discord'){
+        fetch(apiUrl('/battle-link/event'),{
+          method:'POST',headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'emulator-reset'})
+        }).catch(()=>{});
+      }
       bootStage='rom-load';
       const bytes=await cachedRom(cartridgeId,cartridgeVersion);
       const ptr=Module._malloc(bytes.length);

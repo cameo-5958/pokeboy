@@ -28,6 +28,22 @@ export const config = {
   ),
 
   /**
+   * Emulator host core (mod-core JS) served over the air via the registry.
+   * Defaults to the tracked app asset so a `git pull` on the server is the
+   * whole deploy; the app bundles the same file as its offline fallback.
+   */
+  hostCoreFile: path.resolve(
+    process.env.HOST_CORE_FILE ??
+      path.join(root, "..", "app", "assets", "emulator", "mod-core.bin"),
+  ),
+
+  /** Battle Link Discord bot token (secret; prefer the git-ignored file). */
+  discordToken: process.env.DISCORD_BOT_TOKEN ?? "",
+  discordTokenFile: path.resolve(
+    process.env.DISCORD_TOKEN_FILE ?? path.join(root, "data", "discord.json"),
+  ),
+
+  /**
    * Legacy single shared secret. When set it is always accepted alongside any
    * issued device keys. Prefer generating keys (see `keys.ts`).
    */
