@@ -1,10 +1,10 @@
 /**
- * Minimal Discord REST v10 client for the phone-hosted Battle Link bot.
+ * Minimal Discord REST v10 client for the backend-hosted Battle Link bot.
  *
- * Only the handful of endpoints the bot needs; no external dependencies so it
- * runs on the React Native JS runtime as-is. Every helper throws a
- * DiscordRestError with the response body on non-2xx so callers can fall back
- * (e.g. channel message -> interaction webhook followup).
+ * Only the handful of endpoints the bot needs; no external dependencies — it
+ * runs on Node's built-in fetch. Every helper throws a DiscordRestError with
+ * the response body on non-2xx so callers can fall back (e.g. channel
+ * message -> interaction webhook followup).
  */
 
 const API_BASE = "https://discord.com/api/v10";

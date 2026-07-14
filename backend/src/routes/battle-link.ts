@@ -1,5 +1,8 @@
 import { Router, type Response } from "express";
 
+import type { BattleSnapshot } from "../discord/battleLink.js";
+import { discordBot, initDiscordBot } from "../discord/manager.js";
+
 const LONG_POLL_MS = 28_000;
 const PENDING_TTL_MS = 2 * 60_000;
 const DECISION_TTL_MS = 60_000;
@@ -33,6 +36,44 @@ const requests = new Map<string, DecisionRequest>();
 
 function requestKey(state: BattleState): string {
   return `${state.battleId}:${state.turn}:${state.attempt}`;
+}
+
+/** Settle a request: remember the decision and answer every open long-poll. */
+function resolveRequest(request: DecisionRequest, action: number): void {
+  request.decision = action;
+  request.decidedAt = Date.now();
+  for (const waiter of request.waiters) {
+    if (!waiter.headersSent) waiter.json({ action });
+  }
+  request.waiters.clear();
+}
+
+/** True when a decision state carries the full snapshot the widget renders. */
+function isFullSnapshot(state: BattleState): state is BattleState & BattleSnapshot {
+  const trainer = state.trainer as BattleSnapshot["trainer"] | undefined;
+  const opponent = state.opponent as BattleSnapshot["opponent"] | undefined;
+  return Boolean(
+    trainer && Array.isArray(trainer.party) && trainer.active &&
+    opponent && Array.isArray(opponent.party) && opponent.active,
+  );
+}
+
+/**
+ * Wires the Discord bot into this decision pipeline. The bot mirrors pending
+ * requests as an editable widget message; a component click resolves the
+ * request exactly like a console /command. Call once at server start.
+ */
+export function initBattleLinkDiscord(): void {
+  initDiscordBot({
+    sendDecision: (decision) => {
+      const request = requests.get(`${decision.battleId}:${decision.turn}:${decision.attempt}`);
+      if (!request || request.decision !== undefined) return;
+      if (!request.state.legalActions.some((candidate) => candidate.code === decision.action)) return;
+      resolveRequest(request, decision.action);
+    },
+    onEvent: (kind, detail) =>
+      console.log("battle-link discord", kind, detail === undefined ? "" : JSON.stringify(detail)),
+  });
 }
 
 function cleanup(now = Date.now()): void {
@@ -147,6 +188,10 @@ battleLinkRouter.get("/decision", (req, res) => {
   if (!request) {
     request = { key, state, receivedAt: Date.now(), waiters: new Set() };
     requests.set(key, request);
+    // A brand-new pending decision: hand the snapshot to the Discord bot so
+    // it can render (or refresh) the widget. Long-poll re-entries of the same
+    // key don't re-notify — the state within one attempt never changes.
+    if (isFullSnapshot(state)) discordBot()?.handleRequest(state);
   } else {
     request.state = state;
     request.receivedAt = Date.now();
@@ -184,11 +229,41 @@ battleLinkRouter.post("/command", (req, res) => {
     res.status(400).json({ error: "action is not legal for this request" });
     return;
   }
-  request.decision = action;
-  request.decidedAt = Date.now();
-  for (const waiter of request.waiters) {
-    if (!waiter.headersSent) waiter.json({ action });
-  }
-  request.waiters.clear();
+  resolveRequest(request, action);
   res.json({ ok: true, key, action });
+});
+
+// Emulator-side lifecycle events (posted fire-and-forget by the mod core).
+// They keep the Discord widget honest — cancelled turns lose their buttons,
+// resolved turns show what actually happened — and clean up the pending map
+// so the web console never shows a decision the emulator already abandoned.
+battleLinkRouter.post("/event", (req, res) => {
+  cleanup();
+  const type = req.body?.type;
+  const detail = (req.body?.detail && typeof req.body.detail === "object" ? req.body.detail : {}) as {
+    battleId?: unknown; turn?: unknown; attempt?: unknown;
+  };
+  const bot = discordBot();
+  const key = `${String(detail.battleId)}:${String(detail.turn)}:${String(detail.attempt)}`;
+  if (type === "cancel") {
+    bot?.handleCancel(detail);
+    const request = requests.get(key);
+    if (request && request.decision === undefined) {
+      for (const waiter of request.waiters) {
+        if (!waiter.headersSent) waiter.status(204).end();
+      }
+      requests.delete(key);
+    }
+  } else if (type === "resolved") {
+    bot?.handleResolved(detail);
+    requests.delete(key);
+  } else if (type === "battle-end") {
+    bot?.handleBattleEnd(detail);
+  } else if (type === "emulator-reset") {
+    bot?.handleEmulatorReset();
+  } else {
+    res.status(400).json({ error: "unknown event type" });
+    return;
+  }
+  res.json({ ok: true });
 });

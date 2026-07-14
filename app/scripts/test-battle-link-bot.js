@@ -1,9 +1,11 @@
 // Discord Battle Link bot: single-widget delivery, ack-first interactions.
 //
-// Loads src/discord/battleLink.ts (sucrase TS->CJS) with ./rest and ./gateway
-// mocked, then drives the emulator- and Discord-side events the way the
-// telemetry showed them arriving on device: user-install context (channel
-// posts 403), stale interaction replays (callback 404), multi-turn battles.
+// Loads the backend's discord/battleLink.ts (sucrase TS->CJS) with ./rest.js
+// and ./gateway.js mocked, then drives the emulator- and Discord-side events
+// the way the telemetry showed them arriving on device: user-install context
+// (channel posts 403), stale interaction replays (callback 404), multi-turn
+// battles. The bot lives on the backend now; this harness stays here with
+// the other Battle Link test tooling.
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -78,7 +80,10 @@ class DiscordGateway {
 
 // ---- Load battleLink.ts -----------------------------------------------------
 
-const source = fs.readFileSync(path.join(__dirname, "../src/discord/battleLink.ts"), "utf8");
+const source = fs.readFileSync(
+  path.join(__dirname, "../../backend/src/discord/battleLink.ts"),
+  "utf8",
+);
 const { code } = transform(source, { transforms: ["typescript", "imports"] });
 const moduleExports = {};
 const context = {
@@ -89,8 +94,8 @@ const context = {
   exports: moduleExports,
   module: { exports: moduleExports },
   require: (name) => {
-    if (name === "./rest") return restMock;
-    if (name === "./gateway") return { DiscordGateway };
+    if (name === "./rest.js") return restMock;
+    if (name === "./gateway.js") return { DiscordGateway };
     throw new Error(`unexpected import: ${name}`);
   },
 };
@@ -188,11 +193,13 @@ async function run() {
   assert.equal(callsOf("createChannelMessage").length, 0, "no extra message for the click");
   assert.equal(callsOf("createFollowup").length, 0);
 
-  // The emulator confirms the discord-sourced resolution: no second edit.
+  // The emulator consumes the click through the decision long-poll and
+  // reports it back as source "remote": the CHOSEN edit stands, no second
+  // edit happens.
   calls.length = 0;
-  bot.handleResolved({ battleId: "battle-1", turn: 0, attempt: 0, code: 0, source: "discord" });
+  bot.handleResolved({ battleId: "battle-1", turn: 0, attempt: 0, code: 0, source: "remote" });
   await drain();
-  assert.equal(calls.length, 0, "discord-sourced resolution does not edit again");
+  assert.equal(calls.length, 0, "a clicked-and-consumed resolution does not edit again");
 
   // Next turn: the SAME widget is edited in place — no new message.
   calls.length = 0;
@@ -219,7 +226,7 @@ async function run() {
   );
   const failedAckEdit = callsOf("editWebhookMessage").at(-1)[1];
   assert.equal(failedAckEdit.interactionToken, "t2", "dead token is not chained");
-  bot.handleResolved({ battleId: "battle-1", turn: 1, attempt: 0, code: 0, source: "discord" });
+  bot.handleResolved({ battleId: "battle-1", turn: 1, attempt: 0, code: 0, source: "remote" });
   await drain();
 
   // Widget edit fails (token aged out server-side): fall back to creating a
