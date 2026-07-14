@@ -30,7 +30,9 @@ class ModelAgent:
         self.temperature = temperature
         ckpt = torch.load(checkpoint, map_location=self.device, weights_only=True)
         self.tok = Tokenizer(seq_len=ckpt.get("seq_len"), hist_k=ckpt.get("hist_k", 0))
-        self.model = FieldValueEncoder(TIERS[ckpt["tier"]], self.tok).to(self.device)
+        self.model = FieldValueEncoder(
+            TIERS[ckpt["tier"]], self.tok, value_bins=ckpt.get("value_bins", 0)
+        ).to(self.device)
         self.model.load_state_dict(ckpt["model"])
         self.model.eval()
         self._gen = torch.Generator().manual_seed(seed)

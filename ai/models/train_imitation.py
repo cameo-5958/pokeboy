@@ -1,9 +1,12 @@
-"""Imitation-learning trainer (Phase 1 bootstrap; shakedown-capable).
+"""Imitation-learning trainer (Phase 1 bootstrap + Phase 2 AWR-filtered BC).
 
   uv run python -m models.train_imitation --tier snack --steps 300 --limit-rows 50000
 
 Streams schema_v1 parquet from datasets/processed/**, tokenizes, CE on
-actions. Saves checkpoints + metrics to checkpoints/<tier>/ (gitignored).
+actions; with --value-bins a two-hot value head trains on battle outcomes
+(SPECS §4.2) and --awr weights the action CE by exp(A/beta) with
+A = 2*(won - V(s)) on the +1/-1 return scale (SPECS §5.2). Saves
+checkpoints + metrics to checkpoints/<tier>/ (gitignored).
 """
 
 from __future__ import annotations
@@ -24,6 +27,32 @@ from models.tiers import TIERS
 from models.tokenizer import Tokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
+
+AWR_WEIGHT_CAP = 20.0
+
+
+def two_hot(p: torch.Tensor, n_bins: int) -> torch.Tensor:
+    """(B,) win probs in [0,1] -> (B, n_bins) two-hot targets over evenly
+    spaced bin centers; mass splits between the two nearest centers so the
+    distribution's expectation equals p exactly."""
+    scaled = p.clamp(0.0, 1.0) * (n_bins - 1)
+    lo = scaled.floor().long().clamp(max=n_bins - 2)
+    frac = (scaled - lo.float()).unsqueeze(-1)
+    t = torch.zeros(p.shape[0], n_bins, device=p.device)
+    t.scatter_(1, lo.unsqueeze(-1), 1.0 - frac)
+    t.scatter_add_(1, (lo + 1).unsqueeze(-1), frac)
+    return t
+
+
+def value_estimate(value_logits: torch.Tensor) -> torch.Tensor:
+    """(B, n_bins) logits -> (B,) expected win prob."""
+    centers = torch.linspace(0.0, 1.0, value_logits.shape[-1], device=value_logits.device)
+    return value_logits.softmax(-1) @ centers
+
+
+def awr_weights(won: torch.Tensor, v: torch.Tensor, beta: float) -> torch.Tensor:
+    """exp(A/beta) on the +1/-1 return scale: A = 2*(won - V(s)) in [-2, 2]."""
+    return torch.exp(2.0 * (won - v) / beta).clamp(max=AWR_WEIGHT_CAP)
 
 
 def load_rows(limit: int, sources: list[str], seed: int = 0) -> list[dict]:
@@ -57,7 +86,7 @@ def make_batches(
     batch_size = min(batch_size, len(rows))
     for i in range(0, len(rows) - batch_size + 1, batch_size):
         chunk = rows[i : i + batch_size]
-        encs, labels = [], []
+        encs, labels, wons = [], [], []
         for r in chunk:
             state = json.loads(r["state_json"])
             tail = state.get("history_tail")
@@ -67,6 +96,7 @@ def make_batches(
                 state["history_tail"] = tail[: augment_rng.randrange(len(tail) + 1)]
             encs.append(tok.encode(state))
             labels.append(min(r["action"], 9))
+            wons.append(1.0 if r.get("won") else 0.0)
         yield (
             dict(
                 field_ids=torch.tensor(
@@ -89,6 +119,7 @@ def make_batches(
             None
             if weights is None
             else torch.tensor(weights[i : i + batch_size], dtype=torch.float32, device=device),
+            torch.tensor(wons, dtype=torch.float32, device=device),
         )
 
 
@@ -128,7 +159,7 @@ def periodic_eval(
     model.eval()
     correct = total = 0
     with torch.no_grad():
-        for batch, labels, _ in make_batches(hold_rows[:max_top1_rows], tok, 256, device):
+        for batch, labels, _, _ in make_batches(hold_rows[:max_top1_rows], tok, 256, device):
             correct += (model(**batch).argmax(-1) == labels).sum().item()
             total += len(labels)
     metrics = {"holdout_top1": round(correct / max(1, total), 4)}
@@ -168,6 +199,14 @@ def main() -> None:
                    help="randomly truncate history tails during training")
     p.add_argument("--eval-every", type=int, default=0, help="steps between periodic evals (0=off)")
     p.add_argument("--eval-battles", type=int, default=50)
+    p.add_argument("--value-bins", type=int, default=0,
+                   help="two-hot value head bins (0=no value head; SPECS says 32)")
+    p.add_argument("--value-loss-weight", type=float, default=0.5)
+    p.add_argument("--awr", action="store_true",
+                   help="weight action CE by exp(2*(won - V)/beta) from the detached value head")
+    p.add_argument("--awr-beta", type=float, default=3.0)
+    p.add_argument("--awr-warmup", type=int, default=1000,
+                   help="steps of plain CE before AWR weights kick in (value head needs to settle)")
     p.add_argument("--bf16", action="store_true", help="autocast forward/backward to bfloat16")
     p.add_argument("--ckpt-root", default=str(ROOT / "checkpoints"))
     args = p.parse_args()
@@ -177,11 +216,17 @@ def main() -> None:
         p.error("--holdout must be in (0, 1)")
     if args.eval_every < 0 or args.eval_battles < 0 or args.hist_k < 0:
         p.error("--eval-every, --eval-battles and --hist-k must be >= 0")
+    if args.awr and not args.value_bins:
+        p.error("--awr needs a value head; pass --value-bins 32")
+    if args.value_bins < 0 or args.value_bins == 1:
+        p.error("--value-bins must be 0 or >= 2")
+    if args.awr_beta <= 0 or args.awr_warmup < 0:
+        p.error("--awr-beta must be > 0 and --awr-warmup >= 0")
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tok = Tokenizer(hist_k=args.hist_k)
-    model = FieldValueEncoder(TIERS[args.tier], tok).to(device)
+    model = FieldValueEncoder(TIERS[args.tier], tok, value_bins=args.value_bins).to(device)
     print(json.dumps({"tier": args.tier, "params": model.num_params(), "device": device}))
 
     rows = load_rows(args.limit_rows, args.sources.split(","), seed=args.seed)
@@ -212,7 +257,13 @@ def main() -> None:
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.01)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.steps, eta_min=args.lr / 10)
 
-    run_id = f"{args.tier}-{args.weighting}-h{args.hist_k}-r{args.limit_rows}-s{args.steps}-seed{args.seed}"
+    phase2 = (f"-v{args.value_bins}" if args.value_bins else "") + (
+        f"-awr{args.awr_beta:g}" if args.awr else ""
+    )
+    run_id = (
+        f"{args.tier}-{args.weighting}-h{args.hist_k}{phase2}"
+        f"-r{args.limit_rows}-s{args.steps}-seed{args.seed}"
+    )
     tier_dir = Path(args.ckpt_root) / args.tier
     run_dir = tier_dir / f"{run_id}-{time.strftime('%m%d-%H%M%S')}"
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -227,7 +278,7 @@ def main() -> None:
         tmp = run_dir / ".model.pt.tmp"
         torch.save(
             {"model": model.state_dict(), "tier": args.tier, "steps": step,
-             "hist_k": args.hist_k, "seq_len": tok.seq_len},
+             "hist_k": args.hist_k, "seq_len": tok.seq_len, "value_bins": args.value_bins},
             tmp,
         )
         os.replace(tmp, run_dir / "model.pt")
@@ -251,18 +302,26 @@ def main() -> None:
     step, t0 = 0, time.monotonic()
     model.train()
     while step < args.steps:
-        for batch, labels, w in make_batches(
+        for batch, labels, w, wons in make_batches(
             train, tok, args.batch_size, device, weights,
             augment_rng=random.Random(args.seed) if args.tail_augment else None,
         ):
             opt.zero_grad()
             with autocast:
-                logits = model(**batch)
-                if w is None:
-                    loss = F.cross_entropy(logits, labels)
+                if args.value_bins:
+                    logits, vlogits = model(**batch, return_value=True)
+                    vloss = F.cross_entropy(vlogits.float(), two_hot(wons, args.value_bins))
                 else:
-                    per_row = F.cross_entropy(logits, labels, reduction="none")
-                    loss = (per_row * w).sum() / w.sum().clamp_min(1e-8)
+                    logits, vloss = model(**batch), None
+                per_row = F.cross_entropy(logits, labels, reduction="none")
+                if args.awr and step >= args.awr_warmup:
+                    v = value_estimate(vlogits.detach().float())
+                    per_row = per_row * awr_weights(wons, v, args.awr_beta)
+                if w is not None:
+                    per_row = per_row * w
+                loss = per_row.sum() / (w.sum().clamp_min(1e-8) if w is not None else len(labels))
+                if vloss is not None:
+                    loss = loss + args.value_loss_weight * vloss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
@@ -271,6 +330,8 @@ def main() -> None:
             if step % 25 == 0 or step == 1:
                 line = {"step": step, "loss": round(loss.item(), 4),
                         "lr": sched.get_last_lr()[0], "s": round(time.monotonic() - t0, 1)}
+                if vloss is not None:
+                    line["vloss"] = round(vloss.item(), 4)
                 print(json.dumps(line), flush=True)
                 metrics.write(json.dumps(line) + "\n")
             if args.eval_every and step % args.eval_every == 0 and step < args.steps:
@@ -281,7 +342,7 @@ def main() -> None:
     model.eval()
     correct = total = 0
     with torch.no_grad():
-        for batch, labels, _ in make_batches(hold, tok, args.batch_size, device):
+        for batch, labels, _, _ in make_batches(hold, tok, args.batch_size, device):
             correct += (model(**batch).argmax(-1) == labels).sum().item()
             total += len(labels)
     acc = correct / max(1, total)
