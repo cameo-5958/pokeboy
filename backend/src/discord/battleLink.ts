@@ -1,8 +1,9 @@
 /**
- * Phone-hosted Discord bot for the Battle Link "DISC" decision source.
+ * Backend-hosted Discord bot for the Battle Link "DISC" decision source.
  *
- * Bridges the emulator's decision snapshots (delivered by the native layer
- * from the WebView mod core) to a Discord channel:
+ * Bridges the emulator's decision snapshots (delivered over HTTP by the
+ * WebView mod core via /battle-link/decision and /battle-link/event) to a
+ * Discord channel:
  *
  *  - /connect binds the invoking channel to the battle currently awaiting or
  *    producing decisions.
@@ -21,7 +22,7 @@
  * revealed data is retained for the rest of the battle.
  */
 
-import { DiscordGateway } from "./gateway";
+import { DiscordGateway } from "./gateway.js";
 import {
   createChannelMessage,
   createFollowup,
@@ -30,7 +31,7 @@ import {
   editWebhookMessage,
   interactionCallback,
   registerCommands,
-} from "./rest";
+} from "./rest.js";
 
 // Gen 1 move names by internal id (1-165); id 0 is an empty move slot.
 const MOVE_NAMES = ("POUND/KARATE CHOP/DOUBLESLAP/COMET PUNCH/MEGA PUNCH/PAY DAY/FIRE PUNCH/ICE PUNCH/" +
@@ -230,7 +231,7 @@ export class DiscordBattleLinkBot {
     }
   }
 
-  // ---- Emulator-side events (forwarded by the native layer) ----------------
+  // ---- Emulator-side events (posted by the mod core over HTTP) -------------
 
   handleRequest(snapshot: BattleSnapshot): void {
     if (this.stopped) return;
@@ -266,9 +267,11 @@ export class DiscordBattleLinkBot {
     const poll = this.matchPoll(detail);
     this.pendingPoll = null;
     if (!poll) return;
-    // A Discord-sourced decision already rewrote the widget via the
-    // component click; only fallback resolutions need an edit here.
-    if (detail.source === "discord" && poll.decided) return;
+    // A widget click already rewrote the message as CHOSEN, and the emulator
+    // then consumes it through the decision long-poll (source "remote").
+    // Only a fallback that overrode the click (deadline race → random) still
+    // needs an edit here.
+    if (poll.decided && !String(detail.source ?? "").startsWith("random")) return;
     const action = poll.snapshot.legalActions.find((candidate) => candidate.code === detail.code);
     const label = action ? actionLabel(action, poll.snapshot) : `ACTION ${String(detail.code)}`;
     this.finalizePoll(poll, `RESOLVED: ${label} (${String(detail.source || "unknown")})`);

@@ -1,10 +1,11 @@
 /**
- * Minimal Discord gateway (v10, JSON encoding) client for React Native.
+ * Minimal Discord gateway (v10, JSON encoding) client for the backend.
  *
- * Runs on the built-in WebSocket. Supports IDENTIFY with zero intents (enough
- * for INTERACTION_CREATE), heartbeating with ACK zombie detection, RESUME
- * after drops, and capped exponential reconnect backoff. Nothing else — the
- * Battle Link bot never needs guild state or message content.
+ * Runs on Node's built-in WebSocket (global since Node 22). Supports IDENTIFY
+ * with zero intents (enough for INTERACTION_CREATE), heartbeating with ACK
+ * zombie detection, RESUME after drops, and capped exponential reconnect
+ * backoff. Nothing else — the Battle Link bot never needs guild state or
+ * message content.
  */
 
 const GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json";
@@ -48,6 +49,10 @@ export class DiscordGateway {
   ) {}
 
   start(): void {
+    if (typeof WebSocket === "undefined") {
+      try { this.events.onFatal?.("Node >= 22 is required (no global WebSocket)"); } catch {}
+      return;
+    }
     this.stopped = false;
     this.connect(false);
   }
@@ -103,7 +108,7 @@ export class DiscordGateway {
       this.scheduleReconnect(this.sessionId !== null);
     };
     socket.onerror = () => {
-      // onclose follows; nothing to do here (RN fires both).
+      // onclose follows; nothing to do here (undici fires both).
     };
   }
 
@@ -136,7 +141,7 @@ export class DiscordGateway {
           this.send(socket, OP_IDENTIFY, {
             token: this.token,
             intents: 0,
-            properties: { os: "ios", browser: "pokeboy", device: "pokeboy" },
+            properties: { os: "linux", browser: "pokeboy", device: "pokeboy" },
           });
         }
         break;

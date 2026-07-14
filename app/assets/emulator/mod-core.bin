@@ -35,15 +35,27 @@
     return Number.isFinite(value) && value >= 0 ? value : DEFAULT_MAX_TIME_TILL_RANDOM_MS;
   };
   // Decision source: "get" polls the configured HTTPS endpoint from this
-  // page; "discord" hands each snapshot to the native host (which runs the
-  // phone-hosted Discord bot) and waits for a decision message back. The
+  // page; "discord" polls the SAME decision pipeline on the user's own
+  // backend, where a backend-hosted Discord bot (token never leaves the
+  // server) mirrors each pending request as a clickable widget. The
   // deadline/random fallback below stays authoritative in both modes.
   const decisionMode = () =>
     globalThis.PokeboyRuntime?.battleLinkMode === "discord" ? "discord" : "get";
-  // Host bridge (installed by the embed page). Every call is fire-and-forget:
-  // a missing or throwing bridge must never stall the frame-driven decide().
-  const host = (method, detail) => {
-    try { globalThis.PokeboyBattleLinkHost?.[method]?.(detail); } catch (error) {}
+  const backendUrl = () =>
+    String(globalThis.PokeboyRuntime?.backendUrl || "").trim().replace(/\/+$/, "");
+  // Lifecycle events for the backend bot (cancel / resolved / battle-end),
+  // fire-and-forget: a missing or failing backend must never stall the
+  // frame-driven decide().
+  const postEvent = (type, detail) => {
+    const base = backendUrl();
+    if (!base) return;
+    try {
+      fetch(base + "/battle-link/event", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type, detail }),
+      }).catch(() => {});
+    } catch (error) {}
   };
   const ITEM_CODES = Object.freeze({
     fullRestore: [32, 2, 0x10], potion: [33, 3, 0x14],
@@ -246,6 +258,7 @@
       snapshot: {
         protocol: 1, battleId: battleId || (battleId = newId()), turn, attempt, phase,
         timeoutMs: maxTimeTillRandomMs(), rom: "pokemon-red-us", mod: "battle-link@1.3.0",
+        core: "mod-core@1.0.0",
         trainer: { class: memory.read8(A.trainerClass), party: trainerParty, active: trainerActive },
         opponent: { party: opponentParty, active: opponentActive },
         battle: {
@@ -279,25 +292,19 @@
   async function requestDecision(state) {
     const timeoutMs = state.snapshot.timeoutMs;
     const deadline = Date.now() + timeoutMs;
-    if (decisionMode() === "discord") {
-      host("request", state.snapshot);
-      while (!state.cancelled && !state.result && Date.now() < deadline) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, Math.min(250, Math.max(1, deadline - Date.now()))));
-      }
-      if (!state.cancelled && !state.result) {
-        state.result = randomAction(state.actions);
-        state.resultSource = "random-deadline";
-        modEvent("resolved", { code: state.result.code, source: "random-deadline" });
-      }
-      return;
-    }
-    const endpoint = String(globalThis.PokeboyRuntime?.battleLinkEndpoint || "").trim();
+    // Discord mode long-polls the same decision endpoint as get mode, just on
+    // the user's own backend (which mirrors the request to the Discord bot).
+    const discord = decisionMode() === "discord";
+    const endpoint = discord
+      ? (backendUrl() && backendUrl() + "/battle-link/decision")
+      : String(globalThis.PokeboyRuntime?.battleLinkEndpoint || "").trim();
     let delay = 250;
     const timeout = setTimeout(() => state.controller.abort("deadline"), timeoutMs);
     try {
-      if (!/^https:\/\//i.test(endpoint)) {
-        modEvent("config-error", { endpoint });
+      // The backend may legitimately be plain http on the LAN/tailnet; a
+      // third-party get endpoint must be https.
+      if (!(discord ? /^https?:\/\//i : /^https:\/\//i).test(endpoint || "")) {
+        modEvent("config-error", { endpoint, mode: discord ? "discord" : "get" });
         throw new Error("Battle Link endpoint is not configured");
       }
       while (!state.cancelled && Date.now() < deadline) {
@@ -365,7 +372,7 @@
     pending.controller.abort(reason);
     if (decisionMode() === "discord") {
       const { battleId: id, turn: t, attempt: n } = pending.snapshot;
-      host("cancel", { battleId: id, turn: t, attempt: n, reason });
+      postEvent("cancel", { battleId: id, turn: t, attempt: n, reason });
     }
   }
 
@@ -381,7 +388,7 @@
   function endWatchedBattle(reason) {
     const id = battleWatchId;
     stopBattleWatch();
-    host("battleEnd", { battleId: id, reason });
+    postEvent("battle-end", { battleId: id, reason });
   }
   function startBattleWatch(memory) {
     if (battleWatch) return;
@@ -482,7 +489,7 @@
     const source = pending.resultSource || "unknown";
     if (decisionMode() === "discord") {
       const { battleId: id, turn: t, attempt: n } = pending.snapshot;
-      host("resolved", {
+      postEvent("resolved", {
         battleId: id, turn: t, attempt: n,
         code: action.code, source,
       });
