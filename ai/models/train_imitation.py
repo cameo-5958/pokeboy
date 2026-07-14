@@ -199,6 +199,8 @@ def main() -> None:
                    help="randomly truncate history tails during training")
     p.add_argument("--eval-every", type=int, default=0, help="steps between periodic evals (0=off)")
     p.add_argument("--eval-battles", type=int, default=50)
+    p.add_argument("--dmg-feats", action="store_true",
+                   help="decision-relevant move features (dmg_frac/kills/acc/wasted)")
     p.add_argument("--value-bins", type=int, default=0,
                    help="two-hot value head bins (0=no value head; SPECS says 32)")
     p.add_argument("--value-loss-weight", type=float, default=0.5)
@@ -225,7 +227,7 @@ def main() -> None:
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    tok = Tokenizer(hist_k=args.hist_k)
+    tok = Tokenizer(hist_k=args.hist_k, dmg_feats=args.dmg_feats)
     model = FieldValueEncoder(TIERS[args.tier], tok, value_bins=args.value_bins).to(device)
     print(json.dumps({"tier": args.tier, "params": model.num_params(), "device": device}))
 
@@ -257,8 +259,10 @@ def main() -> None:
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.01)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.steps, eta_min=args.lr / 10)
 
-    phase2 = (f"-v{args.value_bins}" if args.value_bins else "") + (
-        f"-awr{args.awr_beta:g}" if args.awr else ""
+    phase2 = (
+        ("-dmg" if args.dmg_feats else "")
+        + (f"-v{args.value_bins}" if args.value_bins else "")
+        + (f"-awr{args.awr_beta:g}" if args.awr else "")
     )
     run_id = (
         f"{args.tier}-{args.weighting}-h{args.hist_k}{phase2}"
@@ -278,7 +282,8 @@ def main() -> None:
         tmp = run_dir / ".model.pt.tmp"
         torch.save(
             {"model": model.state_dict(), "tier": args.tier, "steps": step,
-             "hist_k": args.hist_k, "seq_len": tok.seq_len, "value_bins": args.value_bins},
+             "hist_k": args.hist_k, "seq_len": tok.seq_len, "value_bins": args.value_bins,
+             "dmg_feats": args.dmg_feats},
             tmp,
         )
         os.replace(tmp, run_dir / "model.pt")
