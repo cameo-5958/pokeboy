@@ -50,6 +50,7 @@ def make_batches(
     batch_size: int,
     device: str,
     weights: list[float] | None = None,
+    augment_rng: random.Random | None = None,
 ):
     if not rows:
         raise ValueError("empty rows for make_batches")
@@ -59,6 +60,11 @@ def make_batches(
         encs, labels = [], []
         for r in chunk:
             state = json.loads(r["state_json"])
+            tail = state.get("history_tail")
+            if augment_rng is not None and tail and augment_rng.random() < 0.5:
+                # truncate to a random depth so the policy stays calibrated
+                # across tail densities (train/live mismatch, AI ablation)
+                state["history_tail"] = tail[: augment_rng.randrange(len(tail) + 1)]
             encs.append(tok.encode(state))
             labels.append(min(r["action"], 9))
         yield (
@@ -158,6 +164,8 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--weighting", default="none", choices=["none", "elo", "winners", "elo+winners"])
     p.add_argument("--hist-k", type=int, default=0, help="history turns to encode (0=stateless)")
+    p.add_argument("--tail-augment", action="store_true",
+                   help="randomly truncate history tails during training")
     p.add_argument("--eval-every", type=int, default=0, help="steps between periodic evals (0=off)")
     p.add_argument("--eval-battles", type=int, default=50)
     p.add_argument("--bf16", action="store_true", help="autocast forward/backward to bfloat16")
@@ -243,7 +251,10 @@ def main() -> None:
     step, t0 = 0, time.monotonic()
     model.train()
     while step < args.steps:
-        for batch, labels, w in make_batches(train, tok, args.batch_size, device, weights):
+        for batch, labels, w in make_batches(
+            train, tok, args.batch_size, device, weights,
+            augment_rng=random.Random(args.seed) if args.tail_augment else None,
+        ):
             opt.zero_grad()
             with autocast:
                 logits = model(**batch)

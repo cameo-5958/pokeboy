@@ -81,20 +81,53 @@ def test_history_tail_records_damage_and_faints():
     assert kos, "fixture battle has faints; history recorded none"
 
 
-def test_metamon_rows_get_prev_move_tail():
-    import lz4.frame
-
+def _metamon_rows():
     from data.convert_metamon import convert_trajectory
 
     fx = Path(__file__).parent / "fixtures" / "metamon_gen1ou_sample.json.lz4"
     name = "smogtours-gen1ou-000001_1500_a_vs_b_2024_WIN.json.lz4"
-    mrows = convert_trajectory(name, fx.read_bytes(), source="metamon")
+    return convert_trajectory(name, fx.read_bytes(), source="metamon")
+
+
+def test_metamon_tails_are_deep_and_schema_shaped():
+    """Metamon trajectories are sequential — tails must accumulate up to 20
+    turns with the same entry schema the showdown converter emits."""
+    mrows = _metamon_rows()
     tails = [json.loads(r["state_json"])["history_tail"] for r in mrows]
-    assert all(len(t) <= 1 for t in tails)
-    nonempty = [t for t in tails if t]
-    assert nonempty, "no prev-move history extracted from metamon states"
-    for t in nonempty:
+    assert max(len(t) for t in tails) > 5, "tails never accumulate"
+    for t in tails:
+        assert len(t) <= 20
+        assert [e["o"] for e in t] == [-(i + 1) for i in range(len(t))]
+        for e in t:
+            assert set(e) >= {"o", "my", "op", "dm", "do", "ev"}
+            for a in (e["my"], e["op"]):
+                assert a is None or a == "P" or a[:2] in ("M:", "S:")
+
+
+def test_metamon_tail_matches_own_previous_action():
+    """The o=-1 'my' entry must equal the previous row's ground-truth action."""
+    mrows = _metamon_rows()
+    checked = 0
+    for prev, r in zip(mrows, mrows[1:]):
+        if r["turn"] != prev["turn"] + 1:
+            continue
+        t = json.loads(r["state_json"])["history_tail"]
+        if not t:
+            continue
         e = t[0]
-        assert e["o"] == -1
-        assert e["my"] is None or e["my"].startswith("M:")
-        assert e["dm"] is None and e["do"] is None and e["ev"] == []
+        expected = ("M:" if prev["action"] <= 3 else "S:") + prev["action_detail"]
+        assert e["my"] == expected, (r["turn"], e["my"], expected)
+        checked += 1
+    assert checked >= 10, f"only {checked} checks"
+
+
+def test_metamon_tails_carry_damage_and_events():
+    mrows = _metamon_rows()
+    entries = [e for r in mrows for e in json.loads(r["state_json"])["history_tail"]]
+    assert any((e["dm"] or 0) > 0 for e in entries), "no damage-to-me ever recorded"
+    assert any((e["do"] or 0) > 0 for e in entries), "no damage-to-opp ever recorded"
+    assert any(e["dm"] == 8 or e["do"] == 8 for e in entries), "no KO bucket recorded"
+    assert any(e["ev"] for e in entries), "no event flags ever recorded"
+    assert any(e["op"] and e["op"].startswith("S:") for e in entries), (
+        "opponent switches never recorded"
+    )

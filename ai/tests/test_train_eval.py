@@ -40,6 +40,28 @@ def test_row_weights_none_uniform():
     assert row_weights(rows, "none") == [1.0, 1.0]
 
 
+def test_tail_augmentation_varies_history_length():
+    import json as _json
+    import random as _random
+
+    from models.train_imitation import make_batches
+    from tests.test_tokenizer import FIXTURE_STATE
+
+    tok = Tokenizer(hist_k=20)
+    s = _json.loads(_json.dumps(FIXTURE_STATE))
+    s["history_tail"] = [
+        {"o": -(i + 1), "my": "M:Body Slam", "op": None, "dm": 0, "do": 0, "ev": []}
+        for i in range(20)
+    ]
+    rows = [{"state_json": _json.dumps(s), "action": 0} for _ in range(32)]
+    batch, _, _ = next(make_batches(rows, tok, 32, "cpu"))
+    assert len(set(batch["lengths"].tolist())) == 1  # no augment → constant
+
+    batch, _, _ = next(make_batches(rows, tok, 32, "cpu", augment_rng=_random.Random(0)))
+    lengths = batch["lengths"].tolist()
+    assert len(set(lengths)) > 3, f"tail augment did not vary lengths: {lengths}"
+
+
 def test_periodic_eval_returns_metrics():
     torch.manual_seed(0)
     tok = Tokenizer()

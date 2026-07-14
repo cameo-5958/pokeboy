@@ -67,21 +67,97 @@ def _state_json(s: dict[str, Any]) -> dict[str, Any]:
     opp = [opp_active] + [
         {"species": None, "hp_fraction": None, "status": None, "revealed_moves": []}
     ] * unrevealed
-    # metamon states only carry each side's previous move → K=1 tail,
-    # damage/events unknown (None), same entry shape as convert_showdown
-    my_prev = _prev_move(s.get("player_prev_move"))
-    op_prev = _prev_move(s.get("opponent_prev_move"))
-    tail = (
-        [{"o": -1, "my": my_prev, "op": op_prev, "dm": None, "do": None, "ev": []}]
-        if (my_prev or op_prev)
-        else []
-    )
     return {
         "schema_v": 1,
         "request_kind": "force_switch" if s.get("forced_switch") else "turn",
         "my_side": {"active_ix": 0, "pokemon": mine},
         "opp_side": {"active_ix": 0, "pokemon": opp},
-        "history_tail": tail,
+    }
+
+
+HIST_K = 20
+_DMG_KO = 8
+
+
+def _dmg_bucket(frac: float) -> int:
+    if frac <= 0:
+        return 0
+    return min(7, 1 + int(min(frac, 0.6999) * 10))
+
+
+def _eff_events(ev: set, move: str, defender: str | None) -> None:
+    from sim.gen1data import MOVES, SPECIES, TYPE_CHART
+
+    if defender is None or move not in MOVES or defender not in SPECIES:
+        return
+    bp, mtype = MOVES[move][2], MOVES[move][4]
+    if bp <= 0:
+        return
+    t1, t2 = SPECIES[defender][6], SPECIES[defender][7]
+    eff = TYPE_CHART[mtype][t1] * (TYPE_CHART[mtype][t2] if t2 != t1 else 1.0)
+    if eff == 0:
+        ev.add("im")
+    elif eff > 1:
+        ev.add("se")
+    elif eff < 1:
+        ev.add("re")
+
+
+def _my_action(snap: dict, action: int) -> str | None:
+    me = snap["my_side"]["pokemon"]
+    if 0 <= action <= 3:
+        moves = me[0]["moves"]
+        return f"M:{moves[action]}" if action < len(moves) else None
+    if 4 <= action <= 8 and action - 4 < len(me) - 1:
+        return f"S:{me[1 + action - 4]['species']}"
+    return None
+
+
+def _transition(snap: dict, nxt_snap: dict, raw_nxt: dict, action: int) -> dict:
+    """History entry for the step snap → nxt_snap (metamon trajectories are
+    sequential, so damage/faints/switches are hp/species diffs)."""
+    ev: set[str] = set()
+    my = _my_action(snap, action)
+    me0 = {m["species"]: m for m in snap["my_side"]["pokemon"]}
+    me1 = {m["species"]: m for m in nxt_snap["my_side"]["pokemon"]}
+    dm, my_ko = 0.0, False
+    for sp, m in me0.items():
+        after = me1.get(sp)
+        hp0 = m["hp_fraction"] or 0.0
+        hp1 = (after["hp_fraction"] or 0.0) if after else 0.0
+        dm += max(0.0, hp0 - hp1)
+        if hp0 > 0 and (after is None or hp1 <= 0 or after.get("fainted")):
+            my_ko = True
+        if after and not m.get("status") and after.get("status"):
+            ev.add("st")
+
+    opp0 = snap["opp_side"]["pokemon"][0]
+    opp1 = nxt_snap["opp_side"]["pokemon"][0]
+    if opp1["species"] != opp0["species"]:
+        op = f"S:{opp1['species']}"
+    else:
+        op = _prev_move(raw_nxt.get("opponent_prev_move"))
+        if not opp0.get("status") and opp1.get("status"):
+            ev.add("st")
+    do, opp_ko = None, False
+    if opp1["species"] == opp0["species"]:
+        do = _dmg_bucket(max(0.0, (opp0["hp_fraction"] or 0.0) - (opp1["hp_fraction"] or 0.0)))
+    n_opp0 = 1 + len(snap["opp_side"]["pokemon"][1:])
+    n_opp1 = 1 + len(nxt_snap["opp_side"]["pokemon"][1:])
+    if n_opp1 < n_opp0 or (opp1["species"] != opp0["species"] and opp0.get("fainted")):
+        opp_ko = True
+    if my_ko or opp_ko:
+        ev.add("ft")
+    if my and my.startswith("M:"):
+        _eff_events(ev, my[2:], opp0["species"])
+    if op and op.startswith("M:"):
+        _eff_events(ev, op[2:], snap["my_side"]["pokemon"][0]["species"])
+    return {
+        "my": my,
+        "op": op,
+        "dm": _DMG_KO if my_ko else _dmg_bucket(dm),
+        "do": _DMG_KO if opp_ko else do,
+        "ev": sorted(ev),
     }
 
 
@@ -99,11 +175,20 @@ def convert_trajectory(name: str, blob: bytes, source: str) -> list[dict]:
     if not states or actions is None or len(states) != len(actions):
         raise RejectedReplay("states/actions mismatch")
     flags_hash = mechanics_flags_hash()
+    snaps = [_state_json(s) for s in states]
+    trans = [
+        _transition(snaps[j], snaps[j + 1], states[j + 1], actions[j])
+        for j in range(len(states) - 1)
+    ]
     rows = []
     for turn, (state, action) in enumerate(zip(states, actions)):
         if action < 0 or action > 8:
             continue
-        snap = _state_json(state)
+        snap = json.loads(json.dumps(snaps[turn]))  # rows own their snapshots
+        snap["history_tail"] = [
+            {"o": -(k + 1), **trans[j]}
+            for k, j in enumerate(range(turn - 1, max(turn - 1 - HIST_K, -1), -1))
+        ]
         detail = ""
         me = snap["my_side"]["pokemon"]
         if action <= 3:
