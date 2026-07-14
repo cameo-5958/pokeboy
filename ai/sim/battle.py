@@ -286,11 +286,18 @@ class Battle:
 def run_battle(agent1, agent2, team1, team2, seed: int, max_turns: int = 1000) -> BattleRecord:
     b = Battle(team1, team2, seed)
     turns: list[dict[str, Any]] = []
+
+    def decide(agent, player: int, state: State) -> int:
+        # full-info seats (search teacher) see the battle; public seats the state
+        if hasattr(agent, "choose_full"):
+            return agent.choose_full(b, player)
+        return agent.choose(state)
+
     for _ in range(max_turns):
         if b.winner:
             break
         s1, s2 = b.state(1), b.state(2)
-        a1, a2 = agent1.choose(s1), agent2.choose(s2)
+        a1, a2 = decide(agent1, 1, s1), decide(agent2, 2, s2)
         turns.append({"state_p1": s1.to_json(), "state_p2": s2.to_json(), "a1": a1, "a2": a2})
         b.step(a1, a2)
     return BattleRecord(winner=b.winner or "unfinished", turns=turns)
