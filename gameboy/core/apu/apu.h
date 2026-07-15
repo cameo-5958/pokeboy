@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "state/state.h"
 
 // Full DMG APU: 2 pulse channels (sweep on 1), wave, noise; 512 Hz frame
 // sequencer; float stereo output resampled to 44100 Hz into a ring buffer.
@@ -16,6 +17,11 @@ struct APU {
     // (emulation is unaffected). Lets a frontend replace the game's music
     // while passing through channels currently carrying sound effects.
     void    set_out_mask(uint8_t m) { out_mask = m & 0x0F; }
+
+    // Channel/frame-sequencer state only. The output ring buffer is transient
+    // host-facing audio, not machine state: it is excluded from the stream and
+    // flushed on load so a restored state cannot replay pre-load samples.
+    void    serialize(StateIO& s);
 
 private:
     struct Pulse {
@@ -35,6 +41,7 @@ private:
         void step_sweep(bool& ch_enabled);
         void clock(int t);
         int  output() const;
+        void serialize(StateIO& s);
         bool len_enable = false;
     };
     struct Wave {
@@ -46,6 +53,7 @@ private:
         void trigger();
         void clock(int t);
         int  output() const;
+        void serialize(StateIO& s);
     };
     struct Noise {
         uint8_t len_reg = 0, env = 0, poly = 0;
@@ -56,6 +64,7 @@ private:
         void step_env();
         void clock(int t);
         int  output() const;
+        void serialize(StateIO& s);
     };
 
     Pulse ch1, ch2;

@@ -1,11 +1,13 @@
 #include "gb_api.h"
 #include "core.h"
 #include <cstring>
+#include <vector>
 
 struct gb_handle {
     GameBoy gb;
     gb_mod_host_callback mod_callback = nullptr;
     void* mod_user = nullptr;
+    std::vector<uint8_t> state_buf;   // backs the pointer gb_save_state returns
 };
 
 static_assert(static_cast<int>(gbmod::Status::not_found) == GB_MOD_NOT_FOUND,
@@ -67,6 +69,16 @@ const uint8_t* gb_save_ram(const gb_handle* h, size_t* len) {
 
 int gb_load_save_ram(gb_handle* h, const uint8_t* data, size_t len) {
     return h->gb.load_save_ram(data, len) ? 1 : 0;
+}
+
+const uint8_t* gb_save_state(gb_handle* h, size_t* len) {
+    if (!h->gb.save_state(h->state_buf)) { if (len) *len = 0; return nullptr; }
+    if (len) *len = h->state_buf.size();
+    return h->state_buf.data();
+}
+
+int gb_load_state(gb_handle* h, const uint8_t* data, size_t len) {
+    return h->gb.load_state(data, len) ? 1 : 0;
 }
 
 void gb_rom_title(const gb_handle* h, char out[17]) {

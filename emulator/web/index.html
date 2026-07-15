@@ -261,14 +261,15 @@
     }
     #controls{
       grid-template-columns:1fr 1fr;
-      grid-template-rows:auto auto auto auto;
-      grid-template-areas:"vol vol" "spd spd" "dpad face" "system system";
+      grid-template-rows:auto auto auto auto auto;
+      grid-template-areas:"vol vol" "spd spd" "sta sta" "dpad face" "system system";
       align-items:center;
       padding:6px 10px 2px;
       gap:6px;
     }
     #volume{ grid-area:vol; justify-self:center; width:min(320px, 82%); margin-bottom:2px; }
-    #speed{ grid-area:spd; justify-self:center; width:min(320px, 82%); margin-bottom:4px; }
+    #speed{ grid-area:spd; justify-self:center; width:min(320px, 82%); margin-bottom:2px; }
+    #state{ grid-area:sta; justify-self:center; width:min(320px, 82%); margin-bottom:4px; }
     .dpad{ grid-area:dpad; justify-self:center; }
     .face-cluster{
       grid-area:face; justify-self:center;
@@ -296,6 +297,7 @@
     #controls{ display:contents; }
     #volume{ grid-area:controls2; align-self:start; justify-self:center; width:82%; max-width:250px; margin-top:12px; }
     #speed{ grid-area:controls2; align-self:start; justify-self:center; width:82%; max-width:250px; margin-top:52px; }
+    #state{ grid-area:controls2; align-self:start; justify-self:center; width:82%; max-width:250px; margin-top:92px; }
     .dpad{ grid-area:controls; align-self:center; justify-self:center; }
     .face-cluster{
       grid-area:controls2; align-self:center; justify-self:center;
@@ -311,9 +313,37 @@
   }
 
   /* ---------- volume ---------- */
-  #volume, #speed{
+  #volume, #speed, #state{
     display:flex; align-items:center; gap:10px;
   }
+
+  /* ---------- save states ---------- */
+  #slots{ display:flex; gap:6px; flex:1; }
+  .slot-btn, .state-act{
+    appearance:none; border:none; outline:none;
+    font-family:var(--font-pixel); font-size:6px; letter-spacing:.06em;
+    color:var(--ink-dim);
+    background:linear-gradient(180deg,#a8a498,#8f8b7e);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.35), 0 1px 2px rgba(0,0,0,.4);
+    border-radius:3px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .slot-btn{ width:22px; height:20px; flex:none; position:relative; }
+  /* an occupied slot carries an amber pip, so the page shows at a glance which
+     slots hold a state without opening anything */
+  .slot-btn.filled::after{
+    content:""; position:absolute; top:2px; right:2px;
+    width:4px; height:4px; border-radius:50%;
+    background:var(--led-amber); box-shadow:0 0 3px var(--led-amber);
+  }
+  .slot-btn[aria-pressed="true"]{
+    background:linear-gradient(180deg,#6f6b60,#55523f);
+    color:#e8e4d8;
+    box-shadow:inset 0 2px 4px rgba(0,0,0,.6);
+  }
+  .state-act{ height:20px; padding:0 8px; flex:none; }
+  .state-act:active{ box-shadow:inset 0 2px 4px rgba(0,0,0,.65); }
+  .state-act:disabled{ opacity:.4; }
   #speedVal{ min-width:26px; text-align:right; }
   .vol-label{
     font-family:var(--font-pixel); font-size:6px; letter-spacing:.08em;
@@ -515,6 +545,12 @@
       <span class="vol-label">SPEED</span>
       <input id="speedSlider" type="range" min="0" max="4" step="1" value="1" aria-label="speed">
       <span class="vol-label" id="speedVal">x1</span>
+    </div>
+    <div id="state">
+      <span class="vol-label">STATE</span>
+      <div id="slots" role="group" aria-label="save state slot"></div>
+      <button class="state-act" id="btnSaveState" disabled>SAVE</button>
+      <button class="state-act" id="btnLoadState" disabled>LOAD</button>
     </div>
     <div class="dpad" id="dpad">
       <div class="dpad-base"></div>
@@ -754,7 +790,14 @@
     "x":["btn",BTN.B], "X":["btn",BTN.B],
     "Enter":["btn",BTN.START], "Shift":["btn",BTN.SELECT]
   };
+  /* Desktop state shortcuts: 1-3 pick a slot, F2 saves, F4 loads. Deliberately
+     not F1 (browser help) or F5 (reload). */
   window.addEventListener("keydown", function(e){
+    if(e.key >= "1" && e.key <= String(STATE_SLOTS)){
+      e.preventDefault(); activeSlot = parseInt(e.key, 10); refreshSlots(); return;
+    }
+    if(e.key === "F2"){ e.preventDefault(); saveStateToSlot(activeSlot); return; }
+    if(e.key === "F4"){ e.preventDefault(); loadStateFromSlot(activeSlot); return; }
     var m = KEYMAP[e.key]; if(!m) return;
     e.preventDefault();
     if(m[0]==="dpad") setDpad(m[1], true); else setButton(m[1], true);
@@ -1103,6 +1146,119 @@
     }
   }
 
+  /* ---------------- save states ---------------- */
+  /* Distinct from the battery save above: that is only cartridge RAM, and only
+     for carts that have it. A state is the whole machine, so it works on any
+     cart and restores mid-battle rather than at the last in-game save. */
+  var STATE_SLOTS = 3;
+  var activeSlot = 1;
+  var slotsEl = document.getElementById("slots");
+  var btnSaveState = document.getElementById("btnSaveState");
+  var btnLoadState = document.getElementById("btnLoadState");
+
+  function stateKey(slot){
+    if(!currentCart) return null;
+    return "gbemu.state." + currentCart.file.replace(/\.gb$/i, "") + "." + slot;
+  }
+
+  function slotFilled(slot){
+    var k = stateKey(slot);
+    return !!(k && localStorage.getItem(k));
+  }
+
+  function buildSlots(){
+    slotsEl.innerHTML = "";
+    for(var i = 1; i <= STATE_SLOTS; i++){
+      (function(slot){
+        var b = document.createElement("button");
+        b.className = "slot-btn";
+        b.textContent = String(slot);
+        b.setAttribute("aria-label", "state slot " + slot);
+        b.addEventListener("click", function(){
+          AudioSystem.playClick("pill");
+          activeSlot = slot;
+          refreshSlots();
+        });
+        slotsEl.appendChild(b);
+      })(i);
+    }
+    refreshSlots();
+  }
+
+  function refreshSlots(){
+    var kids = slotsEl.children;
+    for(var i = 0; i < kids.length; i++){
+      var slot = i + 1;
+      kids[i].setAttribute("aria-pressed", slot === activeSlot ? "true" : "false");
+      kids[i].classList.toggle("filled", slotFilled(slot));
+    }
+    // Both actions need a running machine; LOAD additionally needs the slot to
+    // hold something, so a click can never reach the core with nothing to read.
+    var live = !!(gb && currentCart);
+    btnSaveState.disabled = !live;
+    btnLoadState.disabled = !live || !slotFilled(activeSlot);
+  }
+
+  function saveStateToSlot(slot){
+    if(!gb || !currentCart) return;
+    var lenPtr = Module._malloc(4);
+    Module.HEAPU32[lenPtr/4] = 0;
+    var ptr = api.saveState(gb, lenPtr);
+    var len = Module.HEAPU32[lenPtr/4];
+    Module._free(lenPtr);
+    if(!ptr || !len){ flashState("SAVE FAILED"); return; }
+    // Copy before anything else can call gb_save_state: the core hands back a
+    // pointer into a buffer it owns and reuses.
+    var bytes = Module.HEAPU8.slice(ptr, ptr + len);
+    try{
+      localStorage.setItem(stateKey(slot), bytesToBase64(bytes));
+      flashState("SAVED " + slot);
+    }catch(err){
+      // A state is far larger than a battery save, so localStorage quota is a
+      // realistic failure here rather than a theoretical one.
+      console.warn("state save failed", err);
+      flashState("NO SPACE");
+    }
+    refreshSlots();
+  }
+
+  function loadStateFromSlot(slot){
+    if(!gb || !currentCart) return;
+    var b64 = localStorage.getItem(stateKey(slot));
+    if(!b64){ flashState("SLOT " + slot + " EMPTY"); return; }
+    var ok = 0;
+    try{
+      var bytes = base64ToBytes(b64);
+      var ptr = Module._malloc(bytes.length);
+      Module.HEAPU8.set(bytes, ptr);
+      ok = api.loadState(gb, ptr, bytes.length);
+      Module._free(ptr);
+    }catch(err){
+      console.warn("state load failed", err);
+    }
+    // The core refuses a state from different ROM bytes and leaves itself
+    // untouched, so a stale slot is reported rather than silently ignored.
+    flashState(ok ? "LOADED " + slot : "SLOT " + slot + " STALE");
+  }
+
+  var stateFlashTimer = 0;
+  function flashState(text){
+    var label = document.querySelector("#state .vol-label");
+    if(!label) return;
+    label.textContent = text;
+    clearTimeout(stateFlashTimer);
+    stateFlashTimer = setTimeout(function(){ label.textContent = "STATE"; }, 1200);
+  }
+
+  btnSaveState.addEventListener("click", function(){
+    AudioSystem.playClick("pill");
+    saveStateToSlot(activeSlot);
+  });
+  btnLoadState.addEventListener("click", function(){
+    AudioSystem.playClick("pill");
+    loadStateFromSlot(activeSlot);
+  });
+
   function persistSave(){
     if(!hasBattery || !gb) return;
     var lenPtr = Module._malloc(4);
@@ -1200,6 +1356,7 @@
     currentCart = null;
     powerDot.classList.remove("playing");
     buttonState = 0; dpadState = 0; syncInput();
+    refreshSlots();                    // no cart: both state actions go dead
     // powered-off LCD
     ctx2d.fillStyle = "rgb(" + palette[0].join(",") + ")";
     ctx2d.fillRect(0, 0, W, H);
@@ -1224,6 +1381,7 @@
       try{ localStorage.setItem("gbemu.lastCart", cart.file); }catch(err){}
       hasBattery = !!api.hasBattery(gb);
       loadSaveIfPresent();
+      refreshSlots();                  // slot pips reflect the cart just loaded
       started = true;
       // library closes, cart slides INTO the slot, THEN console rises and powers on
       clearTimeout(animTimer);
@@ -1417,12 +1575,15 @@
       api.hasBattery = Module.cwrap("gb_has_battery", "number", ["number"]);
       api.saveRam = Module.cwrap("gb_save_ram", "number", ["number","number"]);
       api.loadSaveRam = Module.cwrap("gb_load_save_ram", "number", ["number","number","number"]);
+      api.saveState = Module.cwrap("gb_save_state", "number", ["number","number"]);
+      api.loadState = Module.cwrap("gb_load_state", "number", ["number","number","number"]);
 
       return refreshCarts().then(function(){
         gb = api.create();
         if(!gb){ throw new Error("gb_create returned null"); }
         fbPtr = api.framebuffer(gb);
         audioPtr = Module._malloc(audioBufBytes);
+        buildSlots();
 
         // boot to an empty console: pulled down, library open, no ROM loaded
         overlay.classList.add("hidden");

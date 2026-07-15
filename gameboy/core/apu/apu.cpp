@@ -255,3 +255,34 @@ void APU::write_reg(uint16_t a, uint8_t v) {
         default: break;
     }
 }
+
+void APU::Pulse::serialize(StateIO& s) {
+    s.v(sweep); s.v(duty_len); s.v(env); s.v(freq);
+    s.v(enabled); s.v(dac); s.v(len); s.v(duty_pos); s.v(timer);
+    s.v(vol); s.v(env_timer);
+    s.v(sweep_on); s.v(sweep_timer); s.v(shadow);
+    s.v(len_enable);
+}
+
+void APU::Wave::serialize(StateIO& s) {
+    s.v(dac_ctl); s.v(len_reg); s.v(out_lvl); s.v(freq);
+    s.v(enabled); s.v(len_enable); s.v(len); s.v(pos); s.v(timer);
+    s.arr(ram);
+}
+
+void APU::Noise::serialize(StateIO& s) {
+    s.v(len_reg); s.v(env); s.v(poly);
+    s.v(enabled); s.v(dac); s.v(len_enable);
+    s.v(len); s.v(timer); s.v(vol); s.v(env_timer); s.v(lfsr);
+}
+
+void APU::serialize(StateIO& s) {
+    ch1.serialize(s); ch2.serialize(s); ch3.serialize(s); ch4.serialize(s);
+    s.v(nr50); s.v(nr51); s.v(power);
+    s.arr(raw);
+    s.v(fs_counter); s.v(fs_step); s.v(sample_counter);
+    // out_mask is a frontend mix preference, not machine state, and is left as
+    // the host set it. Drop any samples queued before the load so the restored
+    // machine does not emit audio from the state it replaced.
+    if (!s.saving()) { wpos = 0; rpos = 0; }
+}

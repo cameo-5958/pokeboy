@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <memory>
+#include <vector>
 
 #include "bus/bus.h"
 #include "cpu/cpu.h"
@@ -29,6 +30,18 @@ public:
     bool  load_save_ram(const uint8_t* data, size_t len);
     bool  has_battery() const { return cart && cart->has_battery && !cart->ram.empty(); }
 
+    // Whole-machine snapshot: CPU, bus memories, PPU, timer, joypad, APU, and
+    // cartridge RAM + MBC banks. Distinct from save_ram, which is only the
+    // battery-backed cartridge RAM a real cartridge would retain.
+    //
+    // The stream carries the ROM's size and hash, so load_state rejects a state
+    // taken against different ROM bytes instead of resuming into corruption.
+    // Mods are NOT streamed: restore onto a handle with the same packages
+    // loaded, because a resumed trap site belongs to the host-linked ROM image.
+    bool  save_state(std::vector<uint8_t>& out);
+    bool  load_state(const uint8_t* data, size_t len);
+    static constexpr uint32_t STATE_VERSION = 1;
+
     Bus    bus;
     CPU    cpu;
     PPU    ppu;
@@ -38,5 +51,7 @@ public:
     gbmod::Runtime mods;
     std::unique_ptr<Cartridge> cart;
 private:
+    void transfer_state(StateIO& s);               // shared save/load body
+    bool check_state_header(StateIO& s) const;
     int frame_budget = 0;
 };
