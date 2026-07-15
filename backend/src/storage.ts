@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { paths } from "./config.js";
+import { config, paths } from "./config.js";
+import { readContent, type ContentRef } from "./content.js";
 
 export type CartridgeRecord = {
   id: string;
@@ -39,16 +40,36 @@ type Registry = {
   host?: HostRecord;
 };
 
+/**
+ * Where each piece of tracked content lives, on disk and in the repo. ROMs are
+ * absent by design — `*.gb` is git-ignored, so `romPath` is their only source.
+ */
+export const refs = {
+  registry: (): ContentRef => ({
+    localPath: paths.registry(),
+    repoPath: "backend/data/registry.json",
+  }),
+  /** `file` is a registry `mods[].file`, e.g. `tradeback-npc.gbmod`. */
+  mod: (file: string): ContentRef => {
+    const name = path.basename(file);
+    return { localPath: path.join(paths.mods(), name), repoPath: `backend/mods/${name}` };
+  },
+  symbols: (cartridgeId: string): ContentRef => {
+    const name = `${path.basename(cartridgeId)}.sym`;
+    return { localPath: path.join(paths.mods(), name), repoPath: `backend/mods/${name}` };
+  },
+  hostCore: (): ContentRef => ({
+    localPath: config.hostCoreFile,
+    repoPath: "app/assets/emulator/mod-core.bin",
+  }),
+};
+
 /** Reads the combined registry catalog. Returns empty lists if none exists. */
 export async function readRegistry(): Promise<Registry> {
-  try {
-    const raw = await fs.readFile(paths.registry(), "utf8");
-    const parsed = JSON.parse(raw) as Partial<Registry>;
-    return { roms: parsed.roms ?? [], mods: parsed.mods ?? [], host: parsed.host };
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return { roms: [], mods: [] };
-    throw e;
-  }
+  const raw = await readContent(refs.registry());
+  if (raw === null) return { roms: [], mods: [] };
+  const parsed = JSON.parse(raw.toString("utf8")) as Partial<Registry>;
+  return { roms: parsed.roms ?? [], mods: parsed.mods ?? [], host: parsed.host };
 }
 
 export async function readCartridges(): Promise<CartridgeRecord[]> {
