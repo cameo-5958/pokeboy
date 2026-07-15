@@ -18,7 +18,13 @@ import random
 import sys
 import time
 
-from sim.agents import HumanCLI, MaxDamageBot, RandomBot
+from sim.agents import (
+    HumanCLI,
+    LessEffectiveMaxDamageBot,
+    MaxDamageBot,
+    RandomBot,
+    UniversalMaxDamageBot,
+)
 from sim.battle import run_battle
 from sim.engine import RESULT_NONE, RawBattle
 from sim.pack import pack_battle
@@ -40,6 +46,10 @@ def make_agent(name: str, seed: int):
         return RandomBot(seed)
     if name == "maxdamage":
         return MaxDamageBot()
+    if name in ("universalmaxdamage", "umd"):
+        return UniversalMaxDamageBot()
+    if name in ("lesseffectivemaxdamage", "lemd"):
+        return LessEffectiveMaxDamageBot()
     if name == "cli":
         return HumanCLI()
     if name == "jsonl":
