@@ -159,7 +159,9 @@ def periodic_eval(
     model.eval()
     correct = total = 0
     with torch.no_grad():
-        for batch, labels, _, _ in make_batches(hold_rows[:max_top1_rows], tok, 256, device):
+        # batch 128: banquet at train-batch 128 peaks 8.5/10 GB — a 256 eval
+        # batch on top of resident optimizer state would risk OOM mid-run
+        for batch, labels, _, _ in make_batches(hold_rows[:max_top1_rows], tok, 128, device):
             correct += (model(**batch).argmax(-1) == labels).sum().item()
             total += len(labels)
     metrics = {"holdout_top1": round(correct / max(1, total), 4)}
