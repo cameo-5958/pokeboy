@@ -24,11 +24,11 @@ core\timer\timer.cpp core\apu\apu.cpp core\cart\cart.cpp adapter\gb_api.cpp
 set CORE=%CORE% core\mod\mod.cpp
 set CFLAGS=/nologo /std:c++17 /O2 /EHsc /W3 /I core /I adapter /Fo:build\
 
-cl %CFLAGS% %CORE% frontend\win32\main_win32.cpp /Fe:build\gbemu.exe ^
+cl %CFLAGS% %CORE% ..\emulator\win32\main_win32.cpp /Fe:build\gbemu.exe ^
    /link /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup user32.lib gdi32.lib winmm.lib comdlg32.lib
 if errorlevel 1 exit /b 1
 
-cl %CFLAGS% %CORE% frontend\headless.cpp /Fe:build\gbemu_headless.exe
+cl %CFLAGS% %CORE% ..\emulator\headless\headless.cpp /Fe:build\gbemu_headless.exe
 if errorlevel 1 exit /b 1
 
 cl %CFLAGS% %CORE% tests\mod_tests.cpp /Fe:build\gbcore_mod_tests.exe
