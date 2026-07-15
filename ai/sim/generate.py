@@ -41,7 +41,11 @@ def _battle_rows(spec: dict[str, Any]) -> list[dict[str, Any]]:
         p2 = MaxDamageBot()
     else:
         p2 = RandomBot(rng.randrange(2**31))
-    rec = run_battle(p1, p2, sample_team(rng), sample_team(rng),
+    if spec.get("teams") == "mixed":
+        from sim.teamsets import mixed_sample_team as pick_team
+    else:
+        pick_team = sample_team
+    rec = run_battle(p1, p2, pick_team(rng), pick_team(rng),
                      seed=rng.randrange(2**63), max_turns=MAX_TURNS)
     if rec.winner not in ("p1", "p2"):
         return []  # stall war or tie: no clean outcome label
@@ -80,14 +84,20 @@ def generate_corpus(
     rolls: int = 2,
     alpha: float = 0.3,
     part_rows: int = 25_000,
+    teams: str = "standard",
 ) -> dict[str, int]:
     from data.trajectory import write_rows
 
+    if teams == "mixed":  # fail fast (in the parent) if the corpus is absent
+        from sim.teamsets import TeamSampler
+
+        TeamSampler()
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
     specs = [
-        {"seed": rng.randrange(2**63), "depth": depth, "rolls": rolls, "alpha": alpha}
+        {"seed": rng.randrange(2**63), "depth": depth, "rolls": rolls,
+         "alpha": alpha, "teams": teams}
         for _ in range(battles)
     ]
     buffer: list[dict[str, Any]] = []

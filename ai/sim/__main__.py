@@ -60,6 +60,10 @@ def cmd_battle(args) -> None:
     rng = random.Random(args.seed)
     tally = {"p1_wins": 0, "p2_wins": 0, "ties": 0, "unfinished": 0, "turns": 0}
     cache: dict[str, object] = {}
+    if getattr(args, "teams", "standard") == "mixed":
+        from sim.teamsets import mixed_sample_team as pick_team
+    else:
+        pick_team = sample_team
 
     def get_agent(name: str, seed: int):
         # model seats keep the loaded checkpoint across battles; only the
@@ -75,7 +79,7 @@ def cmd_battle(args) -> None:
     for i in range(args.battles):
         a1 = get_agent(args.p1, rng.randrange(2**31))
         a2 = get_agent(args.p2, rng.randrange(2**31))
-        t1, t2 = sample_team(rng), sample_team(rng)
+        t1, t2 = pick_team(rng), pick_team(rng)
         rec = run_battle(a1, a2, t1, t2, seed=rng.randrange(2**63))
         key = {"p1": "p1_wins", "p2": "p2_wins", "tie": "ties"}.get(rec.winner, "unfinished")
         tally[key] += 1
@@ -96,6 +100,7 @@ def cmd_generate(args) -> None:
         depth=args.depth,
         rolls=args.rolls,
         alpha=args.alpha,
+        teams=args.teams,
     )
     print(json.dumps(stats))
 
@@ -151,6 +156,7 @@ def main() -> None:
     b.add_argument("--p2", default="random")
     b.add_argument("--seed", type=int, default=0)
     b.add_argument("--battles", type=int, default=1)
+    b.add_argument("--teams", default="standard", choices=["standard", "mixed"])
     b.set_defaults(fn=cmd_battle)
 
     e = sub.add_parser("bench", help="raw engine throughput benchmark")
@@ -166,6 +172,7 @@ def main() -> None:
     g.add_argument("--depth", type=int, default=2)
     g.add_argument("--rolls", type=int, default=2)
     g.add_argument("--alpha", type=float, default=0.3)
+    g.add_argument("--teams", default="mixed", choices=["standard", "mixed"])
     g.set_defaults(fn=cmd_generate)
 
     args = p.parse_args()
