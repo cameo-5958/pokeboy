@@ -55,7 +55,7 @@ void GameBoy::run_frame() {
         int t = cpu.execute_next();
         ppu.tick(t, bus);
         timer.tick(t, bus);
-        apu.tick(t);                               // no-op until M6
+        apu.tick(t);
         frame_budget -= t;
     }
 }

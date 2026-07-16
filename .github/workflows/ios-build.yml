@@ -2,13 +2,12 @@ name: iOS build (unsigned)
 
 # Builds an unsigned .ipa of the Expo app for manual/testing distribution.
 # Signing is intentionally disabled for now.
-#
-# Triggered by hand only ("Run workflow" in the Actions tab, or `gh workflow run
-# ios-build.yml --ref <branch>`). A build is a deliberate action against a
-# chosen ref rather than a side effect of landing app changes.
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
 
 jobs:
   build:
