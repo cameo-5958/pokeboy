@@ -16,11 +16,11 @@ uint8_t Bus::read8(uint16_t a) {
         return offset < CUSTOM_BOOT_ROM_SIZE ? CUSTOM_BOOT_ROM[offset] : 0xFF;
     }
     if (a < 0x8000) return cart->read_rom(a);
-    if (a < 0xA000) return vram[a - 0x8000];       // TODO(M3): return 0xFF in mode 3
+    if (a < 0xA000) return (ppu && ppu->mode == 3) ? 0xFF : vram[a - 0x8000];  // VRAM unreadable in mode 3
     if (a < 0xC000) return cart->read_ram(a);
     if (a < 0xE000) return wram[a - 0xC000];
     if (a < 0xFE00) return wram[a - 0xE000];       // echo
-    if (a < 0xFEA0) return oam[a - 0xFE00];        // TODO(M3): block in modes 2-3
+    if (a < 0xFEA0) return (ppu && ppu->mode >= 2) ? 0xFF : oam[a - 0xFE00];   // OAM unreadable in modes 2-3
     if (a < 0xFF00) return 0xFF;
     if (a < 0xFF80) return read_io(a);
     if (a < 0xFFFF) return hram[a - 0xFF80];
