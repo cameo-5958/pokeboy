@@ -15,7 +15,9 @@ add_library(gbcore
     adapter/gb_api.cpp)
 target_include_directories(gbcore PUBLIC core adapter)
 
-add_executable(gbemu_headless frontend/headless.cpp)
+# Per-device frontends live in the repo-root emulator/<device>/ tree; this
+# project builds the core they all link against.
+add_executable(gbemu_headless ../emulator/headless/headless.cpp)
 target_link_libraries(gbemu_headless PRIVATE gbcore)
 
 include(CTest)
@@ -27,6 +29,14 @@ if(BUILD_TESTING)
     add_executable(gbemu_boot_tests tests/boot_tests.cpp)
     target_link_libraries(gbemu_boot_tests PRIVATE gbcore)
     add_test(NAME custom_boot_rom COMMAND gbemu_boot_tests)
+
+    add_executable(gbcore_state_tests tests/state_tests.cpp)
+    target_link_libraries(gbcore_state_tests PRIVATE gbcore)
+    add_test(NAME gbcore_state_tests COMMAND gbcore_state_tests)
+
+    add_executable(gbcore_hardware_tests tests/hardware_tests.cpp)
+    target_link_libraries(gbcore_hardware_tests PRIVATE gbcore)
+    add_test(NAME gbcore_hardware_tests COMMAND gbcore_hardware_tests)
 
     # Manual integration harness for compiled packages that require a local,
     # uncommitted ROM: mod_package_tests rom.gb symbols.sym package.gbmod
@@ -40,7 +50,7 @@ if(BUILD_TESTING)
 endif()
 
 if(WIN32)
-    add_executable(gbemu WIN32 frontend/win32/main_win32.cpp)
+    add_executable(gbemu WIN32 ../emulator/win32/main_win32.cpp)
     target_link_libraries(gbemu PRIVATE gbcore user32 gdi32 winmm comdlg32)
     set_target_properties(gbemu PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif()

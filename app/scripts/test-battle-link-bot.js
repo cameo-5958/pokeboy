@@ -78,30 +78,41 @@ class DiscordGateway {
   stop() {}
 }
 
-// ---- Load battleLink.ts -----------------------------------------------------
+// ---- Load Battle Link modules ----------------------------------------------
 
-const source = fs.readFileSync(
-  path.join(__dirname, "../../backend/src/discord/battleLink.ts"),
-  "utf8",
-);
-const { code } = transform(source, { transforms: ["typescript", "imports"] });
-const moduleExports = {};
-const context = {
-  Date,
-  Math,
-  Promise,
-  console,
-  exports: moduleExports,
-  module: { exports: moduleExports },
-  require: (name) => {
+function loadTsModule(filename, requireModule) {
+  const source = fs.readFileSync(
+    path.join(path.dirname(module.filename), "../../backend/src/discord", filename),
+    "utf8",
+  );
+  const { code } = transform(source, { transforms: ["typescript", "imports"] });
+  const moduleExports = {};
+  const context = {
+    Date,
+    Math,
+    Promise,
+    console,
+    exports: moduleExports,
+    module: { exports: moduleExports },
+    require: requireModule,
+  };
+  vm.createContext(context);
+  vm.runInContext(code, context, { filename });
+  return context.module.exports;
+}
+
+const presentation = loadTsModule("battleLinkPresentation.ts", (name) => {
+  throw new Error(`unexpected presentation import: ${name}`);
+});
+const { DiscordBattleLinkBot } = loadTsModule(
+  "battleLink.ts",
+  (name) => {
     if (name === "./rest.js") return restMock;
     if (name === "./gateway.js") return { DiscordGateway };
+    if (name === "./battleLinkPresentation.js") return presentation;
     throw new Error(`unexpected import: ${name}`);
   },
-};
-vm.createContext(context);
-vm.runInContext(code, context, { filename: "battleLink.ts" });
-const { DiscordBattleLinkBot } = context.module.exports;
+);
 
 // ---- Fixtures ---------------------------------------------------------------
 

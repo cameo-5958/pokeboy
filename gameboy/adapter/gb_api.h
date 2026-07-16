@@ -77,10 +77,25 @@ void gb_set_input(gb_handle* gb, uint8_t buttons, uint8_t dpad);
 // Returns the number of frames written to `stereo` (interleaved L,R).
 int gb_read_audio(gb_handle* gb, float* stereo, int max_frames);
 
-// Battery-backed cartridge RAM. gb_save_ram returns NULL if the cart has none.
+// Battery-backed cartridge data. MBC3 timer cartridges append a versioned RTC
+// trailer after SRAM; loading legacy SRAM-only data remains supported.
+// gb_save_ram returns NULL if the cart has no battery-backed data.
 int            gb_has_battery(const gb_handle* gb);
 const uint8_t* gb_save_ram(const gb_handle* gb, size_t* len);
 int            gb_load_save_ram(gb_handle* gb, const uint8_t* data, size_t len);
+
+// Whole-machine snapshot (CPU, memories, PPU, timer, joypad, APU, cart RAM +
+// MBC banks) — distinct from gb_save_ram, which is only battery-backed cart
+// data. gb_save_state returns NULL on failure; otherwise the buffer is owned by
+// the handle and stays valid until the next gb_save_state or gb_destroy on it,
+// so copy it out before saving again.
+//
+// gb_load_state returns 1 on success and 0 without modifying the machine if the
+// state is truncated, from another build, or from different ROM bytes. Restore
+// only onto a handle with the same ROM and the same mods loaded: mod packages
+// are not part of the stream.
+const uint8_t* gb_save_state(gb_handle* gb, size_t* len);
+int            gb_load_state(gb_handle* gb, const uint8_t* data, size_t len);
 
 // ROM title from the cartridge header (up to 16 chars + NUL).
 void gb_rom_title(const gb_handle* gb, char out[17]);

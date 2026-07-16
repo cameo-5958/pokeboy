@@ -55,18 +55,93 @@ void GameBoy::run_frame() {
         int t = cpu.execute_next();
         ppu.tick(t, bus);
         timer.tick(t, bus);
-        apu.tick(t);                               // no-op until M6
+        apu.tick(t);
         frame_budget -= t;
     }
 }
 
 const uint8_t* GameBoy::save_ram(size_t* len) const {
     if (!cart || cart->ram.empty()) { *len = 0; return nullptr; }
-    *len = cart->ram.size(); return cart->ram.data();
+    return cart->battery_data(len);
 }
 
 bool GameBoy::load_save_ram(const uint8_t* data, size_t len) {
-    if (!cart || cart->ram.empty() || len > cart->ram.size()) return false;
-    std::copy(data, data + len, cart->ram.begin());
+    return cart && !cart->ram.empty() && cart->load_battery_data(data, len);
+}
+
+// FNV-1a over the ROM image. Identity only — cheap enough to run on every
+// save/load and strong enough to catch "wrong ROM" and "patched ROM", which
+// are the mistakes that produce states that load but then desync.
+static uint32_t rom_fingerprint(const std::vector<uint8_t>& rom) {
+    uint32_t h = 2166136261u;
+    for (uint8_t b : rom) { h ^= b; h *= 16777619u; }
+    return h;
+}
+
+// Visits every subsystem in a fixed order. Save and load share this one body,
+// so the two directions cannot disagree about the layout.
+void GameBoy::transfer_state(StateIO& s) {
+    cpu.serialize(s);
+    bus.serialize(s);
+    ppu.serialize(s);
+    timer.serialize(s);
+    joypad.serialize(s);
+    apu.serialize(s);
+    cart->serialize(s);
+    s.v(frame_budget);
+}
+
+bool GameBoy::save_state(std::vector<uint8_t>& out) {
+    if (!cart) return false;
+    out.clear();
+    StateIO s(&out);
+    uint8_t magic[4] = { 'G', 'B', 'S', 'T' };
+    uint32_t version = STATE_VERSION;
+    uint32_t rom_size = (uint32_t)cart->rom.size();
+    uint32_t rom_hash = rom_fingerprint(cart->rom);
+    s.arr(magic); s.v(version); s.v(rom_size); s.v(rom_hash);
+    transfer_state(s);
+    if (!s.ok()) { out.clear(); return false; }
     return true;
+}
+
+// Reads and validates the stream header. Returns false unless the state was
+// produced by this build against this exact ROM image.
+bool GameBoy::check_state_header(StateIO& s) const {
+    uint8_t magic[4] = {};
+    uint32_t version = 0, rom_size = 0, rom_hash = 0;
+    s.arr(magic); s.v(version); s.v(rom_size); s.v(rom_hash);
+    if (!s.ok()) return false;
+    if (memcmp(magic, "GBST", 4) != 0) return false;
+    if (version != STATE_VERSION) return false;
+    if (rom_size != cart->rom.size()) return false;
+    return rom_hash == rom_fingerprint(cart->rom);
+}
+
+bool GameBoy::load_state(const uint8_t* data, size_t len) {
+    if (!cart || !data) return false;
+
+    // Pass 1 parses the whole stream into a throwaway machine. A truncated or
+    // malformed state must fail before the live machine is touched, otherwise a
+    // bad file leaves a half-overwritten, unplayable emulator. Heap, not stack:
+    // a GameBoy is ~300KB (the APU ring buffer alone is 256KB).
+    {
+        StateIO probe(data, len);
+        if (!check_state_header(probe)) return false;
+        auto scratch = std::unique_ptr<GameBoy>(new GameBoy());
+        scratch->cart = Cartridge::create(cart->rom.data(), cart->rom.size());
+        if (!scratch->cart) return false;
+        scratch->transfer_state(probe);
+        if (!probe.ok()) return false;
+    }
+
+    // Pass 2 replays the identical bytes into the live machine, which cannot
+    // fail now that pass 1 accepted them. Applying in place is what keeps the
+    // wiring intact: no serialize() touches a pointer, so bus/cpu back-pointers
+    // and the mod runtime's cartridge pointer all stay bound to this machine.
+    // (Copying a scratch machine over this one would dangle both.)
+    StateIO s(data, len);
+    check_state_header(s);
+    transfer_state(s);
+    return s.ok();
 }

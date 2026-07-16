@@ -32,82 +32,21 @@ import {
   interactionCallback,
   registerCommands,
 } from "./rest.js";
+import type { BattleSnapshot, BotEvents, SnapshotMon } from "./battleLinkTypes.js";
+import { actionLabel, infoEmbed, pollEmbed, pollMessage } from "./battleLinkPresentation.js";
 
-// Gen 1 move names by internal id (1-165); id 0 is an empty move slot.
-const MOVE_NAMES = ("POUND/KARATE CHOP/DOUBLESLAP/COMET PUNCH/MEGA PUNCH/PAY DAY/FIRE PUNCH/ICE PUNCH/" +
-  "THUNDERPUNCH/SCRATCH/VICEGRIP/GUILLOTINE/RAZOR WIND/SWORDS DANCE/CUT/GUST/WING ATTACK/WHIRLWIND/FLY/" +
-  "BIND/SLAM/VINE WHIP/STOMP/DOUBLE KICK/MEGA KICK/JUMP KICK/ROLLING KICK/SAND-ATTACK/HEADBUTT/" +
-  "HORN ATTACK/FURY ATTACK/HORN DRILL/TACKLE/BODY SLAM/WRAP/TAKE DOWN/THRASH/DOUBLE-EDGE/TAIL WHIP/" +
-  "POISON STING/TWINEEDLE/PIN MISSILE/LEER/BITE/GROWL/ROAR/SING/SUPERSONIC/SONICBOOM/DISABLE/ACID/" +
-  "EMBER/FLAMETHROWER/MIST/WATER GUN/HYDRO PUMP/SURF/ICE BEAM/BLIZZARD/PSYBEAM/BUBBLEBEAM/AURORA BEAM/" +
-  "HYPER BEAM/PECK/DRILL PECK/SUBMISSION/LOW KICK/COUNTER/SEISMIC TOSS/STRENGTH/ABSORB/MEGA DRAIN/" +
-  "LEECH SEED/GROWTH/RAZOR LEAF/SOLARBEAM/POISONPOWDER/STUN SPORE/SLEEP POWDER/PETAL DANCE/STRING SHOT/" +
-  "DRAGON RAGE/FIRE SPIN/THUNDERSHOCK/THUNDERBOLT/THUNDER WAVE/THUNDER/ROCK THROW/EARTHQUAKE/FISSURE/" +
-  "DIG/TOXIC/CONFUSION/PSYCHIC/HYPNOSIS/MEDITATE/AGILITY/QUICK ATTACK/RAGE/TELEPORT/NIGHT SHADE/MIMIC/" +
-  "SCREECH/DOUBLE TEAM/RECOVER/HARDEN/MINIMIZE/SMOKESCREEN/CONFUSE RAY/WITHDRAW/DEFENSE CURL/BARRIER/" +
-  "LIGHT SCREEN/HAZE/REFLECT/FOCUS ENERGY/BIDE/METRONOME/MIRROR MOVE/SELFDESTRUCT/EGG BOMB/LICK/SMOG/" +
-  "SLUDGE/BONE CLUB/FIRE BLAST/WATERFALL/CLAMP/SWIFT/SKULL BASH/SPIKE CANNON/CONSTRICT/AMNESIA/KINESIS/" +
-  "SOFTBOILED/HI JUMP KICK/GLARE/DREAM EATER/POISON GAS/BARRAGE/LEECH LIFE/LOVELY KISS/SKY ATTACK/" +
-  "TRANSFORM/BUBBLE/DIZZY PUNCH/SPORE/FLASH/PSYWAVE/SPLASH/ACID ARMOR/CRABHAMMER/EXPLOSION/FURY SWIPES/" +
-  "BONEMERANG/REST/ROCK SLIDE/HYPER FANG/SHARPEN/CONVERSION/TRI ATTACK/SUPER FANG/SLASH/SUBSTITUTE/" +
-  "STRUGGLE").split("/");
+export type {
+  BattleLinkDecision,
+  BattleSnapshot,
+  BotEvents,
+  LegalAction,
+  SnapshotMon,
+  SnapshotMove,
+} from "./battleLinkTypes.js";
 
-const ITEM_LABELS: Record<string, string> = {
-  fullRestore: "FULL RESTORE", potion: "POTION", superPotion: "SUPER POTION",
-  hyperPotion: "HYPER POTION", fullHeal: "FULL HEAL", guardSpec: "GUARD SPEC.",
-  xAttack: "X ATTACK", xDefend: "X DEFEND", xSpeed: "X SPEED", xSpecial: "X SPECIAL",
-};
-
-const EMBED_COLOR = 0x306850; // Pokeboy shell green
-const EMBED_COLOR_DONE = 0x8b8679;
 // Interaction tokens die after 15 minutes; leave headroom before we stop
 // using one as a message-delivery fallback.
 const INTERACTION_TOKEN_TTL_MS = 14 * 60 * 1000;
-
-export type SnapshotMove = { slot: number; move: number; current: number; ppUps: number };
-export type SnapshotMon = {
-  slot?: number;
-  partySlot?: number;
-  species: number;
-  nickname: string;
-  hp: number;
-  maxHp: number;
-  level: number;
-  status: number;
-  moves: SnapshotMove[];
-};
-export type LegalAction = {
-  code: number;
-  type: "move" | "switch" | "item";
-  slot?: number;
-  move?: number;
-  current?: number;
-  struggle?: boolean;
-  partySlot?: number;
-  item?: number;
-  itemName?: string;
-};
-export type BattleSnapshot = {
-  protocol: number;
-  battleId: string;
-  turn: number;
-  attempt: number;
-  /** "turn" for a whole-turn decision, "faint-switch" for a forced send-out. */
-  phase?: string;
-  timeoutMs: number;
-  trainer: { class: number; party: SnapshotMon[]; active: SnapshotMon };
-  opponent: { party: SnapshotMon[]; active: SnapshotMon };
-  legalActions: LegalAction[];
-};
-
-export type BattleLinkDecision = { battleId: string; turn: number; attempt: number; action: number };
-
-export type BotEvents = {
-  /** Deliver a chosen action back to the emulator. */
-  sendDecision: (decision: BattleLinkDecision) => void;
-  /** Diagnostics (telemetry / console). */
-  onEvent?: (kind: string, detail?: unknown) => void;
-};
 
 type Widget =
   | { kind: "channel"; channelId: string; messageId: string }
@@ -123,51 +62,6 @@ type PendingPoll = {
   snapshot: BattleSnapshot;
   decided: boolean;
 };
-
-function moveName(id: number): string {
-  return MOVE_NAMES[id - 1] || `MOVE #${id}`;
-}
-
-function statusText(status: number): string {
-  if (!status) return "";
-  if (status & 0x40) return "PAR";
-  if (status & 0x20) return "FRZ";
-  if (status & 0x10) return "BRN";
-  if (status & 0x08) return "PSN";
-  if (status & 0x07) return "SLP";
-  return "";
-}
-
-function hpBar(hp: number, maxHp: number): string {
-  const total = 10;
-  const filled = maxHp > 0 ? Math.max(hp > 0 ? 1 : 0, Math.round((hp / maxHp) * total)) : 0;
-  return "▰".repeat(Math.min(total, filled)) + "▱".repeat(Math.max(0, total - filled));
-}
-
-function monLine(mon: SnapshotMon): string {
-  const status = mon.hp === 0 ? "FNT" : statusText(mon.status);
-  return `${mon.nickname || "?"} L${mon.level} ${mon.hp}/${mon.maxHp}${status ? ` [${status}]` : ""}`;
-}
-
-function activeDetail(mon: SnapshotMon): string {
-  const moves = mon.moves
-    .filter((move) => move.move > 0)
-    .map((move) => `• ${moveName(move.move)} — ${move.current} PP`)
-    .join("\n");
-  return `**${monLine(mon)}**\n${hpBar(mon.hp, mon.maxHp)}\n${moves || "• (no known moves)"}`;
-}
-
-function actionLabel(action: LegalAction, snapshot: BattleSnapshot): string {
-  if (action.type === "move") {
-    if (action.struggle) return "STRUGGLE";
-    return `${moveName(action.move || 0)} (${action.current ?? "?"} PP)`;
-  }
-  if (action.type === "switch") {
-    const mon = snapshot.trainer.party.find((candidate) => candidate.slot === action.partySlot);
-    return mon ? `SWITCH: ${monLine(mon)}` : `SWITCH #${action.partySlot}`;
-  }
-  return `USE ${ITEM_LABELS[action.itemName || ""] || action.itemName || "ITEM"}`;
-}
 
 export class DiscordBattleLinkBot {
   private gateway: DiscordGateway | null = null;
@@ -290,7 +184,7 @@ export class DiscordBattleLinkBot {
       this.enqueue(async () => {
         if (shown) {
           await this.editWidget({
-            embeds: [this.pollEmbed(shown.snapshot, "BATTLE ENDED — DISCONNECTED")],
+            embeds: [pollEmbed(shown.snapshot, this.knownOpponent, "BATTLE ENDED — DISCONNECTED")],
             components: [],
           });
         }
@@ -343,7 +237,7 @@ export class DiscordBattleLinkBot {
         await interactionCallback(interaction.id, interaction.token, {
           type: 4, // CHANNEL_MESSAGE_WITH_SOURCE
           data: {
-            embeds: [this.infoEmbed("No active battle. Start a trainer battle, then /connect again.")],
+            embeds: [infoEmbed("No active battle. Start a trainer battle, then /connect again.")],
             flags: 64, // ephemeral
           },
         });
@@ -355,8 +249,8 @@ export class DiscordBattleLinkBot {
       await interactionCallback(interaction.id, interaction.token, {
         type: 4,
         data: showPoll
-          ? this.pollMessage(poll.snapshot)
-          : { embeds: [this.infoEmbed("Connected. Waiting for the next decision…")] },
+          ? pollMessage(poll.snapshot, this.knownOpponent)
+          : { embeds: [infoEmbed("Connected. Waiting for the next decision…")] },
       });
       // Only a delivered response becomes the session widget; a failed
       // callback (stale replay) must not bind us to a dead token.
@@ -369,7 +263,7 @@ export class DiscordBattleLinkBot {
         this.emit("disconnect-ignored");
         await interactionCallback(interaction.id, interaction.token, {
           type: 4,
-          data: { embeds: [this.infoEmbed("Not connected.")], flags: 64 },
+          data: { embeds: [infoEmbed("Not connected.")], flags: 64 },
         });
         return;
       }
@@ -378,7 +272,7 @@ export class DiscordBattleLinkBot {
       this.enqueue(async () => {
         if (shown) {
           await this.editWidget({
-            embeds: [this.pollEmbed(shown.snapshot, "DISCONNECTED")],
+            embeds: [pollEmbed(shown.snapshot, this.knownOpponent, "DISCONNECTED")],
             components: [],
           });
         }
@@ -387,7 +281,7 @@ export class DiscordBattleLinkBot {
       });
       await interactionCallback(interaction.id, interaction.token, {
         type: 4,
-        data: { embeds: [this.infoEmbed("Disconnected from the battle.")], flags: 64 }, // ephemeral
+        data: { embeds: [infoEmbed("Disconnected from the battle.")], flags: 64 }, // ephemeral
       });
       this.emit("disconnected");
     }
@@ -438,7 +332,7 @@ export class DiscordBattleLinkBot {
       }
       if (this.displayed === poll) {
         await this.editWidget({
-          embeds: [this.pollEmbed(poll.snapshot, `CHOSEN: ${actionLabel(action, poll.snapshot)}`)],
+          embeds: [pollEmbed(poll.snapshot, this.knownOpponent, `CHOSEN: ${actionLabel(action, poll.snapshot)}`)],
           components: [],
         });
       }
@@ -466,7 +360,7 @@ export class DiscordBattleLinkBot {
     this.enqueue(async () => {
       // Superseded before it reached the front of the queue.
       if (poll !== this.pendingPoll || poll.decided) return;
-      const payload = this.pollMessage(poll.snapshot);
+      const payload = pollMessage(poll.snapshot, this.knownOpponent);
       if ((await this.editWidget(payload)) || (await this.createWidget(payload))) {
         this.displayed = poll;
       } else {
@@ -480,7 +374,7 @@ export class DiscordBattleLinkBot {
     this.enqueue(async () => {
       if (this.displayed !== poll) return;
       await this.editWidget({
-        embeds: [this.pollEmbed(poll.snapshot, footer)],
+        embeds: [pollEmbed(poll.snapshot, this.knownOpponent, footer)],
         components: [],
       });
     });
@@ -535,88 +429,5 @@ export class DiscordBattleLinkBot {
       }
     }
     return false;
-  }
-
-  // ---- Embed / component building -------------------------------------------
-
-  private infoEmbed(text: string) {
-    return { title: "BATTLE LINK", description: text, color: EMBED_COLOR };
-  }
-
-  private pollEmbed(snapshot: BattleSnapshot, footer?: string) {
-    const trainerParty = snapshot.trainer.party.map(
-      (mon, index) => `${index + 1}. ${monLine(mon)}`,
-    ).join("\n");
-    const opponentParty = snapshot.opponent.party.map((mon, index) => {
-      const known = typeof mon.slot === "number" ? this.knownOpponent.get(mon.slot) : undefined;
-      return `${index + 1}. ${known ? monLine(known) : "???"}`;
-    }).join("\n");
-    const faint = snapshot.phase === "faint-switch";
-    return {
-      title: faint
-        ? `BATTLE LINK — SEND OUT NEXT POKÉMON`
-        : `BATTLE LINK — TURN ${snapshot.turn}${snapshot.attempt ? ` · RETRY ${snapshot.attempt}` : ""}`,
-      color: footer ? EMBED_COLOR_DONE : EMBED_COLOR,
-      description: `${faint ? `${snapshot.trainer.active.nickname || "Your Pokémon"} fainted` : `Trainer class ${snapshot.trainer.class}`} · decide within ${Math.round(snapshot.timeoutMs / 1000)}s`,
-      fields: [
-        { name: "YOUR ACTIVE", value: activeDetail(snapshot.trainer.active), inline: true },
-        { name: "OPPONENT ACTIVE", value: activeDetail(snapshot.opponent.active), inline: true },
-        { name: "YOUR PARTY", value: trainerParty || "—", inline: false },
-        { name: "OPPONENT PARTY (REVEALED)", value: opponentParty || "—", inline: false },
-      ],
-      footer: { text: footer || `battle ${snapshot.battleId.slice(0, 8)}` },
-    };
-  }
-
-  private pollComponents(snapshot: BattleSnapshot) {
-    const key = `${snapshot.battleId}|${snapshot.turn}|${snapshot.attempt}`;
-    const moves = snapshot.legalActions.filter((action) => action.type === "move");
-    const switches = snapshot.legalActions.filter((action) => action.type === "switch");
-    const items = snapshot.legalActions.filter((action) => action.type === "item");
-    const rows: unknown[] = [];
-    if (moves.length) {
-      rows.push({
-        type: 1, // ACTION_ROW
-        components: moves.slice(0, 5).map((action) => ({
-          type: 2, // BUTTON
-          style: 1, // PRIMARY
-          label: actionLabel(action, snapshot).slice(0, 80),
-          custom_id: `bl|${key}|${action.code}`,
-        })),
-      });
-    }
-    if (switches.length) {
-      rows.push({
-        type: 1,
-        components: [{
-          type: 3, // STRING_SELECT
-          custom_id: `bls|${key}`,
-          placeholder: snapshot.phase === "faint-switch" ? "SEND OUT POKÉMON…" : "SWITCH POKÉMON…",
-          options: switches.slice(0, 25).map((action) => ({
-            label: actionLabel(action, snapshot).slice(0, 100),
-            value: String(action.code),
-          })),
-        }],
-      });
-    }
-    if (items.length) {
-      rows.push({
-        type: 1,
-        components: items.slice(0, 5).map((action) => ({
-          type: 2,
-          style: 2, // SECONDARY
-          label: actionLabel(action, snapshot).slice(0, 80),
-          custom_id: `bl|${key}|${action.code}`,
-        })),
-      });
-    }
-    return rows;
-  }
-
-  private pollMessage(snapshot: BattleSnapshot) {
-    return {
-      embeds: [this.pollEmbed(snapshot)],
-      components: this.pollComponents(snapshot),
-    };
   }
 }

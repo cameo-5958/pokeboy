@@ -5,6 +5,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Repo-relative backend root (this file lives in backend/src).
 const root = path.join(__dirname, "..");
 
+/** Fail fast on a typo rather than silently serving the wrong source. */
+function contentSource(): "local" | "github" {
+  const value = process.env.CONTENT_SOURCE ?? "local";
+  if (value !== "local" && value !== "github") {
+    throw new Error(`CONTENT_SOURCE must be "local" or "github" (got "${value}")`);
+  }
+  return value;
+}
+
 /**
  * Backend configuration. Every filesystem location the server touches is
  * declared here (overridable by env var) so nothing hard-codes a path.
@@ -36,6 +45,40 @@ export const config = {
     process.env.HOST_CORE_FILE ??
       path.join(root, "..", "app", "assets", "emulator", "mod-core.bin"),
   ),
+
+  /**
+   * Where catalog content — the registry, `.sym` symbols, `.gbmod` packages and
+   * the host core — is read from. See `content.ts`.
+   * - `local` (default): read the paths above straight off disk.
+   * - `github`: fetch the tracked copies from `contentBaseUrl`, TTL-cached,
+   *   falling back to the local path whenever the fetch fails.
+   * ROM binaries are never redistributable, are not in git, and so always come
+   * from `romsDir` regardless of this setting.
+   */
+  contentSource: contentSource(),
+
+  /**
+   * Raw base URL for `contentSource: "github"`, with repo-relative paths
+   * appended. Consulted only in `github` mode. NOTE: `cameo-5958/pokeboy` is
+   * currently private, and raw.githubusercontent 404s every path on a private
+   * repo unless `githubToken` is set — which is why the default is `local`.
+   */
+  contentBaseUrl: (
+    process.env.CONTENT_BASE_URL ??
+      "https://raw.githubusercontent.com/cameo-5958/pokeboy/main"
+  ).replace(/\/+$/, ""),
+
+  /** How long fetched content is cached in memory (`github` mode only). */
+  contentTtlMs: Number(process.env.CONTENT_TTL_MS ?? 60_000),
+  /** Per-request timeout for content fetches, so a hang cannot stall a route. */
+  contentTimeoutMs: Number(process.env.CONTENT_TIMEOUT_MS ?? 5_000),
+
+  /**
+   * Optional PAT for fetching content from a private repo. Environment only —
+   * never committed, and never sent to a client: devices talk to this backend,
+   * which is the whole reason the app cannot leak it.
+   */
+  githubToken: process.env.GITHUB_TOKEN ?? "",
 
   /** Battle Link Discord bot token (secret; prefer the git-ignored file). */
   discordToken: process.env.DISCORD_BOT_TOKEN ?? "",

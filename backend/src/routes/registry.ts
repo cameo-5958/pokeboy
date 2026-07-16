@@ -1,10 +1,10 @@
 import { Router } from "express";
 
-import { config } from "../config.js";
+import { contentChecksum } from "../content.js";
 import {
   fileChecksum,
-  modPath,
   readRegistry,
+  refs,
   romPath,
 } from "../storage.js";
 
@@ -13,8 +13,9 @@ export const registryRouter = Router();
 /**
  * Combined ROM + mod registry the app diffs against when pulling the latest.
  * Each entry carries a catalog `version` plus a live content `checksum` (null
- * when the payload file is missing from disk), so a client can detect both
- * version bumps and silent content drift.
+ * when the payload is missing), so a client can detect both version bumps and
+ * silent content drift. Checksums are taken from the same source the payload
+ * routes serve, so they stay honest under any `CONTENT_SOURCE`.
  */
 registryRouter.get("/", async (req, res, next) => {
   try {
@@ -26,6 +27,7 @@ registryRouter.get("/", async (req, res, next) => {
         id: r.id,
         title: r.title,
         version: r.version,
+        // ROMs are not redistributable and never leave local disk.
         checksum: await fileChecksum(romPath(r)),
         img: r.img ? `${origin}/labels/${r.img}` : null,
         rom: `${origin}/api/cartridges/${r.id}/rom`,
@@ -38,7 +40,7 @@ registryRouter.get("/", async (req, res, next) => {
         name: m.name,
         desc: m.desc ?? null,
         version: m.version,
-        checksum: await fileChecksum(modPath(m)),
+        checksum: await contentChecksum(refs.mod(m.file)),
       })),
     );
 
@@ -48,7 +50,7 @@ registryRouter.get("/", async (req, res, next) => {
       ? {
           id: host.id,
           version: host.version,
-          checksum: await fileChecksum(config.hostCoreFile),
+          checksum: await contentChecksum(refs.hostCore()),
         }
       : null;
 
