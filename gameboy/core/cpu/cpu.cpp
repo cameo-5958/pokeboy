@@ -137,6 +137,7 @@ bool CPU::handle_interrupts() {
 }
 
 int CPU::execute_next() {
+    if (stopped) return 4;
     if (handle_interrupts()) return 20;
     if (halted) return 4;
     const uint16_t op_address = pc;
@@ -178,7 +179,7 @@ int CPU::execute_next() {
 
     switch (op) {
         case 0x00: return 4;                                             // NOP
-        case 0x10: fetch8(); return 4;                                   // STOP (as NOP)
+        case 0x10: fetch8(); stopped = true; return 4;                    // STOP 0
         case 0x01: bc = fetch16(); return 12;   case 0x11: de = fetch16(); return 12;
         case 0x21: hl = fetch16(); return 12;   case 0x31: sp = fetch16(); return 12;
         case 0x02: bus->write8(bc, a); return 8;                         // LD (BC),A

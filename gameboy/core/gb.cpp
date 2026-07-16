@@ -62,13 +62,11 @@ void GameBoy::run_frame() {
 
 const uint8_t* GameBoy::save_ram(size_t* len) const {
     if (!cart || cart->ram.empty()) { *len = 0; return nullptr; }
-    *len = cart->ram.size(); return cart->ram.data();
+    return cart->battery_data(len);
 }
 
 bool GameBoy::load_save_ram(const uint8_t* data, size_t len) {
-    if (!cart || cart->ram.empty() || len > cart->ram.size()) return false;
-    std::copy(data, data + len, cart->ram.begin());
-    return true;
+    return cart && !cart->ram.empty() && cart->load_battery_data(data, len);
 }
 
 // FNV-1a over the ROM image. Identity only — cheap enough to run on every
