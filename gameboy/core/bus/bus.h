@@ -31,6 +31,7 @@ public:
 
     Cartridge* cart{}; PPU* ppu{}; Timer* timer{}; Joypad* joypad{}; APU* apu{};
 private:
+    uint8_t read8_unrestricted(uint16_t a);
     uint8_t read_io(uint16_t a);
     void    write_io(uint16_t a, uint8_t v);
     uint8_t io_misc[0x80]{};                       // backing store for unhandled regs

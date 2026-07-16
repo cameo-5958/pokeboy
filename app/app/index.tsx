@@ -47,8 +47,8 @@ const PAD_BOTTOM = 28;
 const PULL_DIST = 56; // drag distance that fully pulls the cartridge out
 const SPEEDS = ["x0.5", "x1", "x3", "xINF"] as const;
 
-// On-device build identity: expo.version from app.json is baked into the
-// binary at build time. "Pull latest" can't change the installed binary.
+// On-device build identity (AGENTS.md "Versioning"): expo.version from
+// app.json, baked into the binary at build time. "Pull latest" can't touch it.
 const APP_BUILD_VERSION = Constants.expoConfig?.version ?? "unknown";
 
 const DEVICE_ID_KEY = "pokeboy.device-id.v1";
@@ -1570,8 +1570,8 @@ function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }
             <PullResult pull={pull} />
           </View>
 
-          {/* Identifies the installed IPA. Pull latest never changes it; only
-              sideloading a newly built IPA does. */}
+          {/* Which IPA is this? Pull latest never changes it — only a new
+              sideload does. See AGENTS.md "Versioning". */}
           <Text selectable={false} style={styles.settingsBuildStamp}>
             BUILD v{APP_BUILD_VERSION}
           </Text>
@@ -1639,8 +1639,9 @@ function PullResult({ pull }: { pull: PullState }) {
   );
 }
 
-// Per-mod configuration pop-up. Battle Link exposes its controls here; mods
-// without configurable options receive the fallback message below.
+// Per-mod configuration pop-up. Same full-screen Modal treatment as the
+// settings dialog. Placeholder body for now — each mod's actual config
+// controls get wired in here later.
 function ModConfigModal({
   open,
   mod,

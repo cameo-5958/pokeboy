@@ -8,6 +8,14 @@
 #include <cstdio>
 
 uint8_t Bus::read8(uint16_t a) {
+    const bool lcd_on = (ppu->lcdc & 0x80) != 0;
+    if (lcd_on && a >= 0x8000 && a < 0xA000 && ppu->mode == 3) return 0xFF;
+    if (lcd_on && a >= 0xFE00 && a < 0xFEA0 &&
+        (ppu->mode == 2 || ppu->mode == 3)) return 0xFF;
+    return read8_unrestricted(a);
+}
+
+uint8_t Bus::read8_unrestricted(uint16_t a) {
     if (boot_rom_enabled && a < 0x8000) {
         size_t offset = a < CUSTOM_BOOT_FIXED_SIZE
             ? a
@@ -29,11 +37,18 @@ uint8_t Bus::read8(uint16_t a) {
 
 void Bus::write8(uint16_t a, uint8_t v) {
     if (a < 0x8000) { cart->write_mbc(a, v); return; }
-    if (a < 0xA000) { vram[a - 0x8000] = v; return; }
+    const bool lcd_on = (ppu->lcdc & 0x80) != 0;
+    if (a < 0xA000) {
+        if (!(lcd_on && ppu->mode == 3)) vram[a - 0x8000] = v;
+        return;
+    }
     if (a < 0xC000) { cart->write_ram(a, v); return; }
     if (a < 0xE000) { wram[a - 0xC000] = v; return; }
     if (a < 0xFE00) { wram[a - 0xE000] = v; return; }
-    if (a < 0xFEA0) { oam[a - 0xFE00] = v; return; }
+    if (a < 0xFEA0) {
+        if (!(lcd_on && (ppu->mode == 2 || ppu->mode == 3))) oam[a - 0xFE00] = v;
+        return;
+    }
     if (a < 0xFF00) return;
     if (a < 0xFF80) { write_io(a, v); return; }
     if (a < 0xFFFF) { hram[a - 0xFF80] = v; return; }
@@ -81,7 +96,7 @@ void Bus::write_io(uint16_t a, uint8_t v) {
         case 0xFF45: ppu->lyc = v; return;
         case 0xFF46: {                               // OAM DMA — instant copy is fine
             uint16_t src = v << 8;
-            for (int i = 0; i < 0xA0; i++) oam[i] = read8(src + i);
+            for (int i = 0; i < 0xA0; i++) oam[i] = read8_unrestricted(src + i);
             return;
         }
         case 0xFF47: ppu->bgp  = v; return;
