@@ -1,0 +1,12 @@
+*.gb
+*.gbc
+
+# Build output of build.sh. Not tracked, for the same reason build/ and *.exe
+# are not: it is regenerated from gameboy/** sources and would otherwise go
+# stale against the core it is supposed to mirror. Run ./build.sh before
+# serving this directory.
+#
+# app/assets/emulator/gbcore.wasm is the deliberate exception: it must be
+# committed because it ships inside the IPA.
+gbcore.js
+gbcore.wasm

@@ -1,0 +1,30 @@
+{
+  "name": "pokeboy-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test:battle-link": "tsx --test src/routes/battle-link.test.ts",
+    "test:content": "tsx --test src/content.test.ts",
+    "key:new": "tsx scripts/key.ts new",
+    "key:list": "tsx scripts/key.ts list",
+    "key:revoke": "tsx scripts/key.ts revoke"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2"
+  }
+}

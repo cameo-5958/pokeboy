@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#141410">
+<title>Pocket &middot; Pokémon Red</title>
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="controls.css">
+
+</head>
+<body>
+
+<div id="app">
+  <button id="cartTab" class="out" aria-label="pull out cartridge">
+    <span class="cart-body">
+      <span class="cart-grip"></span>
+      <span class="cart-sticker" id="cartTitle">CARTRIDGE</span>
+    </span>
+  </button>
+  <div class="cart-slot-lip"></div>
+  <div id="brand"><span class="dot" id="powerDot"></span>BATTERY</div>
+
+  <div id="screen-wrap">
+    <div id="bezel"><canvas id="screen" width="160" height="144"></canvas><div class="lcd-grid"></div></div>
+  </div>
+
+  <div id="controls">
+    <div id="volume">
+      <span class="vol-label">VOLUME</span>
+      <input id="volSlider" type="range" min="0" max="100" value="70" aria-label="volume">
+      <button id="refreshBtn" aria-label="reload with caches cleared">&#8635;</button>
+    </div>
+    <div id="speed">
+      <span class="vol-label">SPEED</span>
+      <input id="speedSlider" type="range" min="0" max="4" step="1" value="1" aria-label="speed">
+      <span class="vol-label" id="speedVal">x1</span>
+    </div>
+    <div id="state">
+      <span class="vol-label">STATE</span>
+      <div id="slots" role="group" aria-label="save state slot"></div>
+      <button class="state-act" id="btnSaveState" disabled>SAVE</button>
+      <button class="state-act" id="btnLoadState" disabled>LOAD</button>
+    </div>
+    <div class="dpad" id="dpad">
+      <div class="dpad-base"></div>
+      <div class="dpad-cross"></div>
+      <div class="dpad-glow up" id="glowUp"></div>
+      <div class="dpad-glow down" id="glowDown"></div>
+      <div class="dpad-glow left" id="glowLeft"></div>
+      <div class="dpad-glow right" id="glowRight"></div>
+      <div class="dpad-arrow up"></div>
+      <div class="dpad-arrow down"></div>
+      <div class="dpad-arrow left"></div>
+      <div class="dpad-arrow right"></div>
+      <div class="dpad-dot"></div>
+    </div>
+    <div class="face-cluster">
+      <button class="action-btn" id="btnB">B</button>
+      <button class="action-btn" id="btnA">A</button>
+    </div>
+    <div class="system-cluster">
+      <div><button class="pill-btn" id="btnSelect"></button><span class="pill-label">SELECT</span></div>
+      <div><button class="pill-btn" id="btnStart"></button><span class="pill-label">START</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="cartDock">
+  <div id="cartTray"></div>
+</div>
+
+<div id="overlay">
+  <div class="spinner" id="ovSpinner"></div>
+  <h1 id="ovTitle">Powering up&hellip;</h1>
+  <p id="ovText">Starting the emulator core.</p>
+  <button id="ovButton" style="display:none">Tap to start</button>
+</div>
+
+<script src="gbcore.js"></script>
+<script src="input-controls.js"></script>
+<script src="audio-controls.js"></script>
+<script src="storage.js"></script>
+<script src="runtime.js"></script>
+</body>
+</html>

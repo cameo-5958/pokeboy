@@ -1,0 +1,72 @@
+# Breadwinner: Battle Link
+
+Battle Link replaces Pokémon Red trainer move, item, and switch decisions with
+a public HTTPS long-poll request. Wild battles, link battles, and forced actions
+(including recharge, Bide, Thrash/Petal Dance, charging, Rage, trapping,
+sleep, and freeze) remain native.
+
+## Build
+
+The build requires RGBDS (`rgbasm` and `rgblink`) and the local, uncommitted
+`backend/roms/pokemon-red.gb` ROM matching CRC32 `9f7fdd53`.
+
+```sh
+python3 gameboy/tools/build_battle_link.py
+```
+
+This assembles `battle-link.asm`, verifies module-symbol and host-relocation
+offsets against RGBDS output, refreshes the checked-in `battle-link.bin`,
+applies the guarded manifest, and writes the locally excluded
+`backend/mods/battle-link.gbmod` package. The source manifest verifies
+the supported ROM size, CRC, zero-filled code range, and original bytes at all
+five patch entrances.
+
+## API protocol
+
+Configure one public HTTPS URL from the Battle Link mod configuration screen.
+New installations default to
+`https://pokeboy.cameo.moe/battle-link/decision`; its live command console is
+at `https://pokeboy.cameo.moe/battle-link`.
+The WebView sends:
+
+```text
+GET <endpoint>?state=<base64url(JSON)>
+```
+
+The decoded version-1 state contains a random per-battle `battleId`, `turn`,
+`attempt`, complete trainer and player party/active Pokémon data, current
+battle conditions, and a `legalActions` array. Each legal action has a unique
+integer `code` and descriptive move, item, or party-slot fields.
+
+The endpoint keeps the request open until it can respond:
+
+```json
+{ "action": 18 }
+```
+
+Only a code offered in that request is accepted. HTTP failures, invalid JSON,
+and illegal codes are retried until the request's `maxTimeTillRandom` deadline
+(configured on the mod configuration screen alongside the endpoint; default
+30 seconds, advertised to the endpoint as the snapshot's `timeoutMs`). At the
+deadline Battle Link chooses uniformly from the legal actions, so battles
+never stall indefinitely; a value of 0 skips the request entirely and always
+picks randomly. The endpoint
+must allow the app's WebView origin through CORS and support the encoded query
+length.
+
+The remote request starts only after the player has committed the local action.
+For medicine and PP-restoring items, that means the native party and move
+selection screens run first and native code verifies the item can have an
+effect. While waiting, the ROM displays `AWAITING MOVE DECISION`, and music
+keeps playing: the wait loop is `DelayFrame` (halt with interrupts enabled),
+so the VBlank handler continues to run the audio engine and the auto BG-map
+transfer every frame. Game Boy input cannot cancel or duplicate a committed
+request; exactly one request remains in flight until that turn resolves.
+
+## Action codes
+
+Codes are negotiated by each request; consumers must choose from
+`legalActions`, not synthesize arbitrary values. The current version uses
+`0..3` for move slots, `16..21` for party switches, and `32..41` for supported
+native trainer items. The descriptive fields are the source of truth so later
+protocol versions can extend the code space safely.
