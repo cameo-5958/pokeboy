@@ -84,3 +84,21 @@ def test_collect_rollouts_smoke_and_update():
     stats = ppo_update(model, opt, buf, device="cpu", epochs=1, minibatch=32)
     assert all(torch.isfinite(torch.tensor(v)) for v in stats.values())
     assert any((p != q).any() for p, q in zip(before, model.parameters()))
+
+
+def test_update_snapshot_keeps_single_reused_copy():
+    from models.ppo import update_snapshot
+
+    tok = Tokenizer()
+    model = _model(tok)
+    frozen: list = []
+    update_snapshot(frozen, model, tok, "snack", 32, "cpu", seed=1)
+    first_obj = frozen[0].model
+    with torch.no_grad():
+        for p in model.parameters():
+            p.add_(1.0)
+    update_snapshot(frozen, model, tok, "snack", 32, "cpu", seed=2)
+    assert len(frozen) == 1
+    assert frozen[0].model is first_obj  # reused, not reallocated
+    assert all(torch.equal(a, b) for a, b in
+               zip(frozen[0].model.parameters(), model.parameters()))
