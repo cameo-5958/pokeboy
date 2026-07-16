@@ -165,14 +165,14 @@ def periodic_eval(
             correct += (model(**batch).argmax(-1) == labels).sum().item()
             total += len(labels)
     metrics = {"holdout_top1": round(correct / max(1, total), 4)}
-    team_pickers = {"": sample_team}
-    try:  # mixed-team benchmark only when the metamon-teams corpus is on disk
-        from sim.teamsets import mixed_sample_team
+    # mixed teams are THE benchmark distribution (2026-07-16 decision);
+    # standard sets are only a fallback when the teams corpus is absent
+    try:
+        from sim.teamsets import mixed_sample_team as pick_team
 
-        mixed_sample_team(random.Random(0))  # force pool load; raises if absent
-        team_pickers["_mixed"] = mixed_sample_team
+        pick_team(random.Random(0))  # force pool load; raises if absent
     except (FileNotFoundError, ValueError):
-        pass
+        pick_team = sample_team
     from sim.agents import LessEffectiveMaxDamageBot, UniversalMaxDamageBot
 
     opponents = {
@@ -182,22 +182,19 @@ def periodic_eval(
         "lemaxdamage": lambda r: LessEffectiveMaxDamageBot(),
     }
     for name, factory in opponents.items():
-        for suffix, pick_team in team_pickers.items():
-            if name != "maxdamage" and suffix:
-                continue  # mixed-team curve only needed vs the reference opponent
-            rng = random.Random(seed)
-            agent = ModelAgent.from_model(model, tok, seed=seed)
-            wins = 0
-            for _ in range(battles):
-                rec = run_battle(
-                    agent,
-                    factory(rng.randrange(2**31)),
-                    pick_team(rng),
-                    pick_team(rng),
-                    seed=rng.randrange(2**63),
-                )
-                wins += rec.winner == "p1"
-            metrics[f"wr_{name}{suffix}"] = round(wins / max(1, battles), 4)
+        rng = random.Random(seed)
+        agent = ModelAgent.from_model(model, tok, seed=seed)
+        wins = 0
+        for _ in range(battles):
+            rec = run_battle(
+                agent,
+                factory(rng.randrange(2**31)),
+                pick_team(rng),
+                pick_team(rng),
+                seed=rng.randrange(2**63),
+            )
+            wins += rec.winner == "p1"
+        metrics[f"wr_{name}"] = round(wins / max(1, battles), 4)
     if was_training:
         model.train()
     return metrics
