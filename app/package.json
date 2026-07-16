@@ -1,0 +1,47 @@
+{
+  "name": "pokeboy-app",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "prebuild": "expo prebuild",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test:battle-link": "node scripts/test-battle-link-core.js && node scripts/test-battle-link-bot.js",
+    "web:export": "expo export -p web --output-dir dist --clear",
+    "web:serve": "node scripts/serve-web.mjs",
+    "test:web": "node scripts/test-web-headless.mjs"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "~4.0.1",
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "expo": "~52.0.0",
+    "expo-asset": "~11.0.5",
+    "expo-audio": "^0.3.5",
+    "expo-constants": "~17.0.0",
+    "expo-file-system": "~18.0.12",
+    "expo-linking": "~7.0.0",
+    "expo-router": "~4.0.0",
+    "expo-secure-store": "~14.0.1",
+    "expo-status-bar": "~2.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-native": "0.76.5",
+    "react-native-safe-area-context": "4.12.0",
+    "react-native-screens": "~4.4.0",
+    "react-native-web": "~0.19.13",
+    "react-native-webview": "13.12.5"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.12",
+    "eslint": "^8.57.0",
+    "eslint-config-expo": "~8.0.1",
+    "playwright": "^1.60.0",
+    "sucrase": "^3.35.1",
+    "typescript": "~5.3.3"
+  }
+}

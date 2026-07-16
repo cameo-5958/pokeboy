@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Pokeboy",
+    "slug": "pokeboy",
+    "version": "0.5.0",
+    "orientation": "portrait",
+    "scheme": "pokeboy",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pokeboy.app"
+    },
+    "android": {
+      "package": "com.pokeboy.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b0b0f"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
