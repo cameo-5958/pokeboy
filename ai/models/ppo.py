@@ -288,6 +288,20 @@ def ppo_update(model, opt, buf, device, clip=0.2, vf_coef=0.5, ent_coef=0.005,
     return stats
 
 
+def update_snapshot(frozen: list, model, tok, tier: str, value_bins: int,
+                    device: str, seed: int) -> None:
+    """Maintain ONE reusable frozen league snapshot. The snapshot model is
+    allocated once and refreshed in place — appending a new GPU-resident
+    copy per snapshot OOMed the first real run at the third copy."""
+    from models.agent import ModelAgent
+
+    if not frozen:
+        snap = FieldValueEncoder(TIERS[tier], tok, value_bins=value_bins).to(device).eval()
+        frozen.append(ModelAgent.from_model(snap, tok, seed=seed, temperature=0.25))
+    frozen[0].model.load_state_dict(model.state_dict())
+    frozen[0].reseed(seed)
+
+
 # -- CLI -------------------------------------------------------------------
 
 
@@ -365,10 +379,8 @@ def main() -> None:
                 "s": round(time.monotonic() - t0, 1)}
         print(json.dumps(line), flush=True)
         if args.snapshot_every and it % args.snapshot_every == 0:
-            frozen.append(ModelAgent.from_model(
-                FieldValueEncoder(TIERS[ckpt["tier"]], tok, value_bins=ckpt["value_bins"])
-                .to(device).eval(), tok, seed=rng.randrange(2**31), temperature=0.25))
-            frozen[-1].model.load_state_dict(model.state_dict())
+            update_snapshot(frozen, model, tok, ckpt["tier"], ckpt["value_bins"],
+                            device, rng.randrange(2**31))
         if args.eval_every and it % args.eval_every == 0:
             m = periodic_eval(model, tok, [], device, battles=args.eval_battles, seed=args.seed)
             m.pop("holdout_top1", None)
