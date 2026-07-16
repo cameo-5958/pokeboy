@@ -81,7 +81,7 @@ class DiscordGateway {
 // ---- Load battleLink.ts -----------------------------------------------------
 
 const source = fs.readFileSync(
-  path.join(__dirname, "../../backend/src/discord/battleLink.ts"),
+  path.join(path.dirname(module.filename), "../../backend/src/discord/battleLink.ts"),
   "utf8",
 );
 const { code } = transform(source, { transforms: ["typescript", "imports"] });
