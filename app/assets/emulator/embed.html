@@ -718,7 +718,7 @@
       status.style.display='none';
       notify('ready',cartridgeId);
       started=true;
-      setInterval(persistSave,10000); // wall-clock cadence, matching web/index.html
+      setInterval(persistSave,10000); // wall-clock save cadence: every 10s
       bootStage='running';
       resumeEmulation();
     }
