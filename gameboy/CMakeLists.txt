@@ -34,6 +34,10 @@ if(BUILD_TESTING)
     target_link_libraries(gbcore_state_tests PRIVATE gbcore)
     add_test(NAME gbcore_state_tests COMMAND gbcore_state_tests)
 
+    add_executable(gbcore_hardware_tests tests/hardware_tests.cpp)
+    target_link_libraries(gbcore_hardware_tests PRIVATE gbcore)
+    add_test(NAME gbcore_hardware_tests COMMAND gbcore_hardware_tests)
+
     # Manual integration harness for compiled packages that require a local,
     # uncommitted ROM: mod_package_tests rom.gb symbols.sym package.gbmod
     add_executable(gbcore_mod_package_tests tests/mod_package_tests.cpp)

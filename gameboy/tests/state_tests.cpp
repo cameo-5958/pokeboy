@@ -58,6 +58,7 @@ uint32_t machine_hash(GameBoy& gb) {
     mix(regs, sizeof(regs));
     const uint8_t misc[] = { gb.bus.if_reg, gb.bus.ie_reg,
                              (uint8_t)gb.cpu.ime, (uint8_t)gb.cpu.halted,
+                             (uint8_t)gb.cpu.stopped,
                              gb.ppu.ly, gb.ppu.lyc, gb.ppu.lcdc, gb.ppu.stat,
                              gb.timer.tima, gb.timer.tma, gb.timer.tac,
                              (uint8_t)gb.timer.prev_signal };

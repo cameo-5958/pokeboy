@@ -77,14 +77,16 @@ void gb_set_input(gb_handle* gb, uint8_t buttons, uint8_t dpad);
 // Returns the number of frames written to `stereo` (interleaved L,R).
 int gb_read_audio(gb_handle* gb, float* stereo, int max_frames);
 
-// Battery-backed cartridge RAM. gb_save_ram returns NULL if the cart has none.
+// Battery-backed cartridge data. MBC3 timer cartridges append a versioned RTC
+// trailer after SRAM; loading legacy SRAM-only data remains supported.
+// gb_save_ram returns NULL if the cart has no battery-backed data.
 int            gb_has_battery(const gb_handle* gb);
 const uint8_t* gb_save_ram(const gb_handle* gb, size_t* len);
 int            gb_load_save_ram(gb_handle* gb, const uint8_t* data, size_t len);
 
 // Whole-machine snapshot (CPU, memories, PPU, timer, joypad, APU, cart RAM +
 // MBC banks) — distinct from gb_save_ram, which is only battery-backed cart
-// RAM. gb_save_state returns NULL on failure; otherwise the buffer is owned by
+// data. gb_save_state returns NULL on failure; otherwise the buffer is owned by
 // the handle and stays valid until the next gb_save_state or gb_destroy on it,
 // so copy it out before saving again.
 //

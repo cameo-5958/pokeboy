@@ -23,16 +23,19 @@ public:
     void  set_input(uint8_t buttons, uint8_t dpad) {
         uint8_t pressed = (uint8_t)((buttons & ~joypad.buttons) | (dpad & ~joypad.dpad));
         joypad.buttons = buttons; joypad.dpad = dpad;
-        if (pressed) bus.if_reg |= 0x10;           // joypad interrupt on new press
+        if (pressed) {
+            bus.if_reg |= 0x10;                    // joypad interrupt on new press
+            cpu.stopped = false;                   // STOP wakes even when IME/IE block service
+        }
     }
     int   read_audio(float* stereo, int max_frames) { return apu.drain(stereo, max_frames); }
-    const uint8_t* save_ram(size_t* len) const;    // battery saves (M4)
+    const uint8_t* save_ram(size_t* len) const;    // SRAM plus an MBC3 RTC trailer when present
     bool  load_save_ram(const uint8_t* data, size_t len);
     bool  has_battery() const { return cart && cart->has_battery && !cart->ram.empty(); }
 
     // Whole-machine snapshot: CPU, bus memories, PPU, timer, joypad, APU, and
-    // cartridge RAM + MBC banks. Distinct from save_ram, which is only the
-    // battery-backed cartridge RAM a real cartridge would retain.
+    // cartridge RAM + MBC banks. Distinct from save_ram, which contains only
+    // battery-backed cartridge data (SRAM and, for MBC3, RTC state).
     //
     // The stream carries the ROM's size and hash, so load_state rejects a state
     // taken against different ROM bytes instead of resuming into corruption.
@@ -40,7 +43,7 @@ public:
     // loaded, because a resumed trap site belongs to the host-linked ROM image.
     bool  save_state(std::vector<uint8_t>& out);
     bool  load_state(const uint8_t* data, size_t len);
-    static constexpr uint32_t STATE_VERSION = 1;
+    static constexpr uint32_t STATE_VERSION = 2;
 
     Bus    bus;
     CPU    cpu;
