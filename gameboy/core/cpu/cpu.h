@@ -10,7 +10,7 @@ struct CPU {
     union { struct { uint8_t e, d; }; uint16_t de; };
     union { struct { uint8_t l, h; }; uint16_t hl; };
     uint16_t sp = 0, pc = 0;
-    bool ime = false, halted = false;
+    bool ime = false, halted = false, stopped = false;
     int  ei_delay = 0;
     Bus* bus = nullptr;
     gbmod::Runtime* mods = nullptr;
@@ -25,7 +25,7 @@ struct CPU {
     // GameBoy::load_state and must never enter the stream.
     void serialize(StateIO& s) {
         s.v(af); s.v(bc); s.v(de); s.v(hl); s.v(sp); s.v(pc);
-        s.v(ime); s.v(halted); s.v(ei_delay);
+        s.v(ime); s.v(halted); s.v(stopped); s.v(ei_delay);
         if (!s.saving()) f &= 0xF0;     // low flag nibble is always clear on DMG
     }
 private:

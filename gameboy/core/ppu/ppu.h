@@ -19,6 +19,6 @@ struct PPU {
         s.v(dot); s.v(mode); s.v(win_line);
     }
 private:
-    void render_scanline(Bus& bus);                 // Compose the current LCD scanline from VRAM and OAM.
+    void render_scanline(Bus& bus);                 // full body: PDF §6.6 — paste it in at M2/M3
     void set_mode(int m, Bus& bus);
 };
