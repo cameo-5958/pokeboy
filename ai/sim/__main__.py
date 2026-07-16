@@ -166,7 +166,8 @@ def main() -> None:
     b.add_argument("--p2", default="random")
     b.add_argument("--seed", type=int, default=0)
     b.add_argument("--battles", type=int, default=1)
-    b.add_argument("--teams", default="standard", choices=["standard", "mixed"])
+    b.add_argument("--teams", default="mixed", choices=["standard", "mixed"],
+                   help="mixed is the benchmark distribution; standard only for archaeology")
     b.set_defaults(fn=cmd_battle)
 
     e = sub.add_parser("bench", help="raw engine throughput benchmark")
