@@ -161,10 +161,11 @@ def periodic_eval(
     with torch.no_grad():
         # batch 128: banquet at train-batch 128 peaks 8.5/10 GB — a 256 eval
         # batch on top of resident optimizer state would risk OOM mid-run
-        for batch, labels, _, _ in make_batches(hold_rows[:max_top1_rows], tok, 128, device):
+        for batch, labels, _, _ in make_batches(hold_rows[:max_top1_rows], tok, 128, device) \
+                if hold_rows else ():
             correct += (model(**batch).argmax(-1) == labels).sum().item()
             total += len(labels)
-    metrics = {"holdout_top1": round(correct / max(1, total), 4)}
+    metrics = {"holdout_top1": round(correct / max(1, total), 4)} if hold_rows else {}
     # mixed teams are THE benchmark distribution (2026-07-16 decision);
     # standard sets are only a fallback when the teams corpus is absent
     try:
