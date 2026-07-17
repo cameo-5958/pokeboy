@@ -115,6 +115,17 @@ def test_team_export_round_trips_through_our_parser():
     assert [mv for _, mv in parsed] == [m.moves for m in team]
 
 
+def test_team_builder_resamples_per_battle():
+    from serve.showdown import make_team_builder
+
+    builder = make_team_builder(seed=1)
+    packed = [builder.yield_team() for _ in range(4)]
+    for team in packed:
+        assert len(team.split("]")) == 6  # six mons, packed format
+        assert all(mon.split("|")[4] for mon in team.split("]"))  # moves present
+    assert len(set(packed)) > 1  # a fresh sample each battle, not one fixed team
+
+
 def test_translation_handles_unrevealed_opponent_active():
     active = _tauros()
     b = FakeBattle(active=active, bench=[], opp_active=Mon("starmie"))
