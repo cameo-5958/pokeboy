@@ -10,6 +10,7 @@ dependencies = [
     "requests>=2.32",
     "lz4>=4.4.5",
     "torch>=2.13.0",
+    "poke-env>=0.15.0",
 ]
 
 [dependency-groups]
