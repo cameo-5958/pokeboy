@@ -190,7 +190,10 @@ def main() -> None:
     args = p.parse_args()
 
     async def run() -> None:
-        kwargs = {}
+        # without the timer, an opponent that crashes mid-battle leaves the
+        # battle open forever and poke-env queues all further challenges
+        # behind it (max 1 concurrent battle)
+        kwargs = {"start_timer_on_battle_start": True}
         if args.username:
             from poke_env.ps_client.account_configuration import (
                 AccountConfiguration,
