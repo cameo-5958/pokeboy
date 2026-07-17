@@ -108,6 +108,26 @@ def team_to_showdown(specs) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def make_team_builder(seed: int = 0):
+    """Teambuilder sampling a fresh mixed team every battle (lazy import)."""
+    import random as _random
+
+    from poke_env.teambuilder import Teambuilder
+
+    from sim.teamsets import TeamSampler
+
+    class MixedTeamBuilder(Teambuilder):
+        def __init__(self):
+            self._rng = _random.Random(seed)
+            self._sampler = TeamSampler()
+
+        def yield_team(self) -> str:
+            paste = team_to_showdown(self._sampler.sample(self._rng))
+            return self.join_team(self.parse_showdown_team(paste))
+
+    return MixedTeamBuilder()
+
+
 def make_player(ckpt: str, battle_format: str = "gen1ou", team=None,
                 temperature: float = 0.25, device: str | None = None,
                 seed: int = 0, **player_kwargs):
@@ -157,29 +177,34 @@ def main() -> None:
     p.add_argument("--battles", type=int, default=10)
     p.add_argument("--temperature", type=float, default=0.25)
     p.add_argument("--team-seed", type=int, default=0)
+    p.add_argument("--username", help="account name on the server")
     args = p.parse_args()
 
-    from sim.teamsets import TeamSampler
-
-    team = team_to_showdown(TeamSampler().sample(_random.Random(args.team_seed)))
-
     async def run() -> None:
-        player = make_player(args.ckpt, battle_format=args.format, team=team,
-                             temperature=args.temperature)
+        kwargs = {}
+        if args.username:
+            from poke_env.ps_client.account_configuration import (
+                AccountConfiguration,
+            )
+
+            kwargs["account_configuration"] = AccountConfiguration(
+                args.username, None)
+        player = make_player(args.ckpt, battle_format=args.format,
+                             team=make_team_builder(args.team_seed),
+                             temperature=args.temperature, **kwargs)
         if args.mode == "local-smoke":
             from poke_env.player import RandomPlayer
 
-            opp = RandomPlayer(battle_format=args.format, team=team_to_showdown(
-                TeamSampler().sample(_random.Random(args.team_seed + 1))))
+            opp = RandomPlayer(battle_format=args.format,
+                               team=make_team_builder(args.team_seed + 1))
             await player.battle_against(opp, n_battles=args.battles)
-            print({"wins": player.n_won_battles, "battles": player.n_finished_battles})
         elif args.mode == "ladder":
             await player.ladder(args.battles)
-            print({"wins": player.n_won_battles, "battles": player.n_finished_battles})
         elif args.mode == "challenge":
             await player.send_challenges(args.opponent, n_challenges=args.battles)
         else:
             await player.accept_challenges(None, args.battles)
+        print({"wins": player.n_won_battles, "battles": player.n_finished_battles})
 
     asyncio.run(run())
 
