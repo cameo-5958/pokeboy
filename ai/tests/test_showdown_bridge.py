@@ -113,3 +113,15 @@ def test_team_export_round_trips_through_our_parser():
     parsed = parse_team_export(paste)
     assert [sp for sp, _ in parsed] == [m.species for m in team]
     assert [mv for _, mv in parsed] == [m.moves for m in team]
+
+
+def test_translation_handles_unrevealed_opponent_active():
+    active = _tauros()
+    b = FakeBattle(active=active, bench=[], opp_active=Mon("starmie"))
+    b.opponent_active_pokemon = None
+    b.opponent_team = {}
+    state, orders = state_from_battle(b)
+    opp = state["opp_side"]["pokemon"]
+    assert opp[0]["species"] is None
+    assert len(opp) == 6
+    assert sorted(orders) == [0, 1, 2, 3]

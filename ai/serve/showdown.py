@@ -66,7 +66,9 @@ def state_from_battle(battle) -> tuple[dict[str, Any], dict[int, Any]]:
 
     opp_active = battle.opponent_active_pokemon
     opp_rest = [m for m in battle.opponent_team.values() if m is not opp_active]
-    opp = [_opp_mon(opp_active)] + [_opp_mon(m) for m in opp_rest]
+    # opp active can be None (lead not yet revealed / mid-replacement)
+    opp = [_opp_mon(opp_active) if opp_active is not None else dict(_UNREVEALED)]
+    opp += [_opp_mon(m) for m in opp_rest]
     opp += [dict(_UNREVEALED)] * max(0, _TEAM_SIZE - len(opp))
 
     orders: dict[int, Any] = {}
@@ -119,7 +121,11 @@ def make_player(ckpt: str, battle_format: str = "gen1ou", team=None,
 
     class PokeboyPlayer(Player):
         def choose_move(self, battle):
-            state_json, orders = state_from_battle(battle)
+            try:
+                state_json, orders = state_from_battle(battle)
+            except Exception:  # a stalled battle is worse than a random move
+                self.logger.exception("state translation failed; playing random")
+                return self.choose_random_move(battle)
             if not orders:
                 return self.choose_random_move(battle)
             state = State(
