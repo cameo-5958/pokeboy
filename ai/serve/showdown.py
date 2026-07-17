@@ -108,8 +108,13 @@ def team_to_showdown(specs) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def make_team_builder(seed: int = 0):
-    """Teambuilder sampling a fresh mixed team every battle (lazy import)."""
+def make_team_builder(seed: int = 0, pool: str = "mixed"):
+    """Teambuilder sampling a fresh team every battle (lazy import).
+
+    pool: "mixed" for the standard 20/40/40 benchmark distribution, or a
+    named TeamSampler pool ("competitive", "variety") to draw from alone —
+    e.g. matching an external opponent's curated team set.
+    """
     import random as _random
 
     from poke_env.teambuilder import Teambuilder
@@ -122,7 +127,9 @@ def make_team_builder(seed: int = 0):
             self._sampler = TeamSampler()
 
         def yield_team(self) -> str:
-            paste = team_to_showdown(self._sampler.sample(self._rng))
+            team = (self._sampler.sample(self._rng) if pool == "mixed"
+                    else self._rng.choice(self._sampler.pools[pool]))
+            paste = team_to_showdown(team)
             return self.join_team(self.parse_showdown_team(paste))
 
     return MixedTeamBuilder()
@@ -177,6 +184,8 @@ def main() -> None:
     p.add_argument("--battles", type=int, default=10)
     p.add_argument("--temperature", type=float, default=0.25)
     p.add_argument("--team-seed", type=int, default=0)
+    p.add_argument("--team-pool", default="mixed",
+                   choices=["mixed", "competitive", "variety"])
     p.add_argument("--username", help="account name on the server")
     args = p.parse_args()
 
@@ -190,13 +199,15 @@ def main() -> None:
             kwargs["account_configuration"] = AccountConfiguration(
                 args.username, None)
         player = make_player(args.ckpt, battle_format=args.format,
-                             team=make_team_builder(args.team_seed),
+                             team=make_team_builder(args.team_seed,
+                                                    args.team_pool),
                              temperature=args.temperature, **kwargs)
         if args.mode == "local-smoke":
             from poke_env.player import RandomPlayer
 
             opp = RandomPlayer(battle_format=args.format,
-                               team=make_team_builder(args.team_seed + 1))
+                               team=make_team_builder(args.team_seed + 1,
+                                                      args.team_pool))
             await player.battle_against(opp, n_battles=args.battles)
         elif args.mode == "ladder":
             await player.ladder(args.battles)

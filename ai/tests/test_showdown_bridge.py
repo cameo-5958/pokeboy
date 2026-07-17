@@ -126,6 +126,23 @@ def test_team_builder_resamples_per_battle():
     assert len(set(packed)) > 1  # a fresh sample each battle, not one fixed team
 
 
+def test_team_builder_competitive_pool_only():
+    from serve.showdown import make_team_builder
+    from sim.teamsets import TeamSampler
+
+    builder = make_team_builder(seed=2, pool="competitive")
+    packed = builder.yield_team()
+    assert len(packed.split("]")) == 6
+    competitive = {tuple(m.species for m in team)
+                   for team in TeamSampler().pools["competitive"]}
+    species = tuple(mon.split("|")[1] or mon.split("|")[0]
+                    for mon in packed.split("]"))
+    assert tuple(s.lower().replace(" ", "").replace("-", "")
+                 for s in species) in {
+        tuple(s.lower().replace(" ", "").replace("-", "") for s in t)
+        for t in competitive}
+
+
 def test_translation_handles_unrevealed_opponent_active():
     active = _tauros()
     b = FakeBattle(active=active, bench=[], opp_active=Mon("starmie"))
