@@ -86,6 +86,21 @@ def test_collect_rollouts_smoke_and_update():
     assert any((p != q).any() for p, q in zip(before, model.parameters()))
 
 
+def test_collect_rollouts_concurrent_matches_contract():
+    tok = Tokenizer()
+    model = _model(tok)
+    league = make_league(model, tok, frozen=[], rng=random.Random(3))
+    buf = collect_rollouts(model, tok, league, n_battles=5, device="cpu",
+                           rng=random.Random(11), max_turns=100, concurrent=3)
+    n = len(buf["action"])
+    assert n > 10
+    assert set(buf["reward_return"].tolist()) <= {0.0, 0.5, 1.0}
+    assert buf["legal"].gather(1, buf["action"].unsqueeze(1)).all()
+    assert buf["old_logp"].isfinite().all()
+    assert buf["advantage"].isfinite().all()
+    assert buf["field_ids"].shape[0] == n
+
+
 def test_update_snapshot_keeps_single_reused_copy():
     from models.ppo import update_snapshot
 
