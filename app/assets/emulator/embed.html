@@ -44,6 +44,7 @@
     const modHandlers=new Map();
     let hostError=null,hostCallback=0;
     let saveDataWaiter=null,saveReady=false,saveNonce=null,mirrorBlocked=false,hasPersisted=false;
+    let stateBusy=false; // a state snapshot/restore is in flight
     let telemetry=false,telTimer=0,rafCount=0,frameCount=0;
     let bootStage='script-start';
 
@@ -100,6 +101,18 @@
           saveNonce=null;
           if(saveDataWaiter){const resolve=saveDataWaiter;saveDataWaiter=null;resolve(msg)}
           else lateSaveData(msg); // host answered after the handshake timeout
+        } else if(msg.type==='state-save') {
+          // Save state = snapshot of the whole WASM heap. The copy is taken
+          // synchronously so no frame can interleave; compression is async.
+          if(!started||modsBusy||stateBusy){notify('state-error',{nonce:msg.nonce,message:'EMULATOR BUSY'})}
+          else{
+            const heap=Module.HEAPU8.slice();
+            stateBusy=true;
+            encodeState(heap,msg.nonce).finally(()=>{stateBusy=false});
+          }
+        } else if(msg.type==='state-load') {
+          if(!started||modsBusy||stateBusy){notify('state-error',{nonce:msg.nonce,message:'EMULATOR BUSY'})}
+          else{stateBusy=true;applyState(msg).finally(()=>{stateBusy=false})}
         }
       } catch(error){ reportError(error,'host-message'); }
     }
@@ -535,6 +548,61 @@
       if(typeof data!=='string')throw new Error('Invalid save data');
       const binary=atob(data);
       return Uint8Array.from(binary,char=>char.charCodeAt(0));
+    }
+    function b64encode(bytes){
+      let binary='';
+      for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+      return btoa(binary);
+    }
+    function b64decode(data){
+      const binary=atob(data),bytes=new Uint8Array(binary.length);
+      for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+      return bytes;
+    }
+    async function gzipBytes(bytes,mode){
+      const Stream=mode==='gzip'?CompressionStream:DecompressionStream;
+      const stream=new Blob([bytes]).stream().pipeThrough(new Stream('gzip'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+    async function encodeState(heap,nonce){
+      try{
+        let gz=false,bytes=heap;
+        if(typeof CompressionStream==='function'){bytes=await gzipBytes(heap,'gzip');gz=true}
+        notify('state-data',{
+          nonce,gz,heapLen:heap.length,base64:b64encode(bytes),
+          cartridgeId,cartridgeVersion,mods:Array.from(loadedMods.keys())
+        });
+      }catch(error){notify('state-error',{nonce,message:(error&&error.message)||String(error)})}
+    }
+    // Restoring a snapshot only makes sense in a session whose boot walked the
+    // same allocations (same core build, cartridge, and mod set): then the JS
+    // gb/audioPtr pointers and the host-callback table slot all line up. The
+    // shell enforces the core hash; cartridge and mods are checked here.
+    async function applyState(msg){
+      try{
+        if(msg.cartridgeId!==cartridgeId)throw new Error('STATE IS FOR ANOTHER CARTRIDGE');
+        const mods=Array.isArray(msg.mods)?msg.mods:[];
+        const current=Array.from(loadedMods.keys());
+        if(mods.length!==current.length||mods.some(id=>!current.includes(id)))throw new Error('STATE MOD SET MISMATCH');
+        pauseEmulation();
+        let bytes=b64decode(msg.base64);
+        if(msg.gz)bytes=await gzipBytes(bytes,'gunzip');
+        if(bytes.length<65536||bytes.length>256*1024*1024)throw new Error('INVALID STATE SIZE');
+        if(bytes.length>Module.HEAPU8.length){
+          // ALLOW_MEMORY_GROWTH: a large malloc grows the heap; the restore
+          // overwrites the allocator's state anyway, so freeing is cosmetic.
+          const grow=Module._malloc(bytes.length-Module.HEAPU8.length+65536);
+          if(grow)Module._free(grow);
+        }
+        if(bytes.length>Module.HEAPU8.length)throw new Error('WASM MEMORY GROWTH FAILED');
+        Module.HEAPU8.set(bytes,0);
+        AudioSystem.clear();
+        acc=0;lastT=0;
+        api.setInput(gb,input.buttons|0,input.dpad|0);
+        notify('state-loaded',{nonce:msg.nonce});
+      }catch(error){
+        notify('state-error',{nonce:msg.nonce,message:(error&&error.message)||String(error)});
+      }finally{resumeEmulation()}
     }
     function localSave(){
       const key='pokeboy.save.'+cartridgeId;
