@@ -206,10 +206,14 @@ def collect_rollouts(model, tok, league: League, n_battles: int, device: str,
         if not live:
             break
 
-        # one batched forward for every learner seat in the pool
+        # one batched forward for every learner seat in the pool;
+        # seat 2's state only exists if something will read it
         pend: list[tuple[dict, int]] = []
         for lv in live:
-            lv["states"] = {p: lv["b"].state(p) for p in (1, 2)}
+            need = set(lv["learners"])
+            if 2 not in need and not lv["opp"].full_info:
+                need.add(2)
+            lv["states"] = {p: lv["b"].state(p) for p in need}
             for p in lv["learners"]:
                 pend.append((lv, p))
         batch = _encode_batch(tok, [lv["states"][p] for lv, p in pend], device)
