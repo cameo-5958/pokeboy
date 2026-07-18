@@ -42,6 +42,24 @@ def _flex_attention_overrides(model) -> dict:
 
 
 def main() -> None:
+    import torch
+
+    if not torch.cuda.is_available():
+        # torch's create_block_mask defaults to device="cuda"; amago's flex
+        # attention calls it without a device, so CPU-only runs explode
+        import torch.nn.attention.flex_attention as _fa
+
+        import amago.nets.transformer as _tr
+
+        _orig_cbm = _fa.create_block_mask
+
+        def _cbm_cpu(*args, **kwargs):
+            kwargs.setdefault("device", "cpu")
+            return _orig_cbm(*args, **kwargs)
+
+        _fa.create_block_mask = _cbm_cpu
+        _tr.create_block_mask = _cbm_cpu
+
     import amago.cli_utils as cli_utils
     import gin
     import metamon.rl.evaluate.__main__ as evaluate_main
