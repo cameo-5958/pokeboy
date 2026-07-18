@@ -93,17 +93,26 @@ class SearchTeacher:
         self._rng = random.Random(seed)
 
     def choose_full(self, b: Battle, player: int) -> int:
+        scores = self.action_scores(b, player)
+        # deterministic tie-break: best score, then lowest action id
+        return min(scores, key=lambda a: (-scores[a], a))
+
+    def action_scores(self, b: Battle, player: int,
+                      actions: set[int] | None = None) -> dict[int, float]:
+        """Root action values; optionally restricted to a candidate subset
+        (an empty intersection falls back to all legal actions)."""
         me = player - 1
         cmap = b._choice_map(me)
+        if actions is not None:
+            cmap = {a: c for a, c in cmap.items() if a in actions} or cmap
         if len(cmap) == 1:
-            return next(iter(cmap))
+            return {next(iter(cmap)): 0.0}
         scores = self._root_scores(b.raw, me, cmap, depth=1)
         if self.depth >= 2:
             top = sorted(scores, key=lambda a: scores[a], reverse=True)[: self.topk]
             deep = self._root_scores(b.raw, me, {a: cmap[a] for a in top}, depth=self.depth)
             scores.update(deep)
-        # deterministic tie-break: best score, then lowest action id
-        return min(scores, key=lambda a: (-scores[a], a))
+        return scores
 
     # -- internals --
 
