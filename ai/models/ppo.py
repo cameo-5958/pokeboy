@@ -149,8 +149,14 @@ def _encode_batch(tok, states, device):
 
 @torch.no_grad()
 def collect_rollouts(model, tok, league: League, n_battles: int, device: str,
-                     rng: random.Random, max_turns: int = 300) -> dict:
-    """Play n_battles league games; return flat tensors of learner transitions."""
+                     rng: random.Random, max_turns: int = 300,
+                     concurrent: int = 16) -> dict:
+    """Play n_battles league games; return flat tensors of learner transitions.
+
+    Battles run in a refilling pool of `concurrent` games so every learner
+    seat across the pool shares one batched forward per tick — the GPU call,
+    not the engine, is the rollout bottleneck.
+    """
     from sim.battle import Battle
 
     was_training = model.training
@@ -159,56 +165,91 @@ def collect_rollouts(model, tok, league: League, n_battles: int, device: str,
 
     steps: list[dict] = []  # per-transition storage (cpu tensors)
     episodes: list[tuple[list[int], float]] = []  # (step indexes, final reward)
+    remaining = n_battles
 
-    for _ in range(n_battles):
+    def spawn() -> dict | None:
+        nonlocal remaining
+        if remaining <= 0:
+            return None
+        remaining -= 1
         opp = league.pick(rng)
-        b = Battle(pick_team(rng), pick_team(rng), seed=rng.randrange(2**63))
-        my_steps: dict[int, list[int]] = {1: [], 2: []}
-        learner_players = (1, 2) if opp.kind == "mirror" else (1,)
-        for _turn in range(max_turns):
-            if b.winner:
-                break
-            states = {p: b.state(p) for p in (1, 2)}
-            actions = {}
-            # learner seats: batched forward over this battle's pending states
-            pending = [p for p in learner_players]
-            batch = _encode_batch(tok, [states[p] for p in pending], device)
-            logits, vlogits = model(**batch, return_value=True)
-            legal = torch.zeros(len(pending), 10, dtype=torch.bool)
-            for i, p in enumerate(pending):
-                legal[i, states[p].legal_actions] = True
-            dist = masked_dist(logits.float().cpu(), legal)
-            acts = torch.multinomial(dist.probs, 1).squeeze(1)
-            logps = dist.log_prob(acts)
-            vals = value_estimate(vlogits.float().cpu())
-            for i, p in enumerate(pending):
-                actions[p] = int(acts[i])
-                my_steps[p].append(len(steps))
-                steps.append(
-                    dict(
-                        field_ids=batch["field_ids"][i].cpu(),
-                        value_ids=batch["value_ids"][i].cpu(),
-                        slot_ids=batch["slot_ids"][i].cpu(),
-                        cont=batch["cont"][i].cpu(),
-                        length=int(batch["lengths"][i]),
-                        action=int(acts[i]),
-                        old_logp=float(logps[i]),
-                        value=float(vals[i]),
-                        legal=legal[i],
-                    )
+        return {
+            "b": Battle(pick_team(rng), pick_team(rng), seed=rng.randrange(2**63)),
+            "opp": opp,
+            "learners": (1, 2) if opp.kind == "mirror" else (1,),
+            "my_steps": {1: [], 2: []},
+            "turns": 0,
+        }
+
+    live: list[dict] = []
+    while len(live) < max(1, concurrent):
+        lv = spawn()
+        if lv is None:
+            break
+        live.append(lv)
+
+    while live:
+        # retire finished battles, refill the pool
+        for lv in live[:]:
+            if lv["b"].winner or lv["turns"] >= max_turns:
+                outcome = lv["b"].winner
+                for p in lv["learners"]:
+                    if not lv["my_steps"][p]:
+                        continue
+                    r = (DRAW if outcome in (None, "tie")
+                         else (WIN if outcome == f"p{p}" else LOSS))
+                    episodes.append((lv["my_steps"][p], r))
+                live.remove(lv)
+                nxt = spawn()
+                if nxt is not None:
+                    live.append(nxt)
+        if not live:
+            break
+
+        # one batched forward for every learner seat in the pool
+        pend: list[tuple[dict, int]] = []
+        for lv in live:
+            lv["states"] = {p: lv["b"].state(p) for p in (1, 2)}
+            for p in lv["learners"]:
+                pend.append((lv, p))
+        batch = _encode_batch(tok, [lv["states"][p] for lv, p in pend], device)
+        logits, vlogits = model(**batch, return_value=True)
+        legal = torch.zeros(len(pend), 10, dtype=torch.bool)
+        for i, (lv, p) in enumerate(pend):
+            legal[i, lv["states"][p].legal_actions] = True
+        dist = masked_dist(logits.float().cpu(), legal)
+        acts = torch.multinomial(dist.probs, 1).squeeze(1)
+        logps = dist.log_prob(acts)
+        vals = value_estimate(vlogits.float().cpu())
+
+        actions: dict[int, dict[int, int]] = {id(lv): {} for lv in live}
+        for i, (lv, p) in enumerate(pend):
+            actions[id(lv)][p] = int(acts[i])
+            lv["my_steps"][p].append(len(steps))
+            steps.append(
+                dict(
+                    field_ids=batch["field_ids"][i].cpu(),
+                    value_ids=batch["value_ids"][i].cpu(),
+                    slot_ids=batch["slot_ids"][i].cpu(),
+                    cont=batch["cont"][i].cpu(),
+                    length=int(batch["lengths"][i]),
+                    action=int(acts[i]),
+                    old_logp=float(logps[i]),
+                    value=float(vals[i]),
+                    legal=legal[i],
                 )
-            if 2 not in actions:  # league seat
-                if opp.full_info:
-                    actions[2] = opp.choose(b, 2)
+            )
+
+        # league seats + engine steps
+        for lv in live:
+            acts_lv = actions[id(lv)]
+            if 2 not in acts_lv:
+                if lv["opp"].full_info:
+                    acts_lv[2] = lv["opp"].choose(lv["b"], 2)
                 else:
-                    actions[2] = opp.choose(states[2])
-            b.step(actions[1], actions[2])
-        outcome = b.winner
-        for p in learner_players:
-            if not my_steps[p]:
-                continue
-            r = DRAW if outcome in (None, "tie") else (WIN if outcome == f"p{p}" else LOSS)
-            episodes.append((my_steps[p], r))
+                    acts_lv[2] = lv["opp"].choose(lv["states"][2])
+            lv["b"].step(acts_lv[1], acts_lv[2])
+            lv["turns"] += 1
 
     if was_training:
         model.train()
@@ -319,6 +360,8 @@ def main() -> None:
     p.add_argument("--eval-every", type=int, default=10, help="iterations between benchmarks")
     p.add_argument("--eval-battles", type=int, default=50)
     p.add_argument("--snapshot-every", type=int, default=25, help="iterations between league snapshots")
+    p.add_argument("--concurrent", type=int, default=32,
+                   help="battles rolled out in one shared-forward pool")
     p.add_argument("--bf16", action="store_true")
     p.add_argument("--ckpt-root", default=str(ROOT / "checkpoints"))
     args = p.parse_args()
@@ -368,7 +411,7 @@ def main() -> None:
     wins = {"n": 0, "w": 0.0}
     for it in range(1, args.iters + 1):
         buf = collect_rollouts(model, tok, league, args.battles_per_iter, device, rng,
-                               max_turns=args.max_turns)
+                               max_turns=args.max_turns, concurrent=args.concurrent)
         wins["n"] += 1
         wins["w"] = 0.9 * wins["w"] + 0.1 * buf["reward_return"].mean().item()
         stats = ppo_update(model, opt, buf, device, epochs=args.epochs,
