@@ -255,14 +255,18 @@ def make_team_builder(seed: int = 0, pool: str = "mixed"):
 
 def make_player(ckpt: str, battle_format: str = "gen1ou", team=None,
                 temperature: float = 0.25, device: str | None = None,
-                seed: int = 0, **player_kwargs):
-    """Build a poke-env Player wrapping a checkpoint agent (lazy import)."""
+                seed: int = 0, agent=None, **player_kwargs):
+    """Build a poke-env Player wrapping a checkpoint agent (lazy import).
+
+    agent overrides the default ModelAgent — e.g. serve.overdrive's
+    OverdriveAgent for search-at-serve play."""
     from poke_env.player import Player
 
     from models.agent import ModelAgent
     from sim.schema import State
 
-    agent = ModelAgent(ckpt, seed=seed, device=device, temperature=temperature)
+    if agent is None:
+        agent = ModelAgent(ckpt, seed=seed, device=device, temperature=temperature)
 
     class PokeboyPlayer(Player):
         _trackers: dict[str, HistoryTracker] = {}
@@ -317,6 +321,10 @@ def main() -> None:
     p.add_argument("--team-pool", default="mixed",
                    choices=["mixed", "competitive", "variety"])
     p.add_argument("--username", help="account name on the server")
+    p.add_argument("--overdrive", action="store_true",
+                   help="serve-time search over determinized engine clones")
+    p.add_argument("--determinizations", type=int, default=4)
+    p.add_argument("--search-depth", type=int, default=2)
     args = p.parse_args()
 
     async def run() -> None:
@@ -331,10 +339,18 @@ def main() -> None:
 
             kwargs["account_configuration"] = AccountConfiguration(
                 args.username, None)
+        agent = None
+        if args.overdrive:
+            from serve.overdrive import OverdriveAgent
+
+            agent = OverdriveAgent(args.ckpt, temperature=args.temperature,
+                                   determinizations=args.determinizations,
+                                   depth=args.search_depth)
         player = make_player(args.ckpt, battle_format=args.format,
                              team=make_team_builder(args.team_seed,
                                                     args.team_pool),
-                             temperature=args.temperature, **kwargs)
+                             temperature=args.temperature, agent=agent,
+                             **kwargs)
         if args.mode == "local-smoke":
             from poke_env.player import RandomPlayer
 

@@ -62,7 +62,8 @@ class ModelAgent:
         self._gen = torch.Generator().manual_seed(seed)
 
     @torch.no_grad()
-    def choose(self, state: State) -> int:
+    def action_probs(self, state: State) -> torch.Tensor:
+        """Legality-masked, temperature-scaled policy distribution (10,)."""
         enc = self.tok.encode(state.to_json())
         batch = dict(
             field_ids=torch.tensor(enc["field_ids"][None], dtype=torch.long, device=self.device),
@@ -74,5 +75,8 @@ class ModelAgent:
         logits = self.model(**batch)[0].float().cpu()
         mask = torch.full_like(logits, float("-inf"))
         mask[state.legal_actions] = 0.0
-        probs = torch.softmax(logits / self.temperature + mask, dim=-1)
+        return torch.softmax(logits / self.temperature + mask, dim=-1)
+
+    def choose(self, state: State) -> int:
+        probs = self.action_probs(state)
         return int(torch.multinomial(probs, 1, generator=self._gen).item())
