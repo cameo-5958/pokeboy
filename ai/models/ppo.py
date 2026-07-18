@@ -217,7 +217,9 @@ def collect_rollouts(model, tok, league: League, n_battles: int, device: str,
             for p in lv["learners"]:
                 pend.append((lv, p))
         batch = _encode_batch(tok, [lv["states"][p] for lv, p in pend], device)
-        logits, vlogits = model(**batch, return_value=True)
+        with torch.inference_mode():
+            logits, vlogits = model(**batch, return_value=True)
+        logits, vlogits = logits.clone(), vlogits.clone()
         legal = torch.zeros(len(pend), 10, dtype=torch.bool)
         for i, (lv, p) in enumerate(pend):
             legal[i, lv["states"][p].legal_actions] = True
