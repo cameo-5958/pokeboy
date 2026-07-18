@@ -328,6 +328,8 @@ def main() -> None:
                    help="diagnostic: play with empty history tails")
     p.add_argument("--determinizations", type=int, default=4)
     p.add_argument("--search-depth", type=int, default=2)
+    p.add_argument("--search-mode", default="teacher",
+                   choices=["teacher", "value"])
     args = p.parse_args()
 
     async def run() -> None:
@@ -348,7 +350,8 @@ def main() -> None:
 
             agent = OverdriveAgent(args.ckpt, temperature=args.temperature,
                                    determinizations=args.determinizations,
-                                   depth=args.search_depth)
+                                   depth=args.search_depth,
+                                   mode=args.search_mode)
         player = make_player(args.ckpt, battle_format=args.format,
                              team=make_team_builder(args.team_seed,
                                                     args.team_pool),
