@@ -255,7 +255,8 @@ def make_team_builder(seed: int = 0, pool: str = "mixed"):
 
 def make_player(ckpt: str, battle_format: str = "gen1ou", team=None,
                 temperature: float = 0.25, device: str | None = None,
-                seed: int = 0, agent=None, **player_kwargs):
+                seed: int = 0, agent=None, history: bool = True,
+                **player_kwargs):
     """Build a poke-env Player wrapping a checkpoint agent (lazy import).
 
     agent overrides the default ModelAgent — e.g. serve.overdrive's
@@ -278,8 +279,8 @@ def make_player(ckpt: str, battle_format: str = "gen1ou", team=None,
                     self._trackers.clear()
                 tracker = self._trackers.setdefault(tag, HistoryTracker())
                 tracker.observe(battle)
-                state_json, orders = state_from_battle(
-                    battle, history_tail=tracker.tail(battle))
+                tail = tracker.tail(battle) if history else []
+                state_json, orders = state_from_battle(battle, history_tail=tail)
             except Exception:  # a stalled battle is worse than a random move
                 self.logger.exception("state translation failed; playing random")
                 return self.choose_random_move(battle)
@@ -323,6 +324,8 @@ def main() -> None:
     p.add_argument("--username", help="account name on the server")
     p.add_argument("--overdrive", action="store_true",
                    help="serve-time search over determinized engine clones")
+    p.add_argument("--no-history", action="store_true",
+                   help="diagnostic: play with empty history tails")
     p.add_argument("--determinizations", type=int, default=4)
     p.add_argument("--search-depth", type=int, default=2)
     args = p.parse_args()
@@ -350,7 +353,7 @@ def main() -> None:
                              team=make_team_builder(args.team_seed,
                                                     args.team_pool),
                              temperature=args.temperature, agent=agent,
-                             **kwargs)
+                             history=not args.no_history, **kwargs)
         if args.mode == "local-smoke":
             from poke_env.player import RandomPlayer
 
