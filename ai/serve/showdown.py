@@ -7,9 +7,9 @@ human ladder. Translation is duck-typed (attribute access only) and
 poke-env itself is imported lazily inside PokeboyPlayer, so this module and
 its tests work without the dependency installed.
 
-History tails are left empty in v1: models are trained with tail
-augmentation, so short/absent history is in-distribution (measured cost is
-a few points — a live tail from poke-env observations is the known upgrade).
+History tails are rebuilt live by HistoryTracker from battle diffs in the
+training format (measured neutral vs TaurosV0, kept on for distribution
+fidelity); --no-history plays with empty tails for A/B controls.
 
   uv run python -m serve.showdown --ckpt checkpoints/banquet/latest/model.pt \
       --mode challenge --opponent SomeUser         # or --mode ladder
