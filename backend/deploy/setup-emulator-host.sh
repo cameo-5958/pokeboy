@@ -22,7 +22,9 @@ if [[ ! -d /etc/letsencrypt/live/$domain ]]; then
     ln -sf "$conf_dst" "/etc/nginx/sites-enabled/$domain.conf"
     nginx -t
     systemctl reload nginx
-    certbot certonly --nginx -d "$domain" --non-interactive --keep
+    # Webroot challenge: the certbot nginx plugin isn't installed on this host.
+    mkdir -p /var/www/letsencrypt
+    certbot certonly --webroot -w /var/www/letsencrypt -d "$domain" --non-interactive --keep
 fi
 
 install -m 644 "$conf_src" "$conf_dst"
