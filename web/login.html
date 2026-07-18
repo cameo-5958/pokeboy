@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>POKEBOY — SIGN IN</title>
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="2" fill="%231c2b22"/><rect x="3" y="2" width="10" height="8" fill="%23c8d4a4"/><circle cx="11" cy="13" r="1.5" fill="%238fa878"/><rect x="4" y="12" width="3" height="1" fill="%238fa878"/><rect x="5" y="11" width="1" height="3" fill="%238fa878"/></svg>'>
+  <link rel="stylesheet" href="/web/shell.css">
+</head>
+<body class="login-page">
+  <form id="login" autocomplete="on">
+    <h1>POKEBOY</h1>
+    <p class="tag">PLAYER SIGN-IN</p>
+    <label>USER
+      <input id="username" name="username" autocomplete="username" required>
+    </label>
+    <label>PASS
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">START</button>
+    <p id="login-error" class="error" hidden></p>
+  </form>
+  <script>
+    document.getElementById('login').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const error = document.getElementById('login-error');
+      error.hidden = true;
+      try {
+        const res = await fetch('/web/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        if (res.ok) { location.href = '/web/'; return; }
+        const body = await res.json().catch(() => ({}));
+        error.textContent = body.error || 'SIGN-IN FAILED';
+      } catch {
+        error.textContent = 'NETWORK ERROR';
+      }
+      error.hidden = false;
+    });
+  </script>
+</body>
+</html>
