@@ -74,9 +74,13 @@ class BattleRecord:
 class Battle:
     """Two-seat gen1 battle. Players are 1 and 2 in the public API."""
 
-    def __init__(self, team1: list[PokemonSpec], team2: list[PokemonSpec], seed: int):
+    def __init__(self, team1: list[PokemonSpec], team2: list[PokemonSpec], seed: int,
+                 packed: bytes | None = None):
         self.teams = (team1, team2)
-        packed = pack_battle(team1, team2, seed)
+        # a caller may hand in a pre-patched buffer (sim/reconstruct.py) —
+        # it must be pack_battle layout for these teams, before first update
+        if packed is None:
+            packed = pack_battle(team1, team2, seed)
         # 128 bits: battle-level train/holdout splits rely on id uniqueness
         self.battle_id = "b_" + hashlib.sha1(packed).hexdigest()[:32]
         self.raw = RawBattle(packed, seed=seed)
