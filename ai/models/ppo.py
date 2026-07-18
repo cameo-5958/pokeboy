@@ -406,6 +406,12 @@ def main() -> None:
              "value_bins": ckpt["value_bins"], "dmg_feats": ckpt.get("dmg_feats", False)},
             tmp,
         )
+        # keep every eval-time checkpoint: self-play can drift, and the best
+        # policy of the run is routinely NOT the last one (run 2 lost its
+        # iter-100 peak to this exact overwrite)
+        import shutil
+
+        shutil.copy2(tmp, run_dir / f"model-{step:04d}.pt")
         os.replace(tmp, run_dir / "model.pt")
         if not published:
             link = tier_dir / f".latest-{os.getpid()}"
