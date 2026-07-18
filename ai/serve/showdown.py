@@ -57,8 +57,126 @@ def _opp_mon(mon) -> dict[str, Any]:
 _UNREVEALED = {"species": None, "hp_fraction": None, "status": None,
                "fainted": False, "revealed_moves": []}
 
+_HIST_K = 20
 
-def state_from_battle(battle) -> tuple[dict[str, Any], dict[int, Any]]:
+
+def _dmg_bucket(frac: float) -> int:
+    # same buckets as sim/battle.py and data/convert_showdown.py (SPECS §4.1)
+    if frac <= 0:
+        return 0
+    return min(7, 1 + int(min(frac, 0.6999) * 10))
+
+
+class HistoryTracker:
+    """Rebuilds the sim's per-turn history tail from poke-env battle diffs.
+
+    Call observe(battle) at every decision point before reading the state,
+    and record_decision(battle, target) with the chosen order target after.
+    Semantics mirror sim/battle.py's recorder (damage summed per side and
+    bucketed, KO forces bucket 8, first action of a turn wins) so live
+    tails match the training distribution. The one inference: the
+    opponent's action is taken from their active mon's last_move when they
+    did not switch, which mislabels the rare fully-blocked turn but keeps
+    the common repeated-move case attributed.
+    """
+
+    def __init__(self):
+        self._snap: dict | None = None
+        self._turns: dict[int, dict] = {}
+
+    @staticmethod
+    def _snapshot(battle) -> dict:
+        def mon_row(mon):
+            return (float(mon.current_hp_fraction or 0.0), _status_name(mon),
+                    bool(mon.fainted))
+
+        opp_active = battle.opponent_active_pokemon
+        my_active = battle.active_pokemon
+        return {
+            "team": {m.species: mon_row(m) for m in battle.team.values()},
+            "opp": {m.species: mon_row(m) for m in battle.opponent_team.values()},
+            "my_active": None if my_active is None else my_active.species,
+            "opp_active": None if opp_active is None else opp_active.species,
+            "opp_last_move": (
+                None if opp_active is None
+                or getattr(opp_active, "last_move", None) is None
+                else opp_active.last_move.id
+            ),
+        }
+
+    def _bucket(self, battle) -> dict:
+        turn = int(battle.turn) - (0 if battle.force_switch else 1)
+        return self._turns.setdefault(turn, {
+            "my": None, "op": None, "dmg_me": 0.0, "dmg_opp": 0.0,
+            "ko_me": False, "ko_opp": False, "ev": set(),
+        })
+
+    @staticmethod
+    def _side_diff(pre: dict, post: dict, bucket: dict, dmg_key: str,
+                   ko_key: str) -> None:
+        for species, (hp0, status0, fainted0) in pre.items():
+            hp1, status1, fainted1 = post.get(species, (0.0, status0, True))
+            bucket[dmg_key] += max(0.0, hp0 - hp1)
+            if not fainted0 and (fainted1 or (hp0 > 0 and hp1 <= 0)):
+                bucket[ko_key] = True
+                bucket["ev"].add("ft")
+            if status0 is None and status1 is not None:
+                bucket["ev"].add("st")
+
+    def observe(self, battle) -> None:
+        from data.convert_metamon import _eff_events
+
+        pre, cur = self._snap, self._snapshot(battle)
+        self._snap = cur
+        if pre is None:
+            return
+        bucket = self._bucket(battle)
+        self._side_diff(pre["team"], cur["team"], bucket, "dmg_me", "ko_me")
+        self._side_diff(pre["opp"], cur["opp"], bucket, "dmg_opp", "ko_opp")
+        if bucket["op"] is None and pre["opp_active"] is not None:
+            if cur["opp_active"] != pre["opp_active"]:
+                bucket["op"] = f"S:{canon_species(cur['opp_active'])}"
+            elif cur["opp_last_move"] is not None:
+                move = canon_move(cur["opp_last_move"])
+                bucket["op"] = f"M:{move}"
+                _eff_events(bucket["ev"], move,
+                            pre["my_active"] and canon_species(pre["my_active"]))
+
+    def record_decision(self, battle, target) -> None:
+        from data.convert_metamon import _eff_events
+
+        bucket = self._turns.setdefault(int(battle.turn), {
+            "my": None, "op": None, "dmg_me": 0.0, "dmg_opp": 0.0,
+            "ko_me": False, "ko_opp": False, "ev": set(),
+        })
+        if bucket["my"] is not None:
+            return  # first action of the turn wins
+        if hasattr(target, "species"):
+            bucket["my"] = f"S:{canon_species(target.species)}"
+        else:
+            move = canon_move(target.id)
+            bucket["my"] = f"M:{move}"
+            opp = (self._snap or {}).get("opp_active")
+            _eff_events(bucket["ev"], move, opp and canon_species(opp))
+
+    def tail(self, battle) -> list[dict[str, Any]]:
+        done = sorted((t for t in self._turns if t < int(battle.turn)),
+                      reverse=True)
+        out = []
+        for i, t in enumerate(done[:_HIST_K]):
+            b = self._turns[t]
+            out.append({
+                "o": -(i + 1),
+                "my": b["my"],
+                "op": b["op"],
+                "dm": 8 if b["ko_me"] else _dmg_bucket(b["dmg_me"]),
+                "do": 8 if b["ko_opp"] else _dmg_bucket(b["dmg_opp"]),
+                "ev": sorted(b["ev"]),
+            })
+        return out
+
+
+def state_from_battle(battle, history_tail=()) -> tuple[dict[str, Any], dict[int, Any]]:
     """schema_v1 state dict + {action_int: poke-env order target}."""
     active = battle.active_pokemon
     bench = list(battle.available_switches)
@@ -94,7 +212,7 @@ def state_from_battle(battle) -> tuple[dict[str, Any], dict[int, Any]]:
         "my_side": {"active_ix": 0, "pokemon": mine},
         "opp_side": {"active_ix": 0, "pokemon": opp},
         "legal_actions": sorted(orders),
-        "history_tail": [],
+        "history_tail": list(history_tail),
     }
     return state, orders
 
@@ -147,9 +265,17 @@ def make_player(ckpt: str, battle_format: str = "gen1ou", team=None,
     agent = ModelAgent(ckpt, seed=seed, device=device, temperature=temperature)
 
     class PokeboyPlayer(Player):
+        _trackers: dict[str, HistoryTracker] = {}
+
         def choose_move(self, battle):
             try:
-                state_json, orders = state_from_battle(battle)
+                tag = getattr(battle, "battle_tag", "showdown")
+                if len(self._trackers) > 64:  # finished battles never return
+                    self._trackers.clear()
+                tracker = self._trackers.setdefault(tag, HistoryTracker())
+                tracker.observe(battle)
+                state_json, orders = state_from_battle(
+                    battle, history_tail=tracker.tail(battle))
             except Exception:  # a stalled battle is worse than a random move
                 self.logger.exception("state translation failed; playing random")
                 return self.choose_random_move(battle)
@@ -162,9 +288,13 @@ def make_player(ckpt: str, battle_format: str = "gen1ou", team=None,
                 my_side=state_json["my_side"],
                 opp_side=state_json["opp_side"],
                 legal_actions=state_json["legal_actions"],
-                history_tail=[],
+                history_tail=state_json["history_tail"],
             )
             action = agent.choose(state)
+            try:
+                tracker.record_decision(battle, orders[action])
+            except Exception:
+                self.logger.exception("history record failed")
             return self.create_order(orders[action])
 
     return PokeboyPlayer(battle_format=battle_format, team=team, **player_kwargs)

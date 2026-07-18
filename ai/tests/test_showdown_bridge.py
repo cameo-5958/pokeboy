@@ -143,6 +143,78 @@ def test_team_builder_competitive_pool_only():
         for t in competitive}
 
 
+def test_history_tracker_builds_tail_from_battle_diffs():
+    from serve.showdown import HistoryTracker
+
+    tracker = HistoryTracker()
+    opp = Mon("starmie", hp=1.0, moves=[Move("psychic")])
+    me = _tauros()
+    b = FakeBattle(active=me, bench=[Mon("snorlax", moves=[Move("bodyslam")])],
+                   opp_active=opp, turn=1)
+    tracker.observe(b)
+    assert tracker.tail(b) == []  # no completed turns yet
+    tracker.record_decision(b, me.moves["bodyslam"])
+
+    b.turn = 2
+    me.current_hp_fraction = 0.75         # we took 25%
+    opp.current_hp_fraction = 0.65        # they took 35%
+    opp.last_move = Move("psychic")       # their revealed action
+    tracker.observe(b)
+    tail = tracker.tail(b)
+    assert len(tail) == 1
+    e = tail[0]
+    assert e["o"] == -1
+    assert e["my"] == "M:Body Slam" and e["op"] == "M:Psychic"
+    assert e["dm"] == 3 and e["do"] == 4  # 0.25 / 0.35 hp-frac buckets
+    assert e["ev"] == []  # normal effectiveness both ways
+
+
+def test_history_tracker_switch_faint_and_force_switch_merge():
+    from serve.showdown import HistoryTracker
+
+    tracker = HistoryTracker()
+    me = _tauros()
+    lax = Mon("snorlax", moves=[Move("bodyslam")])
+    opp = Mon("starmie", hp=1.0, moves=[Move("psychic")])
+    b = FakeBattle(active=me, bench=[lax], opp_active=opp, turn=5)
+    tracker.observe(b)
+    tracker.record_decision(b, me.moves["blizzard"])
+
+    # our tauros faints to their hit mid-turn -> force-switch decision, same turn
+    me.current_hp_fraction = 0.0
+    me.fainted = True
+    opp.current_hp_fraction = 0.55        # blizzard hit before we went down
+    opp.last_move = Move("psychic")
+    b.active_pokemon = None
+    b.available_switches = [lax]
+    b.force_switch = True
+    tracker.observe(b)
+    assert tracker.tail(b) == []          # turn 5 still in progress, stays hidden
+    tracker.record_decision(b, lax)       # we send in snorlax
+
+    b.turn = 6
+    b.force_switch = False
+    b.active_pokemon = lax
+    b.available_switches = []
+    tracker.observe(b)
+    tail = tracker.tail(b)
+    assert len(tail) == 1
+    e = tail[0]
+    assert e["o"] == -1
+    assert e["my"] == "M:Blizzard"        # first action of the turn wins
+    assert e["op"] == "M:Psychic"
+    assert e["dm"] == 8                   # our KO overrides the bucket
+    assert e["do"] == 5                   # 0.45 lost -> bucket 5
+    assert "ft" in e["ev"] and "re" in e["ev"]  # faint + blizzard resisted by starmie
+
+
+def test_state_from_battle_carries_history_tail():
+    b = FakeBattle(active=_tauros(), bench=[], opp_active=Mon("starmie"))
+    tail = [{"o": -1, "my": "M:Body Slam", "op": None, "dm": 0, "do": 2, "ev": []}]
+    state, _ = state_from_battle(b, history_tail=tail)
+    assert state["history_tail"] == tail
+
+
 def test_translation_handles_unrevealed_opponent_active():
     active = _tauros()
     b = FakeBattle(active=active, bench=[], opp_active=Mon("starmie"))
