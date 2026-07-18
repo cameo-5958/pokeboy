@@ -39,6 +39,32 @@ def test_action_scores_matches_choose_full_and_restricts():
     assert set(SearchTeacher(seed=4).action_scores(b, 1, actions=sub)) == sub
 
 
+def test_full_info_state_reads_both_sides():
+    from serve.overdrive import full_info_state
+
+    b = _mid_battle()
+    st = full_info_state(b, player=1)
+    assert len(st.my_side["pokemon"]) == 6
+    opp = st.opp_side["pokemon"]
+    assert all(m["species"] for m in opp)          # nothing hidden
+    assert all(len(m["revealed_moves"]) > 0 for m in opp)
+    assert st.legal_actions == b.state(1).legal_actions
+
+
+@pytest.mark.skipif(not CKPT.exists(), reason="needs banquet checkpoint")
+def test_overdrive_value_mode_legal():
+    import torch
+
+    from serve.overdrive import OverdriveAgent
+
+    torch.set_num_threads(1)
+    agent = OverdriveAgent(str(CKPT), determinizations=2, rolls=1, seed=5,
+                           device="cpu", mode="value")
+    b = _mid_battle()
+    st = b.state(1)
+    assert agent.choose(st) in st.legal_actions
+
+
 @pytest.mark.skipif(not CKPT.exists(), reason="needs banquet checkpoint")
 def test_overdrive_agent_legal_and_deterministic():
     import torch
