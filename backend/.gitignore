@@ -5,6 +5,9 @@ dist/
 # Issued device API keys — secrets, never commit.
 data/keys.json
 
+# Web player persistence (battery saves, save states).
+data/web/
+
 # ROM binaries and user-supplied mod payloads are never committed.
 # ROM symbol documents (.sym) are fine to track — they contain no ROM data.
 roms/*.gb

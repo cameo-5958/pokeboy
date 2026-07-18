@@ -1,6 +1,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { loadDotEnv } from "./env.js";
+
+loadDotEnv();
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Repo-relative backend root (this file lives in backend/src).
 const root = path.join(__dirname, "..");
@@ -39,6 +43,24 @@ export const config = {
    * locally with `npm run key:new`.
    */
   adminToken: process.env.ADMIN_TOKEN ?? "",
+
+  /** Hostname whose root serves the browser player shell. */
+  webHost: process.env.WEB_HOST ?? "emulator.cameo.moe",
+  /**
+   * Browser player credentials + cookie secret (backend/.env). Web login is
+   * disabled (every attempt rejected) until all three are set.
+   */
+  webUsername: process.env.WEB_USERNAME ?? "",
+  webPassword: process.env.WEB_PASSWORD ?? "",
+  webSessionSecret: process.env.WEB_SESSION_SECRET ?? "",
+  /** Static shell (login/player pages). */
+  webDir: path.resolve(process.env.WEB_DIR ?? path.join(root, "..", "web")),
+  /** Bundled emulator runtime served to the browser — the same files the app ships. */
+  emulatorAssetsDir: path.resolve(
+    process.env.EMULATOR_ASSETS_DIR ?? path.join(root, "..", "app", "assets", "emulator"),
+  ),
+  /** Web player persistence (battery saves, save-state slots). */
+  webDataDir: path.resolve(process.env.WEB_DATA_DIR ?? path.join(root, "data", "web")),
 };
 
 // Back-compat accessors used across the routes/storage layer.
