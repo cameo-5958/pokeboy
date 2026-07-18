@@ -169,6 +169,37 @@ def _convert_pokechamp(args) -> None:
     print(json.dumps({"converted": converted, "rejected": rejected, "parts": part}))
 
 
+def cmd_convert_dir(args) -> None:
+    """Convert a directory of parsed-replay .json.lz4 files (e.g. metamon
+    eval --save_trajectories_to output) into schema_v1 parquet parts."""
+    import json
+
+    from data.convert_metamon import convert_trajectory
+    from data.convert_showdown import RejectedReplay
+    from data.trajectory import write_rows
+
+    src = Path(args.dir)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    reject_log = open(out / "rejected.jsonl", "a")
+    rows, part, totals = [], 0, {"converted": 0, "rejected": 0}
+    for f in sorted(src.rglob("*.json.lz4")):
+        try:
+            rows.extend(convert_trajectory(f.name, f.read_bytes(), source="metamon"))
+            totals["converted"] += 1
+        except RejectedReplay as exc:
+            totals["rejected"] += 1
+            reject_log.write(json.dumps({"file": f.name, "reason": str(exc)}) + "\n")
+            continue
+        if len(rows) >= args.rows_per_file:
+            write_rows(rows, out / f"part-{part:05d}.parquet")
+            part, rows = part + 1, []
+    if rows:
+        write_rows(rows, out / f"part-{part:05d}.parquet")
+        part += 1
+    print(json.dumps({**totals, "parts": part}))
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="data")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -184,6 +215,13 @@ def main() -> None:
     conv.add_argument("--root", default=str(DATASETS_ROOT))
     conv.add_argument("--rows-per-file", type=int, default=10_000)
     conv.set_defaults(fn=cmd_convert)
+
+    cdir = sub.add_parser("convert-dir",
+                          help="convert a dir of parsed .json.lz4 trajectories")
+    cdir.add_argument("--dir", required=True)
+    cdir.add_argument("--out", required=True)
+    cdir.add_argument("--rows-per-file", type=int, default=10_000)
+    cdir.set_defaults(fn=cmd_convert_dir)
 
     args = p.parse_args()
     args.fn(args)
