@@ -229,6 +229,8 @@ def main() -> None:
                    help="steps of plain CE before AWR weights kick in (value head needs to settle)")
     p.add_argument("--bf16", action="store_true", help="autocast forward/backward to bfloat16")
     p.add_argument("--ckpt-root", default=str(ROOT / "checkpoints"))
+    p.add_argument("--init-ckpt", default="",
+                   help="fine-tune: initialize weights from this checkpoint")
     args = p.parse_args()
     if args.steps <= 0 or args.batch_size <= 0 or args.limit_rows <= 0:
         p.error("--steps, --batch-size and --limit-rows must be positive")
@@ -247,7 +249,15 @@ def main() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     tok = Tokenizer(hist_k=args.hist_k, dmg_feats=args.dmg_feats)
     model = FieldValueEncoder(TIERS[args.tier], tok, value_bins=args.value_bins).to(device)
-    print(json.dumps({"tier": args.tier, "params": model.num_params(), "device": device}))
+    if args.init_ckpt:
+        init = torch.load(args.init_ckpt, map_location=device, weights_only=True)
+        if init.get("tier") != args.tier or init.get("value_bins", 0) != args.value_bins:
+            raise SystemExit(
+                f"--init-ckpt mismatch: ckpt is {init.get('tier')}/vb"
+                f"{init.get('value_bins')} vs requested {args.tier}/vb{args.value_bins}")
+        model.load_state_dict(init["model"])
+    print(json.dumps({"tier": args.tier, "params": model.num_params(), "device": device,
+                      "init": args.init_ckpt or None}))
 
     rows = load_rows(args.limit_rows, args.sources.split(","), seed=args.seed)
     # battle-level split: a battle's rows never straddle train/holdout
