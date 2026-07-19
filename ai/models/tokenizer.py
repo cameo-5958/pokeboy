@@ -133,17 +133,25 @@ class Tokenizer:
     # -- encoding --
 
     def encode(self, state: dict[str, Any]) -> dict[str, np.ndarray | int]:
-        fields, values, slots = [], [], []
-        cont: list[np.ndarray] = []
+        # preallocated fast path: token emission is the rollout hot loop
+        # (~3ms/state as list appends + a np.zeros per token); arrays are
+        # zero-padded up front so emission is pure indexed writes
+        field_arr = np.zeros(self.seq_len, dtype=np.int16)
+        value_arr = np.zeros(self.seq_len, dtype=np.int16)
+        slot_arr = np.zeros(self.seq_len, dtype=np.int16)
+        cont_arr = np.zeros((self.seq_len, len(self._cont_ix)), dtype=np.float32)
+        pos = 0
 
         def emit(field: str, value: str, slot: str, **channels: float) -> None:
-            fields.append(self._field_ix[field])
-            values.append(self._value_ix[value])
-            slots.append(self._slot_ix[slot])
-            c = np.zeros(len(self._cont_ix), dtype=np.float32)
+            nonlocal pos
+            if pos >= self.seq_len:
+                raise ValueError(f"sequence exceeds {self.seq_len}")
+            field_arr[pos] = self._field_ix[field]
+            value_arr[pos] = self._value_ix[value]
+            slot_arr[pos] = self._slot_ix[slot]
             for k, v in channels.items():
-                c[self._cont_ix[k]] = v
-            cont.append(c)
+                cont_arr[pos, self._cont_ix[k]] = v
+            pos += 1
 
         emit(
             "GLB",
@@ -163,16 +171,12 @@ class Tokenizer:
             for entry in state.get("history_tail", [])[: self.hist_k]:
                 self._emit_hist(emit, entry)
 
-        n = len(fields)
-        if n > self.seq_len:
-            raise ValueError(f"sequence {n} exceeds {self.seq_len}")
-        pad = self.seq_len - n
         return {
-            "field_ids": np.asarray(fields + [0] * pad, dtype=np.int16),
-            "value_ids": np.asarray(values + [0] * pad, dtype=np.int16),
-            "slot_ids": np.asarray(slots + [0] * pad, dtype=np.int16),
-            "cont": np.vstack(cont + [np.zeros((pad, len(self._cont_ix)), dtype=np.float32)]),
-            "length": n,
+            "field_ids": field_arr,
+            "value_ids": value_arr,
+            "slot_ids": slot_arr,
+            "cont": cont_arr,
+            "length": pos,
         }
 
     def _hist_value(self, name: str) -> str:
