@@ -375,6 +375,8 @@ def main() -> None:
     p.add_argument("--frozen-ckpt", action="append", default=[],
                    help="preload a checkpoint as a permanent frozen league seat "
                         "(repeatable; e.g. a TaurosV0 mimic)")
+    p.add_argument("--league-mix", default="0.5,0.7,0.8,1.0",
+                   help="cumulative mirror,frozen,teacher,scripted weights")
     p.add_argument("--bf16", action="store_true")
     p.add_argument("--ckpt-root", default=str(ROOT / "checkpoints"))
     args = p.parse_args()
@@ -398,7 +400,8 @@ def main() -> None:
 
     frozen: list = [ModelAgent(f, seed=args.seed, device=device, temperature=0.25)
                     for f in args.frozen_ckpt]
-    league = make_league(model, tok, frozen, rng)
+    mix = tuple(float(x) for x in args.league_mix.split(","))
+    league = make_league(model, tok, frozen, rng, mix=mix)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.0)
 
     run_id = f"ppo-{ckpt['tier']}-b{args.battles_per_iter}-lr{args.lr:g}-seed{args.seed}"
