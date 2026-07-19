@@ -226,12 +226,14 @@ def team_to_showdown(specs) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
-def make_team_builder(seed: int = 0, pool: str = "mixed"):
+def make_team_builder(seed: int = 0, pool: str = "mixed",
+                      team_index: int | None = None):
     """Teambuilder sampling a fresh team every battle (lazy import).
 
     pool: "mixed" for the standard 20/40/40 benchmark distribution, or a
     named TeamSampler pool ("competitive", "variety") to draw from alone —
-    e.g. matching an external opponent's curated team set.
+    e.g. matching an external opponent's curated team set. team_index pins
+    one fixed team from that pool (per-team win-rate probes).
     """
     import random as _random
 
@@ -245,8 +247,12 @@ def make_team_builder(seed: int = 0, pool: str = "mixed"):
             self._sampler = TeamSampler()
 
         def yield_team(self) -> str:
-            team = (self._sampler.sample(self._rng) if pool == "mixed"
-                    else self._rng.choice(self._sampler.pools[pool]))
+            if team_index is not None:
+                team = self._sampler.pools[pool][team_index]
+            elif pool == "mixed":
+                team = self._sampler.sample(self._rng)
+            else:
+                team = self._rng.choice(self._sampler.pools[pool])
             paste = team_to_showdown(team)
             return self.join_team(self.parse_showdown_team(paste))
 
@@ -326,6 +332,8 @@ def main() -> None:
                    help="serve-time search over determinized engine clones")
     p.add_argument("--no-history", action="store_true",
                    help="diagnostic: play with empty history tails")
+    p.add_argument("--team-index", type=int, default=None,
+                   help="pin one fixed team from --team-pool")
     p.add_argument("--determinizations", type=int, default=4)
     p.add_argument("--search-depth", type=int, default=2)
     p.add_argument("--search-mode", default="teacher",
@@ -354,7 +362,8 @@ def main() -> None:
                                    mode=args.search_mode)
         player = make_player(args.ckpt, battle_format=args.format,
                              team=make_team_builder(args.team_seed,
-                                                    args.team_pool),
+                                                    args.team_pool,
+                                                    args.team_index),
                              temperature=args.temperature, agent=agent,
                              history=not args.no_history, **kwargs)
         if args.mode == "local-smoke":
