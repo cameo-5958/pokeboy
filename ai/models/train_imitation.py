@@ -55,18 +55,63 @@ def awr_weights(won: torch.Tensor, v: torch.Tensor, beta: float) -> torch.Tensor
     return torch.exp(2.0 * (won - v) / beta).clamp(max=AWR_WEIGHT_CAP)
 
 
-def load_rows(limit: int, sources: list[str], seed: int = 0) -> list[dict]:
+def kd_policy_loss(
+    logits: torch.Tensor, teacher_probs: torch.Tensor, temp: float = 1.0,
+    reduction: str = "mean",
+) -> torch.Tensor:
+    """Soft-label CE vs the (re-tempered) teacher distribution: equals hard
+    CE for a one-hot teacher at temp 1. temp>1 softens both sides (teacher
+    re-tempered p^(1/T), zeros stay zero — illegal actions get no target
+    mass) and scales by T^2 to keep gradient magnitude comparable."""
+    t = teacher_probs
+    if temp != 1.0:
+        t = t.pow(1.0 / temp)
+        t = t / t.sum(-1, keepdim=True).clamp_min(1e-12)
+    per_row = -(t * torch.log_softmax(logits / temp, dim=-1)).sum(-1) * (temp * temp)
+    return per_row.mean() if reduction == "mean" else per_row
+
+
+def load_rows(
+    limit: int, sources: list[str], seed: int = 0,
+    distill_root: Path | None = None,
+) -> list[dict]:
+    """Load corpus rows. With distill_root, parts are discovered FROM the
+    sidecar tree (so a partially-labeled corpus narrows instead of erroring)
+    and each row gets kd_probs/kd_v attached, verified by battle_id order."""
     import pyarrow.parquet as pq
 
-    parts = []
-    for src in sources:
-        parts += sorted((ROOT / "datasets" / "processed" / src).rglob("part-*.parquet"))
+    parts: list[tuple[Path, Path | None]] = []
+    if distill_root is not None:
+        distill_root = Path(distill_root)
+        for src in sources:
+            for side in sorted((distill_root / src).rglob("part-*.parquet")):
+                data = (ROOT / "datasets" / "processed" / src
+                        / side.relative_to(distill_root / src))
+                if not data.exists():
+                    raise FileNotFoundError(f"sidecar {side} has no data part {data}")
+                parts.append((data, side))
+    else:
+        for src in sources:
+            parts += [(p, None) for p in
+                      sorted((ROOT / "datasets" / "processed" / src).rglob("part-*.parquet"))]
     rng = random.Random(seed)
     rng.shuffle(parts)
     rows: list[dict] = []
-    for path in parts:
+    for path, side in parts:
         table = pq.read_table(path, columns=["battle_id", "state_json", "action", "elo", "won"])
-        rows.extend(table.to_pylist())
+        part_rows = table.to_pylist()
+        if side is not None:
+            side_rows = pq.read_table(side).to_pylist()
+            if len(side_rows) != len(part_rows):
+                raise ValueError(f"sidecar row count mismatch: {side}")
+            for r, s in zip(part_rows, side_rows):
+                if r["battle_id"] != s["battle_id"]:
+                    raise ValueError(
+                        f"sidecar misaligned at {side}: "
+                        f"{r['battle_id']} != {s['battle_id']}")
+                r["kd_probs"] = s["kd_probs"]
+                r["kd_v"] = s["kd_v"]
+        rows.extend(part_rows)
         if len(rows) >= limit:
             break
     rng.shuffle(rows)
@@ -80,6 +125,7 @@ def make_batches(
     device: str,
     weights: list[float] | None = None,
     augment_rng: random.Random | None = None,
+    distill: bool = False,
 ):
     if not rows:
         raise ValueError("empty rows for make_batches")
@@ -97,7 +143,7 @@ def make_batches(
             encs.append(tok.encode(state))
             labels.append(min(r["action"], 9))
             wons.append(1.0 if r.get("won") else 0.0)
-        yield (
+        out = (
             dict(
                 field_ids=torch.tensor(
                     np.stack([e["field_ids"] for e in encs]), dtype=torch.long, device=device
@@ -121,6 +167,18 @@ def make_batches(
             else torch.tensor(weights[i : i + batch_size], dtype=torch.float32, device=device),
             torch.tensor(wons, dtype=torch.float32, device=device),
         )
+        if distill:
+            kd = dict(
+                probs=torch.tensor(
+                    np.asarray([r["kd_probs"] for r in chunk], dtype=np.float32),
+                    device=device,
+                ),
+                v=torch.tensor(
+                    [float(r["kd_v"]) for r in chunk], dtype=torch.float32, device=device
+                ),
+            )
+            out = out + (kd,)
+        yield out
 
 
 def row_weights(rows: list[dict], mode: str) -> list[float]:
@@ -231,7 +289,15 @@ def main() -> None:
     p.add_argument("--ckpt-root", default=str(ROOT / "checkpoints"))
     p.add_argument("--init-ckpt", default="",
                    help="fine-tune: initialize weights from this checkpoint")
+    p.add_argument("--distill-labels", default="",
+                   help="KD: sidecar root from models/distill; trains on soft "
+                        "teacher targets instead of hard action labels")
+    p.add_argument("--kd-temp", type=float, default=1.0)
     args = p.parse_args()
+    if args.distill_labels and (args.awr or args.weighting != "none"):
+        p.error("--distill-labels replaces the CE objective; use --weighting none, no --awr")
+    if args.kd_temp <= 0:
+        p.error("--kd-temp must be > 0")
     if args.steps <= 0 or args.batch_size <= 0 or args.limit_rows <= 0:
         p.error("--steps, --batch-size and --limit-rows must be positive")
     if not 0 < args.holdout < 1:
@@ -259,7 +325,13 @@ def main() -> None:
     print(json.dumps({"tier": args.tier, "params": model.num_params(), "device": device,
                       "init": args.init_ckpt or None}))
 
-    rows = load_rows(args.limit_rows, args.sources.split(","), seed=args.seed)
+    distill_root = None
+    if args.distill_labels:
+        distill_root = Path(args.distill_labels)
+        if not distill_root.is_absolute():
+            distill_root = ROOT / distill_root
+    rows = load_rows(args.limit_rows, args.sources.split(","), seed=args.seed,
+                     distill_root=distill_root)
     # battle-level split: a battle's rows never straddle train/holdout
     import hashlib
 
@@ -291,6 +363,7 @@ def main() -> None:
         ("-dmg" if args.dmg_feats else "")
         + (f"-v{args.value_bins}" if args.value_bins else "")
         + (f"-awr{args.awr_beta:g}" if args.awr else "")
+        + (f"-kd{args.kd_temp:g}" if args.distill_labels else "")
     )
     run_id = (
         f"{args.tier}-{args.weighting}-h{args.hist_k}{phase2}"
@@ -335,18 +408,27 @@ def main() -> None:
     step, t0 = 0, time.monotonic()
     model.train()
     while step < args.steps:
-        for batch, labels, w, wons in make_batches(
+        for tup in make_batches(
             train, tok, args.batch_size, device, weights,
             augment_rng=random.Random(args.seed) if args.tail_augment else None,
+            distill=bool(args.distill_labels),
         ):
+            batch, labels, w, wons = tup[:4]
+            kd = tup[4] if args.distill_labels else None
             opt.zero_grad()
             with autocast:
                 if args.value_bins:
                     logits, vlogits = model(**batch, return_value=True)
-                    vloss = F.cross_entropy(vlogits.float(), two_hot(wons, args.value_bins))
+                    # KD: regress the teacher's value estimate where present
+                    # (kd_v == -1 marks a teacher without a value head)
+                    v_target = wons if kd is None else torch.where(kd["v"] >= 0, kd["v"], wons)
+                    vloss = F.cross_entropy(vlogits.float(), two_hot(v_target, args.value_bins))
                 else:
                     logits, vloss = model(**batch), None
-                per_row = F.cross_entropy(logits, labels, reduction="none")
+                if kd is not None:
+                    per_row = kd_policy_loss(logits, kd["probs"], args.kd_temp, reduction="none")
+                else:
+                    per_row = F.cross_entropy(logits, labels, reduction="none")
                 if args.awr and step >= args.awr_warmup:
                     v = value_estimate(vlogits.detach().float())
                     per_row = per_row * awr_weights(wons, v, args.awr_beta)
