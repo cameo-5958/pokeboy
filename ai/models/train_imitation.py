@@ -55,6 +55,16 @@ def awr_weights(won: torch.Tensor, v: torch.Tensor, beta: float) -> torch.Tensor
     return torch.exp(2.0 * (won - v) / beta).clamp(max=AWR_WEIGHT_CAP)
 
 
+def harden_rows(rows: list[dict]) -> list[dict]:
+    """--kd-hard ablation: replace each action with the teacher's argmax and
+    drop the soft targets — plain BC on hardened teacher labels, isolating
+    what the full distribution (vs its argmax) is worth."""
+    for r in rows:
+        r["action"] = int(np.argmax(r.pop("kd_probs")))
+        r.pop("kd_v", None)
+    return rows
+
+
 def kd_policy_loss(
     logits: torch.Tensor, teacher_probs: torch.Tensor, temp: float = 1.0,
     reduction: str = "mean",
@@ -293,11 +303,16 @@ def main() -> None:
                    help="KD: sidecar root from models/distill; trains on soft "
                         "teacher targets instead of hard action labels")
     p.add_argument("--kd-temp", type=float, default=1.0)
+    p.add_argument("--kd-hard", action="store_true",
+                   help="ablation: hard CE on the teacher's argmax instead of "
+                        "the soft distribution (needs --distill-labels)")
     args = p.parse_args()
     if args.distill_labels and (args.awr or args.weighting != "none"):
         p.error("--distill-labels replaces the CE objective; use --weighting none, no --awr")
     if args.kd_temp <= 0:
         p.error("--kd-temp must be > 0")
+    if args.kd_hard and not args.distill_labels:
+        p.error("--kd-hard needs --distill-labels")
     if args.steps <= 0 or args.batch_size <= 0 or args.limit_rows <= 0:
         p.error("--steps, --batch-size and --limit-rows must be positive")
     if not 0 < args.holdout < 1:
@@ -332,6 +347,9 @@ def main() -> None:
             distill_root = ROOT / distill_root
     rows = load_rows(args.limit_rows, args.sources.split(","), seed=args.seed,
                      distill_root=distill_root)
+    use_kd = bool(args.distill_labels) and not args.kd_hard
+    if args.kd_hard:
+        rows = harden_rows(rows)
     # battle-level split: a battle's rows never straddle train/holdout
     import hashlib
 
@@ -363,7 +381,8 @@ def main() -> None:
         ("-dmg" if args.dmg_feats else "")
         + (f"-v{args.value_bins}" if args.value_bins else "")
         + (f"-awr{args.awr_beta:g}" if args.awr else "")
-        + (f"-kd{args.kd_temp:g}" if args.distill_labels else "")
+        + (("-kdhard" if args.kd_hard else f"-kd{args.kd_temp:g}")
+           if args.distill_labels else "")
     )
     run_id = (
         f"{args.tier}-{args.weighting}-h{args.hist_k}{phase2}"
@@ -411,10 +430,10 @@ def main() -> None:
         for tup in make_batches(
             train, tok, args.batch_size, device, weights,
             augment_rng=random.Random(args.seed) if args.tail_augment else None,
-            distill=bool(args.distill_labels),
+            distill=use_kd,
         ):
             batch, labels, w, wons = tup[:4]
-            kd = tup[4] if args.distill_labels else None
+            kd = tup[4] if use_kd else None
             opt.zero_grad()
             with autocast:
                 if args.value_bins:

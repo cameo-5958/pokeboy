@@ -16,6 +16,7 @@ class TierConfig:
 
 TIERS = {
     # micro tiers: distillation-ladder students (on-device targets)
+    "morsel": TierConfig("morsel", layers=1, d_model=64, heads=2, ffn=256),
     "crumb": TierConfig("crumb", layers=2, d_model=96, heads=4, ffn=384),
     "bite": TierConfig("bite", layers=3, d_model=128, heads=4, ffn=512),
     "snack": TierConfig("snack", layers=4, d_model=256, heads=4, ffn=1024),

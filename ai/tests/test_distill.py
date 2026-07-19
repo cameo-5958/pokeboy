@@ -46,12 +46,24 @@ def _label(root, value_bins=32, seed=0):
 def test_micro_tiers_are_small():
     tok = Tokenizer()
     sizes = {}
-    for name in ("crumb", "bite", "snack"):
+    for name in ("morsel", "crumb", "bite", "snack"):
         m = FieldValueEncoder(TIERS[name], tok, value_bins=32)
         sizes[name] = sum(p.numel() for p in m.parameters())
+    assert sizes["morsel"] < 150_000, sizes
     assert sizes["crumb"] < 600_000, sizes
     assert sizes["bite"] < 1_500_000, sizes
-    assert sizes["crumb"] < sizes["bite"] < sizes["snack"]
+    assert sizes["morsel"] < sizes["crumb"] < sizes["bite"] < sizes["snack"]
+
+
+def test_harden_rows_replaces_actions_with_teacher_argmax():
+    from models.train_imitation import harden_rows
+
+    probs = [0.0] * 10
+    probs[3], probs[7] = 0.6, 0.4
+    rows = [{"action": 0, "won": True, "kd_probs": list(probs), "kd_v": 0.5}]
+    out = harden_rows(rows)
+    assert out[0]["action"] == 3
+    assert "kd_probs" not in out[0] and "kd_v" not in out[0]
 
 
 def test_micro_tier_forward_runs():
