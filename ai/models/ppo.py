@@ -342,11 +342,15 @@ def update_snapshot(frozen: list, model, tok, tier: str, value_bins: int,
     copy per snapshot OOMed the first real run at the third copy."""
     from models.agent import ModelAgent
 
-    if not frozen:
+    snap_agent = next(
+        (a for a in frozen if getattr(a, "_league_snapshot", False)), None)
+    if snap_agent is None:
         snap = FieldValueEncoder(TIERS[tier], tok, value_bins=value_bins).to(device).eval()
-        frozen.append(ModelAgent.from_model(snap, tok, seed=seed, temperature=0.25))
-    frozen[0].model.load_state_dict(model.state_dict())
-    frozen[0].reseed(seed)
+        snap_agent = ModelAgent.from_model(snap, tok, seed=seed, temperature=0.25)
+        snap_agent._league_snapshot = True  # preloaded seats must not be clobbered
+        frozen.append(snap_agent)
+    snap_agent.model.load_state_dict(model.state_dict())
+    snap_agent.reseed(seed)
 
 
 # -- CLI -------------------------------------------------------------------
@@ -368,6 +372,9 @@ def main() -> None:
     p.add_argument("--snapshot-every", type=int, default=25, help="iterations between league snapshots")
     p.add_argument("--concurrent", type=int, default=32,
                    help="battles rolled out in one shared-forward pool")
+    p.add_argument("--frozen-ckpt", action="append", default=[],
+                   help="preload a checkpoint as a permanent frozen league seat "
+                        "(repeatable; e.g. a TaurosV0 mimic)")
     p.add_argument("--bf16", action="store_true")
     p.add_argument("--ckpt-root", default=str(ROOT / "checkpoints"))
     args = p.parse_args()
@@ -387,7 +394,10 @@ def main() -> None:
 
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed)
-    frozen: list = []
+    from models.agent import ModelAgent
+
+    frozen: list = [ModelAgent(f, seed=args.seed, device=device, temperature=0.25)
+                    for f in args.frozen_ckpt]
     league = make_league(model, tok, frozen, rng)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.0)
 
