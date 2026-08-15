@@ -1,0 +1,25 @@
+POKEBOY CORE1106 CARRIER - PROTO-A
+
+Board construction
+- 0.80 mm finished thickness, four copper layers, ENIG finish.
+- Nominal stack: 0.10 mm outer prepreg / 0.44 mm core / 0.10 mm outer prepreg.
+- Minimum routed trace 0.10 mm at the display breakout; default signal trace 0.15 mm.
+- Minimum copper clearance 0.10 mm; minimum solder-mask web 0.05 mm.
+- Through via 0.45 mm finished pad diameter / 0.20 mm drill.
+
+Critical mechanical instruction
+- U1 (Core1106) has components on its underside.
+- Preserve the 20.67053 x 23.54836 mm internal aperture under U1.
+- Finished inside-corner radius must be <= 0.75 mm.
+- The 3D model indicates an approximately 2.6 mm top envelope above the carrier.
+  A 3.2 mm cavity therefore has only about 0.6 mm nominal allowance.
+- Build and measure a first article before committing the display carrier/enclosure.
+
+Assembly and validation
+- U1 is Core11060408 (256 MB DDR3L + 8 GB eMMC).
+- J1 is Micro-USB data plus charge, not charge-only.
+- Battery is a protected 1S LiPo with 10 kohm NTC.
+- Validate sustained-load temperature, charger operation, USB data, display timing,
+  backlight current, audio, and every control input before enclosing the first article.
+- The exported STEP includes the project-local Core1106 model. Generic component
+  bodies require the standard KiCad 9 3D model library on the viewing workstation.

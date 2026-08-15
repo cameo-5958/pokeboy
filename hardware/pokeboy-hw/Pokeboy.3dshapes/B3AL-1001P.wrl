@@ -1,0 +1,10 @@
+#VRML V2.0 utf8
+# Simplified mechanical envelope from Omron B3AL drawing; dimensions in mm.
+DEF BLACK Appearance { material Material { diffuseColor 0.06 0.06 0.06 specularColor 0.12 0.12 0.12 shininess 0.22 } }
+DEF GREEN Appearance { material Material { diffuseColor 0.08 0.48 0.16 specularColor 0.18 0.18 0.18 shininess 0.25 } }
+DEF METAL Appearance { material Material { diffuseColor 0.62 0.64 0.64 specularColor 0.55 0.55 0.55 shininess 0.55 } }
+Transform { translation 0 0 0.4 children [ Shape { appearance USE BLACK geometry Box { size 6.6 6.9 0.8 } } ] }
+Transform { translation 0 0 2.7 children [ Shape { appearance USE BLACK geometry Box { size 6.0 6.0 3.8 } } ] }
+Transform { translation 0 0 4.8 children [ Shape { appearance USE GREEN geometry Box { size 4.9 4.9 0.4 } } ] }
+Transform { translation -3.5 0 0.4 children [ Shape { appearance USE METAL geometry Box { size 1.0 2.0 0.3 } } ] }
+Transform { translation 3.5 0 0.4 children [ Shape { appearance USE METAL geometry Box { size 1.0 2.0 0.3 } } ] }
