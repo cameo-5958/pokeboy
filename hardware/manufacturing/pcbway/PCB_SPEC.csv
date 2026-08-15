@@ -21,4 +21,4 @@ Assembly class,IPC-A-610 Class 2,
 BGA inspection,100 percent X-ray U1,Images required
 Electrical test,Flying probe,Use IPC-356 after release
 Panelization,PCBWay standard,Do not place tabs at controls or card opening
-Gerbers,WITHHELD,Generate only after zero-error DRC
+Gerbers,WITHHELD,DRC/ERC gate met; release only after Octavo OSD335x design review
