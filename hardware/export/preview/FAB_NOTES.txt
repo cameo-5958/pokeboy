@@ -1,4 +1,10 @@
-POKEBOY CORE1106 CARRIER - PROTO-A
+POKEBOY OSD3358-1G CARRIER - PROTO-B / DFM HOLD
+
+ORDER STATUS
+- QUOTE AND ENGINEERING REVIEW ONLY. DO NOT FABRICATE OR ASSEMBLE.
+- The routed candidate has no shorts or spacing violations, but KiCad reports 15
+  open connectivity items: microSD pull-up branches, SYS_5V/AUX_3V3 stitching,
+  and isolated ground-pour islands. Close these and obtain a clean DRC before release.
 
 Board construction
 - 0.80 mm finished thickness, four copper layers, ENIG finish.
@@ -8,18 +14,18 @@ Board construction
 - Through via 0.45 mm finished pad diameter / 0.20 mm drill.
 
 Critical mechanical instruction
-- U1 (Core1106) has components on its underside.
-- Preserve the 20.67053 x 23.54836 mm internal aperture under U1.
-- Finished inside-corner radius must be <= 0.75 mm.
-- The 3D model indicates an approximately 2.6 mm top envelope above the carrier.
-  A 3.2 mm cavity therefore has only about 0.6 mm nominal allowance.
+- U1 is a direct-mounted 21 x 21 x 2 mm, 1.27 mm-pitch BGA; the former Core1106
+  underside aperture is closed.
+- Use X-ray inspection for U1 and verify voiding/bridging against IPC-A-610 Class 2.
+- A 3.2 mm cavity leaves approximately 1.2 mm nominal allowance above U1.
 - Build and measure a first article before committing the display carrier/enclosure.
 
 Assembly and validation
-- U1 is Core11060408 (256 MB DDR3L + 8 GB eMMC).
+- U1 is OSD3358-1G-ISM (1 GB DDR3L); boot media is J9 microSD 104031-0811.
+- U6 is MAX98357AETE+T I2S mono class-D audio; no analog codec line-out is used.
 - J1 is Micro-USB data plus charge, not charge-only.
 - Battery is a protected 1S LiPo with 10 kohm NTC.
 - Validate sustained-load temperature, charger operation, USB data, display timing,
   backlight current, audio, and every control input before enclosing the first article.
-- The exported STEP includes the project-local Core1106 model. Generic component
-  bodies require the standard KiCad 9 3D model library on the viewing workstation.
+- U1 is rendered as its 21 x 21 mm package envelope; generic component bodies
+  require the standard KiCad 9 3D model library on the viewing workstation.
