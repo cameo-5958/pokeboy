@@ -1,0 +1,24 @@
+Field,Value,Order note
+Project,Pokeboy PROTO-B,OSD3358-1G-ISM 1 GB revision
+Order status,DFM HOLD,Quote and engineering review only; do not fabricate
+Board quantity,5,First article after release gate only
+Assembly quantity,2,First article after release gate only
+Layers,4,
+Dimensions,79.5 x 119.5 mm,Use Gerber outline after release
+Finished thickness,0.80 mm,+/-10 percent
+Outer copper,1 oz,
+Inner copper,0.5 oz minimum,
+Material,FR-4,Tg 150 C minimum
+Surface finish,ENIG,RoHS
+Solder mask,Black,
+Silkscreen,White,
+Minimum trace/space,0.10 / 0.10 mm,Confirm in DFM
+Minimum via,0.45 / 0.20 mm,Pad / finished drill
+Via treatment,Tented,Except test points
+Impedance control,No,Maintain USB pair geometry
+Bare-board class,IPC-A-600 Class 2,
+Assembly class,IPC-A-610 Class 2,
+BGA inspection,100 percent X-ray U1,Images required
+Electrical test,Flying probe,Use IPC-356 after release
+Panelization,PCBWay standard,Do not place tabs at controls or card opening
+Gerbers,WITHHELD,Generate only after zero-error DRC
