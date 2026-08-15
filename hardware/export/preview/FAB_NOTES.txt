@@ -2,9 +2,12 @@ POKEBOY OSD3358-1G CARRIER - PROTO-B / DFM HOLD
 
 ORDER STATUS
 - QUOTE AND ENGINEERING REVIEW ONLY. DO NOT FABRICATE OR ASSEMBLE.
-- The routed candidate has no shorts or spacing violations, but KiCad reports 15
-  open connectivity items: microSD pull-up branches, SYS_5V/AUX_3V3 stitching,
-  and isolated ground-pour islands. Close these and obtain a clean DRC before release.
+- The routed candidate has no shorts or spacing violations. One open connectivity
+  item remains: RN10 pad 3, whose ground pad is pinched off from the F.Cu pour by
+  the LCD_D1_CORE escape and has no via site with usable clearance. It needs a
+  local re-layout, and it leaves the LCD_D2_CORE SYSBOOT strap floating at reset.
+- The microSD pull-up branches, SYS_5V/AUX_3V3 stitching, and the other isolated
+  ground-pour islands are now closed. Obtain a clean DRC before release.
 
 Board construction
 - 0.80 mm finished thickness, four copper layers, ENIG finish.
