@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pokeboy · PROTO-A hardware preview</title>
+  <title>Pokeboy · PROTO-B hardware preview</title>
   <style>
     :root { color-scheme: dark; --ink:#edf3e9; --muted:#93a091; --line:#2e3930; --panel:#141a16; --accent:#a9e34b; }
     * { box-sizing:border-box; }
@@ -39,11 +39,11 @@
   <main>
     <header>
       <div>
-        <div class="eyebrow">Pokeboy hardware / Core1106</div>
-        <h1>PROTO-A</h1>
-        <p class="deck">Fabrication preview with the production tactile-switch selections fitted to all eight controls.</p>
+        <div class="eyebrow">Pokeboy hardware / OSD3358-1G</div>
+        <h1>PROTO-B</h1>
+        <p class="deck">One-gigabyte compute revision with microSD boot and the production tactile-switch selections.</p>
       </div>
-      <div class="status">DRC clean · 0 unconnected</div>
+      <div class="status">DFM HOLD · 15 open connectivity items</div>
     </header>
 
     <nav class="toolbar" aria-label="Board view">
@@ -54,7 +54,7 @@
     </nav>
 
     <div class="viewer">
-      <img id="board" src="pokeboy-hw-top.png" alt="Top-side 3D render of the Pokeboy PROTO-A PCB">
+      <img id="board" src="pokeboy-hw-top.png" alt="Top-side 3D render of the Pokeboy PROTO-B PCB">
       <div class="caption" id="caption">TOP · fitted assembly · click to enlarge</div>
     </div>
 
@@ -71,9 +71,9 @@
         <h2>Board</h2>
         <table>
           <tr><th>Construction</th><td>0.80 mm · 4 copper layers · ENIG</td></tr>
-          <tr><th>Compute</th><td>Core11060408 · 256 MB DDR3L · 8 GB eMMC</td></tr>
+          <tr><th>Compute</th><td>OSD3358-1G-ISM · 1 GB DDR3L · microSD boot</td></tr>
           <tr><th>Display</th><td>EA TFT020-23AINN · RGB666</td></tr>
-          <tr><th>Validation</th><td>ERC, DRC, connectivity and schematic parity clean</td></tr>
+          <tr><th>Validation</th><td>No shorts/spacing violations; quote/review only until 15 open items are closed</td></tr>
         </table>
       </section>
     </div>
@@ -85,8 +85,8 @@
     const board = document.querySelector('#board');
     const caption = document.querySelector('#caption');
     const views = {
-      top: ['pokeboy-hw-top.png', 'Top-side 3D render of the Pokeboy PROTO-A PCB', 'TOP · fitted assembly · click to enlarge'],
-      bottom: ['pokeboy-hw-bottom.png', 'Bottom-side 3D render of the Pokeboy PROTO-A PCB', 'BOTTOM · fitted assembly · click to enlarge']
+      top: ['pokeboy-hw-top.png', 'Top-side 3D render of the Pokeboy PROTO-B PCB', 'TOP · fitted assembly · click to enlarge'],
+      bottom: ['pokeboy-hw-bottom.png', 'Bottom-side 3D render of the Pokeboy PROTO-B PCB', 'BOTTOM · fitted assembly · click to enlarge']
     };
     document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
       document.querySelectorAll('[data-view]').forEach(item => item.classList.remove('active'));

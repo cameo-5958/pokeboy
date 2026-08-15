@@ -5,14 +5,14 @@
 	(uuid "61fdeb8d-5442-41ae-99a5-d057c2041497")
 	(paper "A0")
 	(title_block
-		(title "Pokeboy Core1106 low-profile carrier")
+		(title "Pokeboy OSD3358-1G low-profile carrier")
 		(date "2026-08-15")
-		(rev "PROTO-A")
+		(rev "PROTO-B DFM HOLD")
 		(company "Pokeboy")
-		(comment 1 "0.8 mm four-layer PCB; Core underside aperture; modelled top envelope ~2.6 mm")
+		(comment 1 "0.8 mm four-layer PCB; 21 mm direct BGA; modelled top envelope 2.0 mm")
 		(comment 2 "EA TFT020-23AINN native RGB666; protected 1S LiPo; Micro-USB data + charge")
 		(comment 3 "Validate panel timing/serial initialization and thermals on first article")
-		(comment 4 "Core1106 variant: Core11060408 (256 MB DDR3L + 8 GB eMMC)")
+		(comment 4 "Compute: OSD3358-1G-ISM (1 GB DDR3L); microSD boot; PCB ball map is canonical")
 	)
 	(lib_symbols
 		(symbol "Core1106:Core1106"
@@ -27,7 +27,7 @@
 					)
 				)
 			)
-			(property "Value" "Core1106"
+			(property "Value" "OSD3358-1G compute subsystem"
 				(at 7.112 2.794 0)
 				(effects
 					(font
@@ -35,7 +35,7 @@
 					)
 				)
 			)
-			(property "Footprint" "Core1106-PCB:Core1106-SMT"
+			(property "Footprint" "Pokeboy:OSD335X-BGA-256"
 				(at 17.272 1.016 0)
 				(effects
 					(font
@@ -53,7 +53,7 @@
 					(hide yes)
 				)
 			)
-			(property "Description" "Core1106"
+			(property "Description" "Logical interface; PCB implementation is OSD3358-1G-ISM"
 				(at 7.112 4.572 0)
 				(effects
 					(font
@@ -7441,7 +7441,7 @@
 				)
 			)
 		)
-		(property "Value" "Core1106"
+		(property "Value" "OSD3358-1G compute subsystem"
 			(at 226.06 63.5 0)
 			(effects
 				(font
@@ -7449,7 +7449,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Core1106-PCB:Core1106-SMT"
+		(property "Footprint" "Pokeboy:OSD335X-BGA-256"
 			(at 103.632 65.024 0)
 			(effects
 				(font
@@ -7467,7 +7467,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Core1106"
+		(property "Description" "Logical interface; PCB ball map and PocketBeagle reference are canonical"
 			(at 93.472 61.468 0)
 			(effects
 				(font
@@ -7476,7 +7476,7 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "Core11060408"
+		(property "MPN" "OSD3358-1G-ISM"
 			(at 88.9 71.1199 0)
 			(effects
 				(font
@@ -7485,7 +7485,7 @@
 				(justify left)
 			)
 		)
-		(property "Notes" "30x30 mm SoM; underside components require carrier aperture; 8 GB eMMC on-module"
+		(property "Notes" "21x21x2 mm direct BGA; 1 GB integrated DDR3L; external microSD boot"
 			(at 88.9 71.1199 0)
 			(effects
 				(font
@@ -11069,7 +11069,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "PAM8302AAD"
+		(property "Value" "MAX98357AETE+T (PCB canonical)"
 			(at 462.28 403.86 0.0000)
 			(effects
 				(font
@@ -11078,7 +11078,7 @@
 				(justify left)
 			)
 		)
-		(property "MPN" "PAM8302AADCR"
+		(property "MPN" "MAX98357AETE+T"
 			(at 457.2 400.0499 0)
 			(effects
 				(font
@@ -11087,7 +11087,7 @@
 				(justify left)
 			)
 		)
-		(property "Notes" "Single-ended input; differential BTL output"
+		(property "Notes" "PCB uses I2S input and differential BTL output; legacy symbol is logical only"
 			(at 457.2 400.0499 0)
 			(effects
 				(font

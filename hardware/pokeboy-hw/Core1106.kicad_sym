@@ -14,7 +14,7 @@
 				)
 			)
 		)
-		(property "Value" "Core1106"
+		(property "Value" "OSD3358-1G compute subsystem"
 			(at 7.112 2.794 0)
 			(effects
 				(font
@@ -22,7 +22,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Core1106-PCB:Core1106-SMT"
+		(property "Footprint" "Pokeboy:OSD335X-BGA-256"
 			(at 17.272 1.016 0)
 			(effects
 				(font
@@ -40,7 +40,7 @@
 				(hide yes)
 			)
 		)
-		(property "Description" "Core1106"
+		(property "Description" "Logical interface; PCB implementation is OSD3358-1G-ISM"
 			(at 7.112 4.572 0)
 			(effects
 				(font
