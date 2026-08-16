@@ -26,7 +26,12 @@ Critical mechanical instruction
 - U1 is a direct-mounted 21 x 21 x 2 mm, 1.27 mm-pitch BGA; the former Core1106
   underside aperture is closed.
 - Use X-ray inspection for U1 and verify voiding/bridging against IPC-A-610 Class 2.
-- A 3.2 mm cavity leaves approximately 1.2 mm nominal allowance above U1.
+- A 3.2 mm cavity leaves approximately 1.2 mm nominal allowance above U1, but U1
+  is NOT the binding part. L3 is 2.60 mm, and SW7, SW8 and J1 are all above
+  2.4 mm, so a flat 3.2 mm cavity clears L3 by only 0.60 mm. Size the cavity to
+  L3, or step it. See height-map.svg for the full profile.
+- The six face buttons stand 5.00 mm above the board and are intended to
+  protrude through the enclosure face; they are not a cavity constraint.
 - Build and measure a first article before committing the display carrier/enclosure.
 
 Assembly and validation
