@@ -27,5 +27,5 @@ Electrical test,Flying probe,Use IPC-356 after release
 Panelization,PCBWay standard,Do not place tabs at controls or card opening
 Gerbers,Generated,In fab/ and pokeboy-hw-PROTO-B-gerbers.zip; hold still applies
 Assembly side,Top only,All 110 footprints top-side; B.Paste near-empty
-Placements,101,110 footprints less 2 DNP and 7 pad-only
+Placements,100,110 footprints less 3 DNP and 7 pad-only
 Order config,See PCBWAY_ORDER.md,Field-by-field values for the PCBWay quote form
