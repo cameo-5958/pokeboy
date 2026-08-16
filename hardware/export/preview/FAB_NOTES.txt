@@ -27,9 +27,13 @@ Critical mechanical instruction
   underside aperture is closed.
 - Use X-ray inspection for U1 and verify voiding/bridging against IPC-A-610 Class 2.
 - A 3.2 mm cavity leaves approximately 1.2 mm nominal allowance above U1, but U1
-  is NOT the binding part. L3 is 2.60 mm, and SW7, SW8 and J1 are all above
-  2.4 mm, so a flat 3.2 mm cavity clears L3 by only 0.60 mm. Size the cavity to
-  L3, or step it. See height-map.svg for the full profile.
+  is NOT the binding part. L3 (Murata LQH43PN100M26L) is 2.6 mm +/-0.2 per the
+  Murata reference spec JELF243A-0093, i.e. 2.80 mm MAX, and SW7, SW8 and J1
+  are all above 2.4 mm. A flat 3.2 mm cavity therefore clears L3 by only
+  0.40 mm at the datasheet maximum. Size the cavity to 2.80 mm, or step it, or
+  substitute a lower inductor (Coilcraft XGL4040-103 is 2.10 mm max, Isat
+  1.4 A, DCR 46 mOhm - better in every axis but needs a 4.0 x 4.0 mm land
+  pattern). See height-map.svg for the full profile.
 - The six face buttons stand 5.00 mm above the board and are intended to
   protrude through the enclosure face; they are not a cavity constraint.
 - Build and measure a first article before committing the display carrier/enclosure.

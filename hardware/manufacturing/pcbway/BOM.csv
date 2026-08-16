@@ -14,7 +14,7 @@ Item,Qty,Designators,Value,Footprint,Manufacturer,Manufacturer Part Number,Assem
 13,1,Y1,24MHz crystal,5.0x3.2mm 2-pad,CTS,445A35A24M00000,SMT,Verify lifecycle or consign exact
 14,1,L1,0.47uH,XFL4015,Coilcraft,XFL4015-471MEC,SMT,No substitution without power review
 15,1,L2,2.2uH,NRS3012,Taiyo Yuden,NRS3012T2R2MMGJ,SMT,Equivalent >=1.5A permitted
-16,1,L3,10uH,LQH43PN,Murata,LQH43PN100M26L,SMT,Equivalent >=1A permitted
+16,1,L3,10uH,LQH43PN,Murata,LQH43PN100M26L,SMT,Equivalent >=1A permitted; 2.80 mm MAX height (Murata JELF243A-0093); low-profile alt Coilcraft XGL4040-103 (2.10 mm max) needs 4.0x4.0 land
 17,2,FB1 FB2,600ohm at 100MHz,0402,Murata,BLM15AG601SN1D,SMT,Equivalent permitted
 18,1,D1,Red LED,0402,Lite-On,LTST-C191KRKT,SMT,Equivalent color/current permitted
 19,1,D2,Green LED,0402,Lite-On,LTST-C191KGKT,SMT,Equivalent color/current permitted
