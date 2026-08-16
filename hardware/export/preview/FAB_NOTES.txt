@@ -3,9 +3,15 @@ POKEBOY OSD3358-1G CARRIER - PROTO-B / DFM HOLD
 ORDER STATUS
 - QUOTE AND ENGINEERING REVIEW ONLY. DO NOT FABRICATE OR ASSEMBLE.
 - Connectivity is complete: DRC reports 0 errors and 0 unconnected items, with no
-  shorts or spacing violations, and ERC is clean. The microSD pull-up branches,
+  shorts or spacing violations, ERC reports 0 errors, and the schematic netlist
+  matches the board connectivity net for net. The microSD pull-up branches,
   the AUX_3V3 rail, SYS_5V stitching and the isolated ground-pour islands are all
   closed.
+- U1's ball map was checked against Octavo's PocketBeagle reference design. Four
+  balls that reference ties had been left floating and are now connected:
+  PMIC_POWER_EN/PMIC_PWR_EN, PMIC_LDO_PGOOD/RTC_PWRONRSTN, PMIC_PGOOD/PWRONRSTN,
+  and the ADC reference pair feeding the battery-sense input. The PMIC enable was
+  among them, so the previous revision would not have powered up.
 - Release is still blocked on Octavo's OSD335x schematic/layout design review,
   which has not been done. Gerbers stay withheld until it is.
 
