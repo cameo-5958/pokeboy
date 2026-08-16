@@ -17,7 +17,7 @@ Minimum space,0.10 mm,Verified by DRC; clean at 0.100 mm and 428 violations at 0
 PCBWay track/spacing tier,4/4 mil (0.10 mm),Forced by spacing; tracks alone would allow 6/6 mil
 Minimum via,0.45 / 0.20 mm,Pad / finished drill
 Via annular ring,0.125 mm,Just under 5 mil; confirm with PCBWay at quote
-Drill count,227 plated / 0 non-plated,221 vias at 0.20 mm plus 6 through-hole pads
+Drill count,239 plated / 0 non-plated,233 vias at 0.20 mm plus 6 through-hole pads
 Via treatment,Tented,Except test points
 Impedance control,No,Maintain USB pair geometry
 Bare-board class,IPC-A-600 Class 2,
@@ -27,5 +27,5 @@ Electrical test,Flying probe,Use IPC-356 after release
 Panelization,PCBWay standard,Do not place tabs at controls or card opening
 Gerbers,Generated,In fab/ and pokeboy-hw-PROTO-B-gerbers.zip; hold still applies
 Assembly side,Top only,All 110 footprints top-side; B.Paste near-empty
-Placements,100,110 footprints less 3 DNP and 7 pad-only
+Placements,103,113 footprints less 3 DNP and 7 pad-only
 Order config,See PCBWAY_ORDER.md,Field-by-field values for the PCBWay quote form

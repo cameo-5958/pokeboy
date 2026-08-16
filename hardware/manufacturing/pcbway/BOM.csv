@@ -21,7 +21,7 @@ Item,Qty,Designators,Value,Footprint,Manufacturer,Manufacturer Part Number,Assem
 20,1,D3,60V Schottky,SOD-123F,Nexperia,PMEG6010CEH115,SMT,Equal or better permitted
 21,1,C1,10nF 16V X7R,0402,Murata,GRM155R71C103KA88D,SMT,Equivalent permitted
 22,5,C2 C3 C4 C6 C10,10uF 10V X5R,0402,Murata,GRM155R61A106ME11D,SMT,No lower voltage
-23,2,C7 C8,22uF 10V X5R,0402,Murata,GRM155R61A226ME11D,SMT,Verify effective capacitance
+23,5,C7 C8 C107 C108 C109,22uF 10V X5R,0402,Murata,GRM155R61A226ME11D,SMT,Verify effective capacitance; C107-C109 are the SYS_VOUT bulk bank (Octavo PD4)
 24,1,C11,22uF 6.3V X5R,0402,Murata,GRM155R60J226ME11D,SMT,Verify effective capacitance
 25,9,C5 C9 C12 C15 C21 C25 C26 C27 C105,100nF 16V X7R,0402,Murata,GRM155R71C104KA88D,SMT,Equivalent permitted
 26,1,C13,1uF 50V X5R,0402,Murata,GRM155R61H105KE11D,SMT,No lower voltage
