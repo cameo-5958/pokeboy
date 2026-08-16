@@ -12,8 +12,12 @@ ORDER STATUS
   PMIC_POWER_EN/PMIC_PWR_EN, PMIC_LDO_PGOOD/RTC_PWRONRSTN, PMIC_PGOOD/PWRONRSTN,
   and the ADC reference pair feeding the battery-sense input. The PMIC enable was
   among them, so the previous revision would not have powered up.
-- Release is still blocked on Octavo's OSD335x schematic/layout design review,
-  which has not been done. Gerbers stay withheld until it is.
+- Octavo's paid design review is intentionally not purchased. Octavo's own
+  OSD335x schematic checklist was executed item by item instead; every mandatory
+  item is closed on the board (SYS_VOUT bulk capacitance, ground stitching,
+  VIN_BAT/PMIC_BAT_SENSE and VIN_USB ties, EEPROM_WP). Release now waits only
+  on PCBWay's annular-ring/warp confirmation, after which a 5-board first
+  article serves as the physical design review.
 
 Board construction
 - 0.80 mm finished thickness, four copper layers, ENIG finish.
