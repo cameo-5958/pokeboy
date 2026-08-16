@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -8 121.8 135.8" width="760" font-family="ui-monospace, Menlo, Consolas, monospace">
 <rect x="-4" y="-8" width="121.8" height="135.8" fill="#12140E"/>
 <text x="0" y="-3.2" fill="#E6E9DE" font-size="3.6" font-weight="600">COMPONENT HEIGHT ABOVE BOARD</text>
-<text x="0" y="1.0" fill="#8E9682" font-size="2.4">top view · all 110 parts are top-side · board 0.80 mm</text>
+<text x="0" y="1.0" fill="#8E9682" font-size="2.4">top view · all parts are top-side · board 0.80 mm</text>
 <path d="M0.2 64L8.2 64 M0.2 111.8L0.2 64 M8.2 0.2L79.6 0.2 M8.2 64L8.2 0.2 M16.2 111.8L0.2 111.8 M16.2 119.6L16.2 111.8 M23.9 47.9L32.1 47.9 M23.9 56.1L23.9 47.9 M31.9 63.9L48.1 63.9 M31.9 72.1L31.9 63.9 M32.1 47.9L32.1 56.1 M32.1 56.1L23.9 56.1 M39.9 47.9L48.1 47.9 M39.9 56.1L39.9 47.9 M48.1 47.9L48.1 56.1 M48.1 56.1L39.9 56.1 M48.1 63.9L48.1 72.1 M48.1 72.1L31.9 72.1 M55.6 103.6L55.6 119.6 M55.6 119.6L16.2 119.6 M63.6 15.8L63.6 64 M63.6 64L71.6 64 M71.6 64L71.6 103.6 M71.6 103.6L55.6 103.6 M79.6 0.2L79.6 15.8 M79.6 15.8L63.6 15.8" fill="#1D2117" stroke="#6E7A5E" stroke-width="0.4"/>
 <rect x="74.92" y="4.62" width="3.16" height="7.16" fill="#D6DBCD" opacity="0.45" stroke="#12140E" stroke-width="0.12"/>
 <rect x="24.43" y="61.42" width="2.14" height="3.16" fill="#D6DBCD" opacity="0.45" stroke="#12140E" stroke-width="0.12"/>

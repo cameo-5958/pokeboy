@@ -4724,6 +4724,150 @@
 					)
 				)
 				(pin passive line
+					(at 43.18 -90.17 180)
+					(length 5.08)
+					(name "VIN_BAT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "P8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 43.18 -92.71 180)
+					(length 5.08)
+					(name "VIN_BAT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "R8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 43.18 -95.25 180)
+					(length 5.08)
+					(name "VIN_BAT"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "T8"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 43.18 -97.79 180)
+					(length 5.08)
+					(name "PMIC_BAT_SENSE"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "N7"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 43.18 -100.33 180)
+					(length 5.08)
+					(name "VIN_USB"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "P9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 43.18 -102.87 180)
+					(length 5.08)
+					(name "VIN_USB"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "R9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 43.18 -105.41 180)
+					(length 5.08)
+					(name "VIN_USB"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "T9"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 43.18 -107.95 180)
+					(length 5.08)
+					(name "EEPROM_WP"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "M2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
 					(at 43.18 26.67 180)
 					(length 5.08)
 					(name "SYS_VOUT"
@@ -22967,5 +23111,301 @@
 			(justify left bottom)
 		)
 		(uuid "a1a37dd7-721d-4c03-9432-9f2e2f517e5c")
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 594.36 175.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced no)
+		(uuid "6094ea6c-4e81-4766-b0a2-1a36f17abbc3")
+		(property "Reference" "C107"
+			(at 594.995 177.8 0.0000)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "22u/10V"
+			(at 594.995 172.72 0.0000)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 594.36 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "bc30432b-d451-4fb7-93f3-3af3c258277a")
+		)
+		(pin "2"
+			(uuid "8a0610b0-49e7-428a-9ff4-9d45567ab662")
+		)
+		(instances
+			(project "pokeboy-hw"
+				(path "/61fdeb8d-5442-41ae-99a5-d057c2041497"
+					(reference "C107")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 612.14 175.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced no)
+		(uuid "ae4d3317-fd05-49b4-8f69-66bda88f680a")
+		(property "Reference" "C108"
+			(at 612.775 177.8 0.0000)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "22u/10V"
+			(at 612.775 172.72 0.0000)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 612.14 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "6e2e5738-a701-4341-b2e8-186e50738db9")
+		)
+		(pin "2"
+			(uuid "94dc58d6-f872-47b0-b380-a74a7bedb906")
+		)
+		(instances
+			(project "pokeboy-hw"
+				(path "/61fdeb8d-5442-41ae-99a5-d057c2041497"
+					(reference "C108")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 629.92 175.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced no)
+		(uuid "2c5f0a81-e7bc-452d-a6af-b88aae386325")
+		(property "Reference" "C109"
+			(at 630.555 177.8 0.0000)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "22u/10V"
+			(at 630.555 172.72 0.0000)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+			(at 629.92 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "d22eb29a-43a7-4d9d-8a89-02a98d15a316")
+		)
+		(pin "2"
+			(uuid "18485bec-3c1f-4658-a55e-79e20242f932")
+		)
+		(instances
+			(project "pokeboy-hw"
+				(path "/61fdeb8d-5442-41ae-99a5-d057c2041497"
+					(reference "C109")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(label "VIN_BAT"
+		(at 543.56 742.95 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "aab7a8c3-321e-4428-ad55-dd336038c72c")
+	)
+	(label "VIN_BAT"
+		(at 543.56 745.49 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "9570cdb1-9470-4db3-9546-a9c9fcf46b7e")
+	)
+	(label "VIN_BAT"
+		(at 543.56 748.03 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "ac6cea02-5158-44e1-aca7-8a045d0ddb36")
+	)
+	(label "VIN_BAT"
+		(at 543.56 750.57 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "d46866c4-1e9f-4038-9cab-23de84c80d0f")
+	)
+	(label "GND"
+		(at 543.56 753.11 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "538dd9b7-6e5c-4210-b078-3da5a7526fc9")
+	)
+	(label "GND"
+		(at 543.56 755.65 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "8f437080-bea9-4fe0-b6f6-d5a965c37a24")
+	)
+	(label "GND"
+		(at 543.56 758.19 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "6f1819d0-4dfb-41d7-ad81-50bd63913d96")
+	)
+	(label "GND"
+		(at 543.56 760.73 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "1875b18a-9240-4297-bdc9-e68bcd613ca0")
+	)
+	(label "OSD_SYS"
+		(at 594.36 171.45 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "928638dd-bf7c-40d4-8f62-052d229bdddc")
+	)
+	(label "GND"
+		(at 594.36 179.07 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "a79e1bb0-afe9-4a9a-986a-4c9d9eaaa276")
+	)
+	(label "OSD_SYS"
+		(at 612.14 171.45 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "478e3926-9513-4950-9736-1d1293fd7004")
+	)
+	(label "GND"
+		(at 612.14 179.07 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "9f25c79f-5ed1-4963-9558-ed07e8290700")
+	)
+	(label "OSD_SYS"
+		(at 629.92 171.45 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "1efe9547-2fab-415b-a2f3-cdd7b5c0fa6e")
+	)
+	(label "GND"
+		(at 629.92 179.07 0.0000)
+		(effects
+			(font
+				(size 1 1)
+			)
+			(justify left bottom)
+		)
+		(uuid "32e87802-f48c-4d70-9dea-9a42bd9f2b4d")
 	)
 )
