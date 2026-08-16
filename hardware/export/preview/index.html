@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pokeboy · PROTO-B hardware preview</title>
   <style>
-    :root { color-scheme: dark; --ink:#edf3e9; --muted:#93a091; --line:#2e3930; --panel:#141a16; --accent:#a9e34b; }
+    :root { color-scheme: dark; --ink:#edf3e9; --muted:#93a091; --line:#2e3930; --panel:#141a16; --accent:#a9e34b; --hold:#e8a33d; }
     * { box-sizing:border-box; }
     body { margin:0; background:#0b0f0c; color:var(--ink); font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
     main { width:min(1180px,calc(100% - 32px)); margin:0 auto; padding:44px 0 64px; }
@@ -17,6 +17,10 @@
     .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
     button,a.button { border:1px solid var(--line); border-radius:5px; padding:9px 13px; background:var(--panel); color:var(--ink); font:inherit; text-decoration:none; cursor:pointer; }
     button.active,button:hover,a.button:hover { color:#0b0f0c; background:var(--accent); border-color:var(--accent); }
+    a.button.hold { color:var(--hold); border-color:#e8a33d55; }
+    a.button.hold:hover { color:#0b0f0c; background:var(--hold); border-color:var(--hold); }
+    .holdnote { margin:0 0 12px; padding:9px 12px; border:1px solid #e8a33d44; border-left:3px solid var(--hold); border-radius:5px; background:#e8a33d0f; color:#e6d3ad; font-size:12px; line-height:1.5; }
+    .holdnote b { color:var(--hold); }
     .viewer { position:relative; overflow:hidden; min-height:520px; border:1px solid var(--line); border-radius:8px; background:#080b09; }
     .viewer img { display:block; width:100%; height:clamp(520px,72vw,820px); object-fit:contain; cursor:zoom-in; }
     .caption { position:absolute; left:14px; bottom:14px; padding:6px 9px; border:1px solid #ffffff22; border-radius:4px; background:#0b0f0ccc; color:#d9e3d5; font-size:12px; }
@@ -52,7 +56,11 @@
       <button data-view="height">Height map</button>
       <a class="button" href="pokeboy-hw-schematic.pdf">Schematic PDF</a>
       <a class="button" href="FAB_NOTES.txt">Fabrication notes</a>
+      <a class="button hold" href="production/pokeboy-hw-PROTO-B-gerbers.zip" download>Gerbers + drill ZIP</a>
+      <a class="button" href="production/">Production files</a>
     </nav>
+
+    <p class="holdnote"><b>DFM HOLD.</b> The gerber, drill and IPC-D-356 files are published for quotation and engineering review only. Release is blocked on Octavo's OSD335x design review, which has not been done. Do not fabricate or assemble from this package.</p>
 
     <div class="viewer">
       <img id="board" src="pokeboy-hw-top.png" alt="Top-side 3D render of the Pokeboy PROTO-B PCB">
