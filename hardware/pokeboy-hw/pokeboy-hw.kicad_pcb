@@ -8925,7 +8925,7 @@
 				)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "0R"
 			(at 0 1.17 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -9441,7 +9441,7 @@
 				)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "10k DNP"
 			(at 0 1.17 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -9480,7 +9480,7 @@
 		(path "/20fce19c-2ac3-487f-97c2-1213772d3ef5")
 		(sheetname "/")
 		(sheetfile "pokeboy-hw.kicad_sch")
-		(attr smd)
+		(attr smd exclude_from_pos_files dnp)
 		(fp_line
 			(start -0.153641 -0.38)
 			(end 0.153641 -0.38)
@@ -13631,7 +13631,7 @@
 				)
 			)
 		)
-		(property "Value" "22R"
+		(property "Value" "0R"
 			(at 0 1.17 90)
 			(layer "F.Fab")
 			(hide yes)
@@ -17471,7 +17471,7 @@
 				)
 			)
 		)
-		(property "Value" "22R"
+		(property "Value" "0R"
 			(at 0 1.17 90)
 			(layer "F.Fab")
 			(hide yes)

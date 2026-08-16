@@ -10957,7 +10957,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "22R"
+		(property "Value" "0R"
 			(at 510.54 30.48 90)
 			(effects
 				(font
@@ -11009,7 +11009,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "22R"
+		(property "Value" "0R"
 			(at 510.54 39.37 90)
 			(effects
 				(font
@@ -11061,7 +11061,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "10k"
+		(property "Value" "0R"
 			(at 469.9 54.61 90)
 			(effects
 				(font
@@ -11101,7 +11101,7 @@
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
-		(dnp no)
+		(dnp yes)
 		(fields_autoplaced no)
 		(uuid "20fce19c-2ac3-487f-97c2-1213772d3ef5")
 		(property "Reference" "R4"
