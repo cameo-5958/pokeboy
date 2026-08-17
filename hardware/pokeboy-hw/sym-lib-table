@@ -1,0 +1,13 @@
+(sym_lib_table
+  (lib (name "Core1106")(type "KiCad")(uri "${KIPRJMOD}/Core1106.kicad_sym")(options "")(descr ""))
+  (lib (name "Amplifier_Audio")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Amplifier_Audio.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "Battery_Management")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Battery_Management.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "Connector")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Connector.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "Connector_Generic")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Connector_Generic.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "Device")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Device.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "Driver_LED")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Driver_LED.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "Power_Protection")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Power_Protection.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "Regulator_Switching")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Regulator_Switching.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "Switch")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Switch.kicad_sym")(options "")(descr "KiCad standard library"))
+  (lib (name "power")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/power.kicad_sym")(options "")(descr "KiCad standard library"))
+)
