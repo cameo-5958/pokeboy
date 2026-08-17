@@ -1,0 +1,12 @@
+#VRML V2.0 utf8
+# Simplified mechanical envelope from Panasonic EVQ-P2 drawing; dimensions in mm.
+DEF BLACK Appearance { material Material { diffuseColor 0.07 0.07 0.07 specularColor 0.12 0.12 0.12 shininess 0.2 } }
+DEF METAL Appearance { material Material { diffuseColor 0.72 0.74 0.75 specularColor 0.65 0.65 0.65 shininess 0.7 } }
+DEF BLUE Appearance { material Material { diffuseColor 0.05 0.25 0.72 specularColor 0.25 0.25 0.25 shininess 0.35 } }
+Transform { translation 0 0 0.55 children [ Shape { appearance USE BLACK geometry Box { size 4.7 3.5 1.1 } } ] }
+Transform { translation 0 0 1.35 children [ Shape { appearance USE METAL geometry Box { size 4.45 3.3 0.6 } } ] }
+Transform { translation 0 0 2.075 children [ Shape { appearance USE BLUE geometry Box { size 1.8 1.8 0.85 } } ] }
+Transform { translation -2.75 -0.85 0.35 children [ Shape { appearance USE METAL geometry Box { size 0.8 0.65 0.3 } } ] }
+Transform { translation 2.75 -0.85 0.35 children [ Shape { appearance USE METAL geometry Box { size 0.8 0.65 0.3 } } ] }
+Transform { translation -2.75 0.85 0.35 children [ Shape { appearance USE METAL geometry Box { size 0.8 0.65 0.3 } } ] }
+Transform { translation 2.75 0.85 0.35 children [ Shape { appearance USE METAL geometry Box { size 0.8 0.65 0.3 } } ] }

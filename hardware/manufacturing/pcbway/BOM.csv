@@ -1,0 +1,58 @@
+Item,Qty,Designators,Value,Footprint,Manufacturer,Manufacturer Part Number,Assembly,Substitution note
+1,1,U1,AM3358 + 1GB DDR3L,21x21mm 256-BGA 1.27mm,Octavo Systems,OSD3358-1G-ISM,SMT BGA,No substitution; consign; X-ray
+2,1,U2,1S Li-ion charger/power path,VQFN-16,Texas Instruments,BQ24074RGT,SMT,No substitution
+3,1,U3,5V buck-boost,TPS63802 DLA10,Texas Instruments,TPS63802DLAR,SMT,No substitution
+4,1,U4,3.3V buck,WSON-8,Texas Instruments,TPS62162DSGR,SMT,No substitution
+5,1,U5,LED boost,WSON-6,Texas Instruments,TPS61165DRVR,SMT,No substitution
+6,1,U6,I2S mono class-D,TQFN-16,Analog Devices,MAX98357AETE+T,SMT,No substitution
+7,1,U7,USB ESD,SOT-23,Texas Instruments,TPD2EUSB30DRTR,SMT,No substitution
+8,1,J1,Micro-USB B,105017 footprint,Molex,1050170001,SMT,No substitution
+9,1,J9,microSD push-push,104031 footprint,Molex,1040310811,SMT,No substitution
+10,4,SW1 SW2 SW3 SW4,D-pad tactile,Pokeboy EVQ-P1905M,Panasonic,EVQ-P1905M,SMT,No substitution
+11,2,SW5 SW6,A/B tactile,Pokeboy B3AL-1001P,Omron,B3AL-1001P,SMT,No substitution
+12,2,SW7 SW8,Start/Select tactile,Pokeboy EVQ-P2B02B,Panasonic,EVQ-P2B02B,SMT,No substitution
+13,1,Y1,24MHz crystal,5.0x3.2mm 2-pad,CTS,445A35A24M00000,SMT,Verify lifecycle or consign exact
+14,1,L1,0.47uH,XFL4015,Coilcraft,XFL4015-471MEC,SMT,No substitution without power review
+15,1,L2,2.2uH,NRS3012,Taiyo Yuden,NRS3012T2R2MMGJ,SMT,Equivalent >=1.5A permitted
+16,1,L3,10uH,LQH43PN,Murata,LQH43PN100M26L,SMT,Equivalent >=1A permitted; 2.80 mm MAX height (Murata JELF243A-0093); low-profile alt Coilcraft XGL4040-103 (2.10 mm max) needs 4.0x4.0 land
+17,2,FB1 FB2,600ohm at 100MHz,0402,Murata,BLM15AG601SN1D,SMT,Equivalent permitted
+18,1,D1,Red LED,0402,Lite-On,LTST-C191KRKT,SMT,Equivalent color/current permitted
+19,1,D2,Green LED,0402,Lite-On,LTST-C191KGKT,SMT,Equivalent color/current permitted
+20,1,D3,60V Schottky,SOD-123F,Nexperia,PMEG6010CEH115,SMT,Equal or better permitted
+21,1,C1,10nF 16V X7R,0402,Murata,GRM155R71C103KA88D,SMT,Equivalent permitted
+22,5,C2 C3 C4 C6 C10,10uF 10V X5R,0402,Murata,GRM155R61A106ME11D,SMT,No lower voltage
+23,5,C7 C8 C107 C108 C109,22uF 10V X5R,0402,Murata,GRM155R61A226ME11D,SMT,Verify effective capacitance; C107-C109 are the SYS_VOUT bulk bank (Octavo PD4)
+24,1,C11,22uF 6.3V X5R,0402,Murata,GRM155R60J226ME11D,SMT,Verify effective capacitance
+25,9,C5 C9 C12 C15 C21 C25 C26 C27 C105,100nF 16V X7R,0402,Murata,GRM155R71C104KA88D,SMT,Equivalent permitted
+26,1,C13,1uF 50V X5R,0402,Murata,GRM155R61H105KE11D,SMT,No lower voltage
+27,1,C14,4.7uF 10V X5R,0402,Murata,GRM155R61A475MEAAD,SMT,Equivalent permitted
+28,1,C16,220nF 10V X7R,0402,Murata,GRM155R71A224KA01D,SMT,Equivalent permitted
+29,1,C20,10uF 6.3V X5R,0402,Murata,GRM155R60J106ME15D,SMT,Equivalent permitted
+30,2,C22 C23,220pF 50V C0G,0402,Murata,GRM1555C1H221JA01D,SMT,Equivalent C0G permitted
+31,1,C24,1uF 10V X5R,0402,Murata,GRM155R61A105KE15D,SMT,Equivalent permitted
+32,2,C102 C103,18pF 50V C0G,0402,Murata,GRM1555C1H180JA01D,SMT,Match crystal load calculation
+33,1,C106,10uF 10V X5R,0805,Murata,GRM21BR61A106KE19L,SMT,Equivalent permitted
+34,3,R1 R2 R3,0ohm,0402,Yageo,RC0402JR-070RL,SMT,R1/R2 were 22ohm series on USB DP/DM (prohibited by Octavo UB2); R3 was 10k VBUS divider top (UB1) - all now 0ohm links
+35,2,R10 R11,2.2kohm 1%,0402,Yageo,RC0402FR-072K2L,SMT,Equivalent permitted
+36,8,R31 R32 R104 R105 R106 R107 R108 R109,10kohm 1%,0402,Yageo,RC0402FR-0710KL,SMT,Equivalent permitted
+37,8,R12 R13 R17 R18 R20 R21 R23 R26,100kohm 1%,0402,Yageo,RC0402FR-07100KL,SMT,Equivalent permitted
+38,1,R14,806kohm 1%,0402,Yageo,RC0402FR-07806KL,SMT,Equivalent permitted
+39,1,R15,91kohm 1%,0402,Yageo,RC0402FR-0791KL,SMT,Equivalent permitted
+40,1,R16,187kohm 1%,0402,Yageo,RC0402FR-07187KL,SMT,Equivalent permitted
+41,1,R22,10ohm 1%,0402,Yageo,RC0402FR-0710RL,SMT,Equivalent permitted
+42,4,R27 R28 R29 R30,33ohm 1%,0402,Yageo,RC0402FR-0733RL,SMT,Equivalent permitted
+43,2,R33 R102,1Mohm 1%,0402,Yageo,RC0402FR-071ML,SMT,Equivalent permitted
+44,1,R34,330kohm 1%,0402,Yageo,RC0402FR-07330KL,SMT,Equivalent permitted
+45,1,R5,1.78kohm 1%,0402,Yageo,RC0402FR-071K78L,SMT,Equivalent permitted
+46,1,R6,3.09kohm 1%,0402,Yageo,RC0402FR-073K09L,SMT,Equivalent permitted
+47,1,R7,3.01kohm 1%,0402,Yageo,RC0402FR-073K01L,SMT,Equivalent permitted
+48,1,R8,46.4kohm 1%,0402,Yageo,RC0402FR-0746K4L,SMT,Equivalent permitted
+49,1,R19,0ohm,0402,Yageo,RC0402JR-070RL,DNP,Do not fit
+50,1,R9,10kohm,0402,Yageo,RC0402FR-0710KL,DNP,Do not fit
+57,1,R4,10kohm,0402,Yageo,RC0402FR-0710KL,DNP,Do not fit; was VBUS divider bottom - deleted so USB0_VBUS sees 5 V (Octavo UB1)
+51,6,RN1 RN2 RN3 RN4 RN5 RN6,4x22ohm,4x0603 convex,Yageo,YC164-JR-0722RL,SMT,No substitution without SI review
+52,4,RN7 RN8 RN9 RN10,4x100kohm,4x0603 convex,Yageo,YC164-JR-07100KL,SMT,Keep exact SYSBOOT pattern
+53,1,J5,EA TFT020-23AINN RGB666,39-pin display footprint,DISPLAY VISIONS,EA TFT020-23AINN,OFF-BOARD,Final assembly only
+54,1,J2,Protected 1S LiPo with 10k NTC,Wire pads,User supplied,USER-SUPPLIED-LIPO-1S-NTC,OFF-BOARD,Polarity and NTC mandatory
+55,1,J4,8ohm speaker,Wire pads,User supplied,USER-SUPPLIED-8OHM-SPEAKER,OFF-BOARD,Final assembly only
+56,1,MICROSD,Validated boot card,microSD,User supplied,USER-SUPPLIED-MICROSD,OFF-BOARD,Program before functional test

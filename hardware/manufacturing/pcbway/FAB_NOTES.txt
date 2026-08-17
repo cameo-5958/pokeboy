@@ -1,0 +1,53 @@
+POKEBOY OSD3358-1G CARRIER - PROTO-B / DFM HOLD
+
+ORDER STATUS
+- QUOTE AND ENGINEERING REVIEW ONLY. DO NOT FABRICATE OR ASSEMBLE.
+- Connectivity is complete: DRC reports 0 errors and 0 unconnected items, with no
+  shorts or spacing violations, ERC reports 0 errors, and the schematic netlist
+  matches the board connectivity net for net. The microSD pull-up branches,
+  the AUX_3V3 rail, SYS_5V stitching and the isolated ground-pour islands are all
+  closed.
+- U1's ball map was checked against Octavo's PocketBeagle reference design. Four
+  balls that reference ties had been left floating and are now connected:
+  PMIC_POWER_EN/PMIC_PWR_EN, PMIC_LDO_PGOOD/RTC_PWRONRSTN, PMIC_PGOOD/PWRONRSTN,
+  and the ADC reference pair feeding the battery-sense input. The PMIC enable was
+  among them, so the previous revision would not have powered up.
+- Octavo's paid design review is intentionally not purchased. Octavo's own
+  OSD335x schematic checklist was executed item by item instead; every mandatory
+  item is closed on the board (SYS_VOUT bulk capacitance, ground stitching,
+  VIN_BAT/PMIC_BAT_SENSE and VIN_USB ties, EEPROM_WP). Release now waits only
+  on PCBWay's annular-ring/warp confirmation, after which a 5-board first
+  article serves as the physical design review.
+
+Board construction
+- 0.80 mm finished thickness, four copper layers, ENIG finish.
+- Nominal stack: 0.10 mm outer prepreg / 0.44 mm core / 0.10 mm outer prepreg.
+- Minimum routed trace 0.10 mm at the display breakout; default signal trace 0.15 mm.
+- Minimum copper clearance 0.10 mm; minimum solder-mask web 0.05 mm.
+- Through via 0.45 mm finished pad diameter / 0.20 mm drill.
+
+Critical mechanical instruction
+- U1 is a direct-mounted 21 x 21 x 2 mm, 1.27 mm-pitch BGA; the former Core1106
+  underside aperture is closed.
+- Use X-ray inspection for U1 and verify voiding/bridging against IPC-A-610 Class 2.
+- A 3.2 mm cavity leaves approximately 1.2 mm nominal allowance above U1, but U1
+  is NOT the binding part. L3 (Murata LQH43PN100M26L) is 2.6 mm +/-0.2 per the
+  Murata reference spec JELF243A-0093, i.e. 2.80 mm MAX, and SW7, SW8 and J1
+  are all above 2.4 mm. A flat 3.2 mm cavity therefore clears L3 by only
+  0.40 mm at the datasheet maximum. Size the cavity to 2.80 mm, or step it, or
+  substitute a lower inductor (Coilcraft XGL4040-103 is 2.10 mm max, Isat
+  1.4 A, DCR 46 mOhm - better in every axis but needs a 4.0 x 4.0 mm land
+  pattern). See height-map.svg for the full profile.
+- The six face buttons stand 5.00 mm above the board and are intended to
+  protrude through the enclosure face; they are not a cavity constraint.
+- Build and measure a first article before committing the display carrier/enclosure.
+
+Assembly and validation
+- U1 is OSD3358-1G-ISM (1 GB DDR3L); boot media is J9 microSD 104031-0811.
+- U6 is MAX98357AETE+T I2S mono class-D audio; no analog codec line-out is used.
+- J1 is Micro-USB data plus charge, not charge-only.
+- Battery is a protected 1S LiPo with 10 kohm NTC.
+- Validate sustained-load temperature, charger operation, USB data, display timing,
+  backlight current, audio, and every control input before enclosing the first article.
+- U1 is rendered as its 21 x 21 mm package envelope; generic component bodies
+  require the standard KiCad 9 3D model library on the viewing workstation.

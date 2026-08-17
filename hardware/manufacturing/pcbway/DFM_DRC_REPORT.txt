@@ -1,0 +1,138 @@
+** Drc report for pokeboy-hw.kicad_pcb **
+** Created on 2026-08-16T02:43:24-0700 **
+** Report includes: Errors, Warnings **
+
+** Found 37 DRC violations **
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(14.2213 mm, 18.2484 mm): Segment of Y1 on F.Silkscreen
+    @(15.3160 mm, 14.4800 mm): Reference field of R102
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(14.2213 mm, 18.2484 mm): Segment of Y1 on F.Silkscreen
+    @(15.3160 mm, 12.8390 mm): Reference field of C102
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(14.2213 mm, 18.2484 mm): Segment of Y1 on F.Silkscreen
+    @(15.3160 mm, 16.1410 mm): Reference field of C103
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(15.3160 mm, 16.1410 mm): Reference field of C103
+    @(15.1624 mm, 16.0300 mm): Segment of R102 on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(27.0000 mm, 33.3400 mm): Reference field of C105
+    @(27.0000 mm, 34.3000 mm): PCB text 'OSD3358' on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(26.8922 mm, 34.1400 mm): Segment of C105 on F.Silkscreen
+    @(27.0000 mm, 34.3000 mm): PCB text 'OSD3358' on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(31.0000 mm, 32.8200 mm): Reference field of C106
+    @(16.4615 mm, 32.4597 mm): Segment of U1 on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(37.3607 mm, 31.2202 mm): Footprint text of U1 (A)
+    @(37.4597 mm, 32.4597 mm): Segment of U1 on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(36.2202 mm, 32.2362 mm): Footprint text of U1 (1)
+    @(16.4615 mm, 32.4597 mm): Segment of U1 on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(16.4615 mm, 32.4597 mm): Segment of U1 on F.Silkscreen
+    @(17.1702 mm, 31.9314 mm): Footprint text of U1 (16)
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(15.2082 mm, 14.3590 mm): Segment of C102 on F.Silkscreen
+    @(15.3160 mm, 14.4800 mm): Reference field of R102
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(15.3160 mm, 14.4800 mm): Reference field of R102
+    @(16.4615 mm, 11.4615 mm): Segment of U1 on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(15.3160 mm, 16.1410 mm): Reference field of C103
+    @(16.4615 mm, 11.4615 mm): Segment of U1 on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(15.3160 mm, 12.8390 mm): Reference field of C102
+    @(16.4615 mm, 11.4615 mm): Segment of U1 on F.Silkscreen
+[silk_overlap]: Silkscreen overlap
+    Rule: board setup constraints silk; warning
+    @(37.4597 mm, 32.4597 mm): Segment of U1 on F.Silkscreen
+    @(37.3607 mm, 12.1702 mm): Footprint text of U1 (T)
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(27.0000 mm, 34.3000 mm): PCB text 'OSD3358' on F.Silkscreen
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(27.0000 mm, 10.5000 mm): PCB text 'OSD3358-1G / 1GB' on F.Silkscreen
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(67.0000 mm, 59.7000 mm): PCB text 'PROTO-B / DFM HOLD' on F.Silkscreen
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(15.3160 mm, 14.4800 mm): Reference field of R102
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(36.5000 mm, 26.5000 mm): Reference field of RN10
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(36.5000 mm, 14.5000 mm): Reference field of RN7
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(36.5000 mm, 18.5000 mm): Reference field of RN8
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(15.3160 mm, 12.8390 mm): Reference field of C102
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(36.5000 mm, 22.5000 mm): Reference field of RN9
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(15.3160 mm, 16.1410 mm): Reference field of C103
+[silk_over_copper]: Silkscreen clipped by solder mask
+    Local override; warning
+    @(17.1702 mm, 31.9314 mm): Footprint text of U1 (16)
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.7722 mm)
+    Rule: board setup constraints silk text height; warning
+    @(10.6291 mm, 18.2287 mm): Reference field of Y1
+[text_thickness]: Text thickness out of range (board setup constraints silk text thickness min thickness 0.0800 mm; actual 0.0762 mm)
+    Rule: board setup constraints silk text thickness; warning
+    @(36.2202 mm, 32.2362 mm): Footprint text of U1 (1)
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.6096 mm)
+    Rule: board setup constraints silk text height; warning
+    @(36.2202 mm, 32.2362 mm): Footprint text of U1 (1)
+[text_thickness]: Text thickness out of range (board setup constraints silk text thickness min thickness 0.0800 mm; actual 0.0762 mm)
+    Rule: board setup constraints silk text thickness; warning
+    @(37.3607 mm, 31.2202 mm): Footprint text of U1 (A)
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.6096 mm)
+    Rule: board setup constraints silk text height; warning
+    @(37.3607 mm, 31.2202 mm): Footprint text of U1 (A)
+[text_thickness]: Text thickness out of range (board setup constraints silk text thickness min thickness 0.0800 mm; actual 0.0762 mm)
+    Rule: board setup constraints silk text thickness; warning
+    @(17.1702 mm, 31.9314 mm): Footprint text of U1 (16)
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.6096 mm)
+    Rule: board setup constraints silk text height; warning
+    @(17.1702 mm, 31.9314 mm): Footprint text of U1 (16)
+[text_thickness]: Text thickness out of range (board setup constraints silk text thickness min thickness 0.0800 mm; actual 0.0762 mm)
+    Rule: board setup constraints silk text thickness; warning
+    @(37.3607 mm, 12.1702 mm): Footprint text of U1 (T)
+[text_height]: Text height out of range (board setup constraints silk text height min height 0.8000 mm; actual 0.6096 mm)
+    Rule: board setup constraints silk text height; warning
+    @(37.3607 mm, 12.1702 mm): Footprint text of U1 (T)
+[lib_footprint_mismatch]: Footprint 'CRYSTAL_5X3.2MM' does not match copy in library 'Pokeboy'.
+    Local override; warning
+    @(12.5220 mm, 15.6500 mm): Footprint Y1
+[silk_edge_clearance]: Silkscreen clipped by board edge
+    Rule: board setup constraints silk; warning
+    @(63.6000 mm, 15.8000 mm): Segment on Edge.Cuts
+    @(67.0000 mm, 59.7000 mm): PCB text 'PROTO-B / DFM HOLD' on F.Silkscreen
+
+** Found 0 unconnected pads **
+
+** Found 0 Footprint errors **
+
+** End of Report **
