@@ -47,7 +47,7 @@
         <h1>PROTO-B</h1>
         <p class="deck">One-gigabyte compute revision with microSD boot and the production tactile-switch selections.</p>
       </div>
-      <div class="status">DFM HOLD · DRC clean · awaiting Octavo review</div>
+      <div class="status">DFM HOLD · DRC clean · awaiting PCBWay DFM confirmation</div>
     </header>
 
     <nav class="toolbar" aria-label="Board view">
@@ -62,7 +62,7 @@
       <a class="button" href="pokeboy-hw-source-PROTO-B.zip" download>KiCad source ZIP</a>
     </nav>
 
-    <p class="holdnote"><b>DFM HOLD.</b> The gerber, drill and IPC-D-356 files are published for quotation and engineering review only. Release is blocked on Octavo's OSD335x design review, which has not been done. Do not fabricate or assemble from this package.</p>
+    <p class="holdnote"><b>DFM HOLD.</b> The gerber, drill and IPC-D-356 files are published for quotation and engineering review only. Octavo's paid review was superseded by a checklist self-review; release now waits on PCBWay's confirmation of the 0.125 mm annular ring and warp behaviour, then a 5-board first article. Do not fabricate or assemble from this package.</p>
 
     <div class="viewer">
       <img id="board" src="pokeboy-hw-top.png" alt="Top-side 3D render of the Pokeboy PROTO-B PCB">
@@ -85,7 +85,7 @@
           <tr><th>Compute</th><td>OSD3358-1G-ISM · 1 GB DDR3L · microSD boot</td></tr>
           <tr><th>Display</th><td>EA TFT020-23AINN · RGB666</td></tr>
           <tr><th>Max height</th><td><strong>5.00 mm</strong> at SW1–SW6 (5.80 mm with board); tallest non-button part is L3 at 2.60 mm, which leaves 0.60 mm in a flat 3.2 mm cavity — see the height map</td></tr>
-          <tr><th>Validation</th><td>ERC 0 errors; DRC 0 errors / 0 unconnected; schematic netlist identical to board connectivity; quote/review only until Octavo's OSD335x design review is closed</td></tr>
+          <tr><th>Validation</th><td>ERC 0 errors; DRC 0 errors / 0 unconnected; schematic netlist identical to board connectivity; quote/review only until PCBWay confirms the 0.125 mm annular ring and warp behaviour</td></tr>
           <tr><th>Ball map</th><td>U1 verified ball-by-ball against Octavo's PocketBeagle reference; four floating PMIC/ADC control balls found and tied, including the PMIC enable</td></tr>
         </table>
       </section>
