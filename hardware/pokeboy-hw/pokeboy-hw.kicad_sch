@@ -7,7 +7,7 @@
 	(title_block
 		(title "Pokeboy OSD3358-1G low-profile carrier")
 		(date "2026-08-15")
-		(rev "PROTO-B DFM HOLD")
+		(rev "PROTO-B1")
 		(company "Pokeboy")
 		(comment 1 "0.8 mm four-layer PCB; 21 mm direct BGA; modelled top envelope 2.0 mm")
 		(comment 2 "EA TFT020-23AINN native RGB666; protected 1S LiPo; Micro-USB data + charge")
@@ -11055,7 +11055,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Package_TO_SOT_SMD:SOT-23-3"
+		(property "Footprint" "Package_TO_SOT_SMD:Texas_DRT-3"
 			(at 469.9 35.56 0)
 			(effects
 				(font
@@ -11077,110 +11077,6 @@
 			(project "pokeboy-hw"
 				(path "/61fdeb8d-5442-41ae-99a5-d057c2041497"
 					(reference "U7")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R")
-		(at 510.54 30.48 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced no)
-		(uuid "a0039711-d8c3-4427-aa41-ef2e3c6ab260")
-		(property "Reference" "R1"
-			(at 512.572 30.48 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "0R"
-			(at 510.54 30.48 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 510.54 30.48 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "e927a264-35e7-4f1e-bd53-761ae7385232")
-		)
-		(pin "2"
-			(uuid "ceaf8f29-9775-473a-b16d-075ff27e09e6")
-		)
-		(instances
-			(project "pokeboy-hw"
-				(path "/61fdeb8d-5442-41ae-99a5-d057c2041497"
-					(reference "R1")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R")
-		(at 510.54 39.37 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced no)
-		(uuid "1c98a71b-d998-4dc3-82a0-d9989706ebac")
-		(property "Reference" "R2"
-			(at 512.572 39.37 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "0R"
-			(at 510.54 39.37 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0402_1005Metric"
-			(at 510.54 39.37 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "bfa9ac2f-9707-4011-ab0c-0038db52b1b0")
-		)
-		(pin "2"
-			(uuid "5f909f77-7d5b-47b8-ae14-4ce0d1145bba")
-		)
-		(instances
-			(project "pokeboy-hw"
-				(path "/61fdeb8d-5442-41ae-99a5-d057c2041497"
-					(reference "R2")
 					(unit 1)
 				)
 			)
@@ -14573,7 +14469,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "EA TFT020-23AINN RGB666"
+		(property "Value" "EA WF030-39S"
 			(at 720.09 144.78 0.0000)
 			(effects
 				(font
@@ -16418,7 +16314,7 @@
 		)
 		(uuid "03806c89-a253-4ed3-823b-52e6ac00a625")
 	)
-	(label "USB_DM_CONN"
+	(label "USB_DM"
 		(at 433.07 38.1 0.0000)
 		(effects
 			(font
@@ -16428,7 +16324,7 @@
 		)
 		(uuid "93ae4ab2-d417-4a50-a86a-a543dbb68e69")
 	)
-	(label "USB_DP_CONN"
+	(label "USB_DP"
 		(at 433.07 35.56 0.0000)
 		(effects
 			(font
@@ -16458,7 +16354,7 @@
 		)
 		(uuid "051c4292-8fec-474b-985d-0f6040dd43da")
 	)
-	(label "USB_DP_CONN"
+	(label "USB_DP"
 		(at 459.74 35.56 0.0000)
 		(effects
 			(font
@@ -16468,7 +16364,7 @@
 		)
 		(uuid "f72c54a7-3a37-4683-ac0f-2748767aed01")
 	)
-	(label "USB_DM_CONN"
+	(label "USB_DM"
 		(at 480.06 35.56 0.0000)
 		(effects
 			(font
@@ -16487,46 +16383,6 @@
 			(justify left bottom)
 		)
 		(uuid "364f524c-6051-405d-8184-f9aa6bbc188f")
-	)
-	(label "USB_DP_CONN"
-		(at 510.54 26.67 0.0000)
-		(effects
-			(font
-				(size 1 1)
-			)
-			(justify left bottom)
-		)
-		(uuid "0c15f971-23b2-4642-9af2-db07479467f7")
-	)
-	(label "USB_DP"
-		(at 510.54 34.29 0.0000)
-		(effects
-			(font
-				(size 1 1)
-			)
-			(justify left bottom)
-		)
-		(uuid "94d6f5bc-6198-43ac-acbf-1c9265123371")
-	)
-	(label "USB_DM_CONN"
-		(at 510.54 35.56 0.0000)
-		(effects
-			(font
-				(size 1 1)
-			)
-			(justify left bottom)
-		)
-		(uuid "5142af76-b7e2-4fb6-b07c-bdda04c581fa")
-	)
-	(label "USB_DM"
-		(at 510.54 43.18 0.0000)
-		(effects
-			(font
-				(size 1 1)
-			)
-			(justify left bottom)
-		)
-		(uuid "a2066d43-a555-4d70-9ce5-bc59ee917ca5")
 	)
 	(label "VBUS"
 		(at 469.9 50.8 0.0000)
@@ -16638,7 +16494,7 @@
 		)
 		(uuid "c564f222-2e9e-44ae-ba20-f20a8b0bf8da")
 	)
-	(label "AUX_3V3"
+	(label "VBUS"
 		(at 447.04 105.41 0.0000)
 		(effects
 			(font
@@ -18358,7 +18214,7 @@
 		)
 		(uuid "d5bcf92f-3f75-483e-8838-8b7d357d8b92")
 	)
-	(label "GND"
+	(label "AUX_3V3"
 		(at 715.01 233.68 0.0000)
 		(effects
 			(font
@@ -19148,7 +19004,7 @@
 		)
 		(uuid "af066d89-6cc0-45bf-93a7-935f56709eaf")
 	)
-	(label "RECOVERY"
+	(label "JTAG_TDI"
 		(at 679.45 469.9 0.0000)
 		(effects
 			(font
@@ -21912,7 +21768,7 @@
 		)
 		(uuid "e0820c33-2c3e-4fba-8c35-46e69e2a456a")
 	)
-	(label "RECOVERY"
+	(label "JTAG_TDI"
 		(at 457.2 621.03 0.0000)
 		(effects
 			(font
@@ -23140,7 +22996,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 594.36 175.26 0)
 			(effects
 				(font
@@ -23192,7 +23048,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 612.14 175.26 0)
 			(effects
 				(font
@@ -23244,7 +23100,7 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0402_1005Metric"
+		(property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
 			(at 629.92 175.26 0)
 			(effects
 				(font

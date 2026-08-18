@@ -1,8 +1,16 @@
-POKEBOY OSD3358-1G CARRIER - PROTO-B / DFM HOLD
+POKEBOY OSD3358-1G CARRIER - PROTO-B1 / RELEASED FOR FABRICATION
 
 ORDER STATUS
-- QUOTE AND ENGINEERING REVIEW ONLY. DO NOT FABRICATE OR ASSEMBLE.
-- Connectivity is complete: DRC reports 0 errors and 0 unconnected items, with no
+- RELEASED FOR FABRICATION 2026-08-18 as PROTO-B1. 5-board bare PCB, 2-board
+  assembly. All design-review findings fixed: U7 on DRT-3 and re-routed, J5
+  connector placed and in BOM/CPL, J5 pin 35 IM3 strap = VDD (RGB mode), BQ24074
+  EN1 on VBUS (batteryless USB boot in USB500), USB D+/D- continuous (R1/R2
+  removed), SYS_VOUT bulk = 3x 22 uF 0805, capacitor MPNs corrected to real
+  Murata parts, MSL 4 handling stated. DRC/ERC: zero errors, zero warnings.
+- Accepted limitations for this prototype, by design: no JTAG beyond the TDI
+  pad (J7, net JTAG_TDI); no USB impedance control (short trace lengths).
+- Connectivity is complete: DRC reports 0 errors, 0 warnings and 0 unconnected
+  items, with no
   shorts or spacing violations, ERC reports 0 errors, and the schematic netlist
   matches the board connectivity net for net. The microSD pull-up branches,
   the AUX_3V3 rail, SYS_5V stitching and the isolated ground-pour islands are all
@@ -15,9 +23,9 @@ ORDER STATUS
 - Octavo's paid design review is intentionally not purchased. Octavo's own
   OSD335x schematic checklist was executed item by item instead; every mandatory
   item is closed on the board (SYS_VOUT bulk capacitance, ground stitching,
-  VIN_BAT/PMIC_BAT_SENSE and VIN_USB ties, EEPROM_WP). Release now waits only
-  on PCBWay's annular-ring/warp confirmation, after which a 5-board first
-  article serves as the physical design review.
+  VIN_BAT/PMIC_BAT_SENSE and VIN_USB ties, EEPROM_WP). PCBWay confirmed the
+  0.125 mm annular ring on 2026-08-18; the 5-board first article serves as the
+  physical design review.
 
 Board construction
 - 0.80 mm finished thickness, four copper layers, ENIG finish.
@@ -40,6 +48,11 @@ Critical mechanical instruction
   pattern). See height-map.svg for the full profile.
 - The six face buttons stand 5.00 mm above the board and are intended to
   protrude through the enclosure face; they are not a cavity constraint.
+- U1 (Octavo OSD335x-SM) is MSL 4, confirmed in the OSD335x-SM datasheet Rev. 12
+  ("These devices are susceptible to moisture and are classified as MSL 4"):
+  keep in dry pack
+  until placement, honour the floor life, and bake per J-STD-033 if it is
+  exceeded. Peak reflow per the OSD335x datasheet, not a generic profile.
 - Build and measure a first article before committing the display carrier/enclosure.
 
 Assembly and validation
