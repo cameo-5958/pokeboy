@@ -10,7 +10,7 @@ Outer copper,1 oz,
 Inner copper,1 oz,Confirmed with PCBWay 2026-08-17
 Material,FR-4,Tg 150 C minimum
 Surface finish,ENIG,RoHS
-Solder mask,Black,
+Solder mask,Black,Gang mask relief approved 2026-08-19: PCBWay removes dams under 0.22 mm at fine-pitch IC pads (0.5 mm QFN/WSON and J5 0.3 mm FFC); U1 BGA dams kept; vias stay tented
 Silkscreen,White,
 Minimum trace,0.15 mm,Narrowest track routed; only 0.15 and 0.40 mm exist
 Minimum space,0.10 mm,Verified by DRC; clean at 0.100 mm and 428 violations at 0.127 mm
