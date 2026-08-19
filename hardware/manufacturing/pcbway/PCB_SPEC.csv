@@ -26,6 +26,6 @@ BGA inspection,100 percent X-ray U1,Images required
 Electrical test,Flying probe,Use the supplied IPC-356 netlist
 Panelization,PCBWay standard,Do not place tabs at controls or card opening
 Gerbers,Released,PROTO-B1 in fab/ and pokeboy-hw-PROTO-B1-gerbers.zip
-Assembly side,Top only,All 110 footprints top-side; B.Paste near-empty
-Placements,103,113 footprints less 3 DNP and 7 pad-only
+Assembly side,Top only,All 111 footprints top-side; B.Paste near-empty
+Placements,102,111 footprints less 3 DNP and 6 pad-only
 Order config,See PCBWAY_ORDER.md,Field-by-field values for the PCBWay quote form

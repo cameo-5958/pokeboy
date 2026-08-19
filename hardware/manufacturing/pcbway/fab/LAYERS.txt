@@ -59,4 +59,4 @@ BOARD
 All components are on the top side; B_Paste is intentionally near-empty.
 
 Assembly data lives one directory up: BOM.csv and CPL.csv. CPL is generated with
-DNP parts excluded, so it lists 103 placements against 113 footprints.
+DNP parts excluded, so it lists 102 placements against 111 footprints.

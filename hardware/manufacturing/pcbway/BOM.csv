@@ -32,7 +32,7 @@ Item,Qty,Designators,Value,Footprint,Manufacturer,Manufacturer Part Number,Assem
 31,1,C24,1uF 10V X5R,0402,Murata,GRM155R61A105KE15D,SMT,Equivalent permitted
 32,2,C102 C103,18pF 50V C0G,0402,Murata,GRM1555C1H180JA01D,SMT,Match crystal load calculation
 33,1,C106,10uF 10V X5R,0805,Murata,GRM21BR61A106KE19L,SMT,Equivalent permitted
-34,3,R1 R2 R3,0ohm,0402,Yageo,RC0402JR-070RL,SMT,R1/R2 were 22ohm series on USB DP/DM (prohibited by Octavo UB2); R3 was 10k VBUS divider top (UB1) - all now 0ohm links
+34,1,R3,0ohm,0402,Yageo,RC0402JR-070RL,SMT,Was 10k VBUS divider top (Octavo UB1) - now 0ohm link. R1/R2 deleted in PROTO-B1: USB DP/DM are direct connections
 35,2,R10 R11,2.2kohm 1%,0402,Yageo,RC0402FR-072K2L,SMT,Equivalent permitted
 36,8,R31 R32 R104 R105 R106 R107 R108 R109,10kohm 1%,0402,Yageo,RC0402FR-0710KL,SMT,Equivalent permitted
 37,8,R12 R13 R17 R18 R20 R21 R23 R26,100kohm 1%,0402,Yageo,RC0402FR-07100KL,SMT,Equivalent permitted
