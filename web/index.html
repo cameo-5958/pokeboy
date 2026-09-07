@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>POKEBOY</title>
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="2" fill="%231c2b22"/><rect x="3" y="2" width="10" height="8" fill="%23c8d4a4"/><circle cx="11" cy="13" r="1.5" fill="%238fa878"/><rect x="4" y="12" width="3" height="1" fill="%238fa878"/><rect x="5" y="11" width="1" height="3" fill="%238fa878"/></svg>'>
+  <link rel="stylesheet" href="/web/shell.css">
+</head>
+<body>
+  <header id="topbar">
+    <span id="brand">POKEBOY</span>
+    <select id="cart-select" title="Cartridge"></select>
+    <span class="spacer"></span>
+    <button id="drawer-toggle" class="chrome" title="Menu (Esc)">⛭</button>
+    <button id="logout" class="chrome">LOGOUT</button>
+  </header>
+  <main id="layout">
+    <section id="stage-wrap">
+      <div id="stage">
+        <iframe id="emu" title="Emulator screen"></iframe>
+        <div id="overlay">CONNECTING…</div>
+      </div>
+      <div id="transport">
+        <button id="pause" class="chrome" title="Pause/resume">⏸</button>
+        <span id="speed-badge">1×</span>
+        <input id="volume" type="range" min="0" max="100" value="60" title="Volume">
+        <button id="mute" class="chrome" title="Mute">♪</button>
+      </div>
+      <div id="cluster">
+        <div id="dpad">
+          <button data-act="up" class="pad up" aria-label="Up">▲</button>
+          <button data-act="left" class="pad left" aria-label="Left">◀</button>
+          <span class="pad hub"></span>
+          <button data-act="right" class="pad right" aria-label="Right">▶</button>
+          <button data-act="down" class="pad down" aria-label="Down">▼</button>
+        </div>
+        <div id="meta-buttons">
+          <button data-act="select" class="pill">SELECT</button>
+          <button data-act="start" class="pill">START</button>
+        </div>
+        <div id="ab">
+          <button data-act="b" class="round">B</button>
+          <button data-act="a" class="round">A</button>
+        </div>
+      </div>
+    </section>
+    <aside id="drawer">
+      <nav id="tabs">
+        <button data-tab="states" class="active">STATES</button>
+        <button data-tab="keys">KEYS</button>
+      </nav>
+      <div id="tab-states" class="tab active"></div>
+      <div id="tab-keys" class="tab"></div>
+    </aside>
+  </main>
+  <script src="/web/shell.js"></script>
+</body>
+</html>

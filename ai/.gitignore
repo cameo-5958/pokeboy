@@ -1,0 +1,8 @@
+.venv/
+datasets/
+vendor/
+__pycache__/
+*.pyc
+.pytest_cache/
+SPECS.md
+checkpoints/

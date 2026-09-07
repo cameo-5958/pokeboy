@@ -1,0 +1,227 @@
+"""Showdown transport bridge (serve/showdown.py): poke-env Battle -> schema_v1
+state + action-int -> order mapping. Translation is duck-typed so these tests
+run without poke-env installed; the Player subclass imports poke-env lazily."""
+
+import random
+
+from serve.showdown import state_from_battle, team_to_showdown
+from sim.teams import STANDARD_SETS
+
+
+class Move:
+    def __init__(self, mid, pp=10, base_power=0):
+        self.id = mid
+        self.current_pp = pp
+        self.base_power = base_power
+
+
+class Status:
+    def __init__(self, name):
+        self.name = name
+
+
+class Mon:
+    def __init__(self, species, hp=1.0, status=None, moves=(), fainted=False):
+        self.species = species
+        self.base_species = species
+        self.current_hp_fraction = hp
+        self.status = Status(status) if status else None
+        self.moves = {m.id: m for m in moves}
+        self.fainted = fainted
+
+
+class FakeBattle:
+    def __init__(self, active, bench, opp_active, opp_bench=(), available_moves=None,
+                 force_switch=False, turn=7, tag="b1"):
+        self.active_pokemon = active
+        self.available_switches = list(bench)
+        self.opponent_active_pokemon = opp_active
+        self.team = {m.species: m for m in [active] + list(bench)}
+        self.opponent_team = {m.species: m for m in [opp_active] + list(opp_bench)}
+        self.available_moves = (list(active.moves.values())
+                                if available_moves is None else available_moves)
+        self.force_switch = force_switch
+        self.turn = turn
+        self.battle_tag = tag
+
+
+def _tauros(**kw):
+    return Mon("tauros", moves=[Move("bodyslam"), Move("hyperbeam", pp=5),
+                                Move("blizzard"), Move("earthquake")], **kw)
+
+
+def test_translation_basic():
+    b = FakeBattle(
+        active=_tauros(hp=0.62, status="PAR"),
+        bench=[Mon("snorlax", moves=[Move("bodyslam")]),
+               Mon("chansey", hp=0.3, moves=[Move("softboiled", pp=2)])],
+        opp_active=Mon("starmie", hp=0.8, moves=[Move("psychic")]),
+        opp_bench=[Mon("rhydon", hp=0.0, fainted=True)],
+    )
+    state, orders = state_from_battle(b)
+    me = state["my_side"]["pokemon"]
+    assert [m["species"] for m in me] == ["Tauros", "Snorlax", "Chansey"]
+    assert me[0]["status"] == "PAR" and me[0]["hp_fraction"] == 0.62
+    assert me[0]["moves"] == ["Body Slam", "Hyper Beam", "Blizzard", "Earthquake"]
+    assert me[0]["pp"] == [10, 5, 10, 10]
+    opp = state["opp_side"]["pokemon"]
+    assert opp[0]["species"] == "Starmie" and opp[0]["revealed_moves"] == ["Psychic"]
+    assert opp[1]["species"] == "Rhydon" and opp[1]["fainted"] is True
+    assert sum(1 for m in opp if m["species"] is None) == 4  # unrevealed padding
+    assert state["request_kind"] == "turn"
+    # actions: 4 moves + 2 switches
+    assert sorted(orders) == [0, 1, 2, 3, 4, 5]
+    assert orders[1].id == "hyperbeam"
+    assert orders[4].species == "snorlax"
+
+
+def test_translation_disabled_move_and_force_switch():
+    active = _tauros()
+    b = FakeBattle(
+        active=active,
+        bench=[Mon("snorlax", moves=[Move("bodyslam")])],
+        opp_active=Mon("starmie"),
+        available_moves=[active.moves["blizzard"]],  # others disabled/out of pp
+    )
+    state, orders = state_from_battle(b)
+    assert sorted(orders) == [2, 4]  # only Blizzard + the one switch
+    assert set(state["legal_actions"]) == {2, 4}
+
+    b2 = FakeBattle(active=active, bench=[Mon("snorlax", moves=[Move("bodyslam")])],
+                    opp_active=Mon("starmie"), available_moves=[], force_switch=True)
+    state2, orders2 = state_from_battle(b2)
+    assert state2["request_kind"] == "force_switch"
+    assert sorted(orders2) == [4]
+
+
+def test_translation_struggle_maps_to_pass_action():
+    active = _tauros()
+    struggle = Move("struggle")
+    b = FakeBattle(active=active, bench=[], opp_active=Mon("starmie"),
+                   available_moves=[struggle])
+    state, orders = state_from_battle(b)
+    assert list(orders) == [9]
+    assert orders[9] is struggle
+    assert state["legal_actions"] == [9]
+
+
+def test_team_export_round_trips_through_our_parser():
+    from sim.teamsets import parse_team_export
+
+    team = random.Random(3).sample(STANDARD_SETS, 6)
+    paste = team_to_showdown(team)
+    parsed = parse_team_export(paste)
+    assert [sp for sp, _ in parsed] == [m.species for m in team]
+    assert [mv for _, mv in parsed] == [m.moves for m in team]
+
+
+def test_team_builder_resamples_per_battle():
+    from serve.showdown import make_team_builder
+
+    builder = make_team_builder(seed=1)
+    packed = [builder.yield_team() for _ in range(4)]
+    for team in packed:
+        assert len(team.split("]")) == 6  # six mons, packed format
+        assert all(mon.split("|")[4] for mon in team.split("]"))  # moves present
+    assert len(set(packed)) > 1  # a fresh sample each battle, not one fixed team
+
+
+def test_team_builder_competitive_pool_only():
+    from serve.showdown import make_team_builder
+    from sim.teamsets import TeamSampler
+
+    builder = make_team_builder(seed=2, pool="competitive")
+    packed = builder.yield_team()
+    assert len(packed.split("]")) == 6
+    competitive = {tuple(m.species for m in team)
+                   for team in TeamSampler().pools["competitive"]}
+    species = tuple(mon.split("|")[1] or mon.split("|")[0]
+                    for mon in packed.split("]"))
+    assert tuple(s.lower().replace(" ", "").replace("-", "")
+                 for s in species) in {
+        tuple(s.lower().replace(" ", "").replace("-", "") for s in t)
+        for t in competitive}
+
+
+def test_history_tracker_builds_tail_from_battle_diffs():
+    from serve.showdown import HistoryTracker
+
+    tracker = HistoryTracker()
+    opp = Mon("starmie", hp=1.0, moves=[Move("psychic")])
+    me = _tauros()
+    b = FakeBattle(active=me, bench=[Mon("snorlax", moves=[Move("bodyslam")])],
+                   opp_active=opp, turn=1)
+    tracker.observe(b)
+    assert tracker.tail(b) == []  # no completed turns yet
+    tracker.record_decision(b, me.moves["bodyslam"])
+
+    b.turn = 2
+    me.current_hp_fraction = 0.75         # we took 25%
+    opp.current_hp_fraction = 0.65        # they took 35%
+    opp.last_move = Move("psychic")       # their revealed action
+    tracker.observe(b)
+    tail = tracker.tail(b)
+    assert len(tail) == 1
+    e = tail[0]
+    assert e["o"] == -1
+    assert e["my"] == "M:Body Slam" and e["op"] == "M:Psychic"
+    assert e["dm"] == 3 and e["do"] == 4  # 0.25 / 0.35 hp-frac buckets
+    assert e["ev"] == []  # normal effectiveness both ways
+
+
+def test_history_tracker_switch_faint_and_force_switch_merge():
+    from serve.showdown import HistoryTracker
+
+    tracker = HistoryTracker()
+    me = _tauros()
+    lax = Mon("snorlax", moves=[Move("bodyslam")])
+    opp = Mon("starmie", hp=1.0, moves=[Move("psychic")])
+    b = FakeBattle(active=me, bench=[lax], opp_active=opp, turn=5)
+    tracker.observe(b)
+    tracker.record_decision(b, me.moves["blizzard"])
+
+    # our tauros faints to their hit mid-turn -> force-switch decision, same turn
+    me.current_hp_fraction = 0.0
+    me.fainted = True
+    opp.current_hp_fraction = 0.55        # blizzard hit before we went down
+    opp.last_move = Move("psychic")
+    b.active_pokemon = None
+    b.available_switches = [lax]
+    b.force_switch = True
+    tracker.observe(b)
+    assert tracker.tail(b) == []          # turn 5 still in progress, stays hidden
+    tracker.record_decision(b, lax)       # we send in snorlax
+
+    b.turn = 6
+    b.force_switch = False
+    b.active_pokemon = lax
+    b.available_switches = []
+    tracker.observe(b)
+    tail = tracker.tail(b)
+    assert len(tail) == 1
+    e = tail[0]
+    assert e["o"] == -1
+    assert e["my"] == "M:Blizzard"        # first action of the turn wins
+    assert e["op"] == "M:Psychic"
+    assert e["dm"] == 8                   # our KO overrides the bucket
+    assert e["do"] == 5                   # 0.45 lost -> bucket 5
+    assert "ft" in e["ev"] and "re" in e["ev"]  # faint + blizzard resisted by starmie
+
+
+def test_state_from_battle_carries_history_tail():
+    b = FakeBattle(active=_tauros(), bench=[], opp_active=Mon("starmie"))
+    tail = [{"o": -1, "my": "M:Body Slam", "op": None, "dm": 0, "do": 2, "ev": []}]
+    state, _ = state_from_battle(b, history_tail=tail)
+    assert state["history_tail"] == tail
+
+
+def test_translation_handles_unrevealed_opponent_active():
+    active = _tauros()
+    b = FakeBattle(active=active, bench=[], opp_active=Mon("starmie"))
+    b.opponent_active_pokemon = None
+    b.opponent_team = {}
+    state, orders = state_from_battle(b)
+    opp = state["opp_side"]["pokemon"]
+    assert opp[0]["species"] is None
+    assert len(opp) == 6
+    assert sorted(orders) == [0, 1, 2, 3]

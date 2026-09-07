@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cstdlib>
 #include <vector>
 #include "core.h"
 
