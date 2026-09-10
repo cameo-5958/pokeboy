@@ -130,6 +130,7 @@ SetScrollXForSlidingPlayerBodyLeft:
 	ret
 
 StartBattle:
+	call AIStartBattle
 	xor a
 	ld [wPartyGainExpFlags], a
 	ld [wPartyFoughtCurrentEnemyFlags], a
@@ -290,6 +291,7 @@ MainInBattleLoop:
 	call SaveScreenTilesToBuffer1
 	xor a
 	ld [wFirstMonsNotOutYet], a
+	call AIRoundBegin ; once per round (latched); original control flow below is unchanged
 	ld a, [wPlayerBattleStatus2]
 	and (1 << NEEDS_TO_RECHARGE) | (1 << USING_RAGE) ; check if the player is using Rage or needs to recharge
 	jr nz, .selectEnemyMove
@@ -336,7 +338,7 @@ MainInBattleLoop:
 	pop af
 	jr nz, MainInBattleLoop ; if the player didn't select a move, jump
 .selectEnemyMove
-	call SelectEnemyMove
+	call AISelect
 	ld a, [wLinkState]
 	cp LINK_STATE_BATTLING
 	jr nz, .noLinkBattle
@@ -413,9 +415,9 @@ MainInBattleLoop:
 .enemyMovesFirst
 	ld a, $1
 	ldh [hWhoseTurn], a
-	callfar TrainerAI
+	callfar AIDispatch
 	jr c, .AIActionUsedEnemyFirst
-	call ExecuteEnemyMove
+	call AIExecuteEnemyMove
 	ld a, [wEscapedFromBattle]
 	and a ; was Teleport, Roar, or Whirlwind used to escape from battle?
 	ret nz ; if so, return
@@ -423,37 +425,37 @@ MainInBattleLoop:
 	and a
 	jp z, HandlePlayerMonFainted
 .AIActionUsedEnemyFirst
-	call HandlePoisonBurnLeechSeed
+	call AIResidual
 	jp z, HandleEnemyMonFainted
 	call DrawHUDsAndHPBars
-	call ExecutePlayerMove
+	call AIExecutePlayerMove
 	ld a, [wEscapedFromBattle]
 	and a ; was Teleport, Roar, or Whirlwind used to escape from battle?
 	ret nz ; if so, return
 	ld a, b
 	and a
 	jp z, HandleEnemyMonFainted
-	call HandlePoisonBurnLeechSeed
+	call AIResidual
 	jp z, HandlePlayerMonFainted
 	call DrawHUDsAndHPBars
 	call CheckNumAttacksLeft
 	jp MainInBattleLoop
 .playerMovesFirst
-	call ExecutePlayerMove
+	call AIExecutePlayerMove
 	ld a, [wEscapedFromBattle]
 	and a ; was Teleport, Roar, or Whirlwind used to escape from battle?
 	ret nz ; if so, return
 	ld a, b
 	and a
 	jp z, HandleEnemyMonFainted
-	call HandlePoisonBurnLeechSeed
+	call AIResidual
 	jp z, HandlePlayerMonFainted
 	call DrawHUDsAndHPBars
 	ld a, $1
 	ldh [hWhoseTurn], a
-	callfar TrainerAI
+	callfar AIDispatch
 	jr c, .AIActionUsedPlayerFirst
-	call ExecuteEnemyMove
+	call AIExecuteEnemyMove
 	ld a, [wEscapedFromBattle]
 	and a ; was Teleport, Roar, or Whirlwind used to escape from battle?
 	ret nz ; if so, return
@@ -461,7 +463,7 @@ MainInBattleLoop:
 	and a
 	jp z, HandlePlayerMonFainted
 .AIActionUsedPlayerFirst
-	call HandlePoisonBurnLeechSeed
+	call AIResidual
 	jp z, HandleEnemyMonFainted
 	call DrawHUDsAndHPBars
 	call CheckNumAttacksLeft
@@ -697,6 +699,13 @@ CheckNumAttacksLeft:
 	ret
 
 HandleEnemyMonFainted:
+	push af
+	push bc
+	ld a, 9
+.AIEventHook_704
+	db $ec
+	pop bc
+	pop af
 	xor a
 	ld [wInHandlePlayerMonFainted], a
 	call FaintEnemyPokemon
@@ -723,6 +732,8 @@ HandleEnemyMonFainted:
 .skipReplacingBattleMon
 	ld a, $1
 	ld [wActionResultOrTookBattleTurn], a
+	ld a, 1
+	ld [wAIReplacement], a
 	call ReplaceFaintedEnemyMon
 	jp z, EnemyRan
 	xor a
@@ -967,6 +978,13 @@ PlayBattleVictoryMusic:
 	jp Delay3
 
 HandlePlayerMonFainted:
+	push af
+	push bc
+	ld a, 8
+.AIEventHook_982
+	db $ec
+	pop bc
+	pop af
 	ld a, 1
 	ld [wInHandlePlayerMonFainted], a
 	call RemoveFaintedPlayerMon
@@ -993,6 +1011,8 @@ HandlePlayerMonFainted:
 ; the enemy mon has 0 HP
 	ld a, $1
 	ld [wActionResultOrTookBattleTurn], a
+	ld a, 1
+	ld [wAIReplacement], a
 	call ReplaceFaintedEnemyMon
 	jp z, EnemyRan ; if enemy ran from battle rather than sending out another mon, jump
 	xor a
@@ -1320,6 +1340,8 @@ EnemySendOutFirstMon:
 	ld [wWhichPokemon], a
 	jr .next3
 .next
+	call AIChooseSendOut
+	jr c, .next3
 	ld b, $ff
 .next2
 	inc b
@@ -1763,6 +1785,13 @@ SendOutMon:
 	ld a, [wCurPartySpecies]
 	call PlayCry
 	call PrintEmptyString
+	push af
+	push bc
+	ld a, 10
+.AIEventHook_1788
+	db $ec
+	pop bc
+	pop af
 	jp SaveScreenTilesToBuffer1
 
 ; show 2 stages of the player mon getting smaller before disappearing
@@ -2257,6 +2286,14 @@ UseBagItem:
 	ld a, [wActionResultOrTookBattleTurn]
 	and a ; was the item used successfully?
 	jp z, BagWasSelected ; if not, go back to the bag menu
+	push af
+	push bc
+	ld a, 14
+.AIEventHook_2288
+	db $ec
+	pop bc
+	pop af
+
 
 	ld a, [wPlayerBattleStatus1]
 	bit USING_TRAPPING_MOVE, a ; is the player using a multi-turn move like wrap?
@@ -6910,3 +6947,5 @@ LoadMonBackPic:
 	ldh a, [hLoadedROMBank]
 	ld b, a
 	jp CopyVideoData
+
+INCLUDE "engine/battle/ai_protocol.asm"

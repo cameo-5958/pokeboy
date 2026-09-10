@@ -1,4 +1,12 @@
 DisplayUsedMoveText:
+	push af
+	push bc
+	ldh a, [hWhoseTurn]
+	add 12
+.AIEventHook_5
+	db $ec
+	pop bc
+	pop af
 	ld hl, UsedMoveText
 	jp PrintText
 

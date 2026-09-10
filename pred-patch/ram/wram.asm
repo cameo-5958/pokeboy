@@ -1693,7 +1693,9 @@ wPrize3Price:: dw
 	ds 1
 
 ; shared list of 9 random numbers, indexed by wLinkBattleRandomNumberListIndex
-wLinkBattleRandomNumberList:: ds 10
+wLinkBattleRandomNumberList:: ds 7
+wAIAction:: ds 3
+ASSERT wAIAction == $d14f
 ENDU
 
 wSerialPlayerDataBlock:: ; ds $1a8
@@ -2246,6 +2248,13 @@ ENDR
 wBoxMonNicksEnd::
 
 wBoxDataEnd::
+
+; Free tail before the stack; outside saved party/box structures.
+wAIDisarmed:: db
+wAIRoundOpen:: db
+wAISwitchTarget:: db
+wAIReplacement:: db
+wAIWaiting:: db
 
 
 SECTION "Stack", WRAM0
