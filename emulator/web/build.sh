@@ -37,7 +37,11 @@ CORE=(
     gameboy/core/timer/timer.cpp
     gameboy/core/apu/apu.cpp
     gameboy/core/cart/cart.cpp
-    gameboy/core/mod/mod.cpp
+    pkai/hook.cpp
+    pkai/tracker.cpp
+    pkai/observe.cpp
+    pkai/mask.cpp
+    pkai/scheduler.cpp
     gameboy/adapter/gb_api.cpp
 )
 
@@ -47,14 +51,11 @@ EXPORTS='_gb_create,_gb_destroy,_gb_load_rom,_gb_reset,_gb_reset_post_boot,'\
 '_gb_run_frame,_gb_framebuffer,_gb_framebuffer_argb,_gb_set_input,'\
 '_gb_read_audio,_gb_has_battery,_gb_save_ram,_gb_load_save_ram,'\
 '_gb_save_state,_gb_load_state,_gb_rom_title,_gb_read_mem,_gb_write_mem,'\
-'_gb_set_audio_mask,_gb_mod_load_symbols,_gb_mod_load,_gb_mod_unload,'\
-'_gb_mod_count,_gb_mod_id,_gb_mod_name,_gb_mod_import_count,'\
-'_gb_mod_import_name,_gb_mod_metadata,_gb_mod_last_error,'\
-'_gb_mod_set_host_callback,_malloc,_free'
+'_gb_set_audio_mask,_gb_ai_step,_malloc,_free'
 
 emcc "${CORE[@]}" \
     -O2 -std=c++17 \
-    -I gameboy/core -I gameboy/adapter \
+    -I . -I gameboy/core -I gameboy/adapter \
     -sMODULARIZE=1 -sEXPORT_NAME=createGBCore -sENVIRONMENT=web \
     -sALLOW_MEMORY_GROWTH=1 \
     -sALLOW_TABLE_GROWTH=1 \
