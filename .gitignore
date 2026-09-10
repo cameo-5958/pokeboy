@@ -27,3 +27,16 @@ docs/
 !/README.md
 !**/THIRD_PARTY_NOTICES.md
 !**/CREDITS.md
+
+# pred-patch build intermediates
+
+pred-patch/**/*.o
+pred-patch/**/*.1bpp
+pred-patch/**/*.2bpp
+pred-patch/**/*.pic
+pred-patch/*.sym
+pred-patch/*.map
+pred-patch/tools/gfx
+pred-patch/tools/make_patch
+pred-patch/tools/pkmncompress
+pred-patch/tools/scan_includes
