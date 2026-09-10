@@ -605,6 +605,13 @@ SwitchEnemyMon:
 	callfar EnemySendOut
 	xor a
 	ld [wFirstMonsNotOutYet], a
+	push af
+	push bc
+	ld a, 11
+.AIEventHook_610
+	db $ec
+	pop bc
+	pop af
 
 	ld a, [wLinkState]
 	cp LINK_STATE_BATTLING
@@ -740,3 +747,5 @@ AIPrintItemUse_:
 AIBattleUseItemText:
 	text_far _AIBattleUseItemText
 	text_end
+
+INCLUDE "engine/battle/ai_dispatch.asm"
