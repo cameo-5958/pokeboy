@@ -2,7 +2,7 @@
 #include <cstdint>
 #include "state/state.h"
 class Bus;
-namespace gbmod { class Runtime; }
+namespace pkai { class Hook; struct Memory; }
 
 struct CPU {
     union { struct { uint8_t f, a; }; uint16_t af; };   // little-endian pairs
@@ -13,7 +13,8 @@ struct CPU {
     bool ime = false, halted = false, stopped = false;
     int  ei_delay = 0;
     Bus* bus = nullptr;
-    gbmod::Runtime* mods = nullptr;
+    pkai::Hook* ai = nullptr;
+    pkai::Memory* ai_memory = nullptr;
 
     enum { FZ = 0x80, FN = 0x40, FH = 0x20, FC = 0x10 };
     void set_flag(uint8_t fl, bool on) { f = on ? (f | fl) : (f & ~fl); f &= 0xF0; }
@@ -21,7 +22,7 @@ struct CPU {
 
     int execute_next();                 // returns T-cycles
 
-    // bus/mods are host-owned wiring, not machine state: they are rebound by
+    // bus/AI are host-owned wiring, not machine state: they are rebound by
     // GameBoy::load_state and must never enter the stream.
     void serialize(StateIO& s) {
         s.v(af); s.v(bc); s.v(de); s.v(hl); s.v(sp); s.v(pc);
