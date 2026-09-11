@@ -42,6 +42,8 @@ CORE=(
     pkai/observe.cpp
     pkai/mask.cpp
     pkai/scheduler.cpp
+    pkai/calc.cpp
+    pkai/features.cpp
     gameboy/adapter/gb_api.cpp
 )
 

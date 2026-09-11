@@ -116,6 +116,12 @@ struct Fixture {
     CHECK(F.tokens[13].f[5]>0 && F.tokens[13].f[8]>0);             // max damage fraction and hit rate populated
     CHECK(F.tokens[7].present && F.tokens[7].f[1]==127);           // player active is known
     CHECK(features_hash(F)==features_hash(build_features(mem,obs,legal,0)));
+    { // Fixture dump for the Python binding parity test (ROM tables only, no RAM reads).
+      Memory tables{nullptr,[](void*,uint16_t)->uint8_t{return 0;},[](void*,uint16_t,uint8_t){},mem.rom,mem.rom_size};
+      auto ref=build_features(tables,obs,legal_mask(tables,obs,0),0);
+      std::ofstream ob("pkai_fixture_observation.bin",std::ios::binary);ob.write(reinterpret_cast<const char*>(&obs),sizeof obs);
+      std::ofstream hb("pkai_fixture_hash.txt");hb<<features_hash(ref)<<"\n";
+    }
     g.bus.write8(wEnemyMonHP+1,1);auto obs2=observe(mem,g.ai.tracker);
     CHECK(features_hash(build_features(mem,obs2,legal_mask(mem,obs2,0),0))!=features_hash(F));
   }
