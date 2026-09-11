@@ -41,6 +41,28 @@ int pkai_build_features(const uint8_t* rom, size_t rom_len, const void* observat
     return mask.bits;
 }
 
+uint8_t pkai_species_from_dex(const uint8_t* rom, size_t rom_len, uint8_t dex) {
+    if (!rom || dex == 0 || dex > 151) return 0;
+    if (dex == 151) return calc::MEW;
+    Memory m{nullptr, [](void*, uint16_t) -> uint8_t { return 0; }, [](void*, uint16_t, uint8_t) {}, rom, rom_len};
+    for (unsigned i = 0; i < 190; ++i) if (m.table(tables::PokedexOrder, i) == dex) return uint8_t(i + 1);
+    return 0;
+}
+int pkai_class_item(const uint8_t* rom, size_t rom_len, uint8_t cls, uint8_t* item, uint8_t* divisor, uint8_t* status_required) {
+    if (!rom || cls < 1 || cls > tables::trainer_classes) return -1;
+    Memory m{nullptr, [](void*, uint16_t) -> uint8_t { return 0; }, [](void*, uint16_t, uint8_t) {}, rom, rom_len};
+    const unsigned row = 3u * (cls - 1u);
+    if (item) *item = m.table(tables::AIItemTable, row);
+    if (divisor) *divisor = m.table(tables::AIItemTable, row + 1);
+    if (status_required) *status_required = m.table(tables::AIItemTable, row + 2);
+    return 0;
+}
+int pkai_class_item_count(const uint8_t* rom, size_t rom_len, uint8_t cls) {
+    if (!rom || cls < 1 || cls > tables::trainer_classes) return -1;
+    Memory m{nullptr, [](void*, uint16_t) -> uint8_t { return 0; }, [](void*, uint16_t, uint8_t) {}, rom, rom_len};
+    return m.table(tables::TrainerAIPointers, 3u * (cls - 1u));
+}
+
 uint32_t pkai_features_hash(const void* features) {
     Features F; std::memcpy(&F, features, sizeof F);
     return features_hash(F);

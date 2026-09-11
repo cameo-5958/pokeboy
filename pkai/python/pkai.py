@@ -68,6 +68,12 @@ def load(path: str | os.PathLike | None = None) -> C.CDLL:
             lib.pkai_build_features.argtypes = [C.c_char_p, C.c_size_t, C.c_void_p, C.c_uint8, C.c_void_p]
             lib.pkai_features_hash.restype = C.c_uint32
             lib.pkai_features_hash.argtypes = [C.c_void_p]
+            lib.pkai_species_from_dex.restype = C.c_uint8
+            lib.pkai_species_from_dex.argtypes = [C.c_char_p, C.c_size_t, C.c_uint8]
+            lib.pkai_class_item.restype = C.c_int
+            lib.pkai_class_item.argtypes = [C.c_char_p, C.c_size_t, C.c_uint8, C.POINTER(C.c_uint8), C.POINTER(C.c_uint8), C.POINTER(C.c_uint8)]
+            lib.pkai_class_item_count.restype = C.c_int
+            lib.pkai_class_item_count.argtypes = [C.c_char_p, C.c_size_t, C.c_uint8]
             return lib
     raise FileNotFoundError("libpkai_c not found; build gameboy/ with CMake or set PKAI_LIB")
 
@@ -102,6 +108,27 @@ def build_features(lib: C.CDLL, rom: bytes, obs: Observation, request_kind: int 
 
 def features_hash(lib: C.CDLL, feats: Features) -> int:
     return lib.pkai_features_hash(C.byref(feats))
+
+
+def species_from_dex(lib: C.CDLL, rom: bytes, dex: int) -> int:
+    """ROM-internal species id for a Pokédex number (0 if unknown)."""
+    return lib.pkai_species_from_dex(rom, len(rom), dex)
+
+
+def class_item(lib: C.CDLL, rom: bytes, trainer_class: int) -> tuple[int, int, int]:
+    """(item id, HP divisor, status required) the native AI offers for a trainer class; item 0 = none."""
+    item, div, st = C.c_uint8(), C.c_uint8(), C.c_uint8()
+    if lib.pkai_class_item(rom, len(rom), trainer_class, C.byref(item), C.byref(div), C.byref(st)) != 0:
+        raise ValueError(f"bad trainer class {trainer_class}")
+    return item.value, div.value, st.value
+
+
+def class_item_count(lib: C.CDLL, rom: bytes, trainer_class: int) -> int:
+    """Native per-send-out item use count for a trainer class."""
+    n = lib.pkai_class_item_count(rom, len(rom), trainer_class)
+    if n < 0:
+        raise ValueError(f"bad trainer class {trainer_class}")
+    return n
 
 
 def token_matrix(feats: Features) -> list[list[int]]:
