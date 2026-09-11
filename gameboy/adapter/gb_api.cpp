@@ -77,6 +77,8 @@ void gb_write_mem(gb_handle* h, uint16_t addr, uint8_t value) {
 }
 
 void gb_ai_step(gb_handle* h, int64_t deadline) { if(h) h->gb.ai_step(deadline); }
+int gb_ai_load_weights(gb_handle* h, const char* path) { return h && path && h->gb.ai.load_weights(path) ? 1 : 0; }
+const char* gb_ai_weights_error(const gb_handle* h) { return h ? h->gb.ai.scheduler.weights_error().c_str() : "no handle"; }
 
 void gb_set_audio_mask(gb_handle* h, uint8_t mask) {
     h->gb.apu.set_out_mask(mask);

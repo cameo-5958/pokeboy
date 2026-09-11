@@ -1,5 +1,8 @@
 #include "api.h"
 #include "features.h"
+#include "model.h"
+#include "kernels/kernels.h"
+#include <string>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
@@ -67,5 +70,32 @@ uint32_t pkai_features_hash(const void* features) {
     Features F; std::memcpy(&F, features, sizeof F);
     return features_hash(F);
 }
+
+namespace { struct ModelHandle { Weights weights; PepModel model; }; std::string g_model_error; }
+
+void* pkai_model_open(const char* path) {
+    if (!path) { g_model_error = "no path"; return nullptr; }
+    auto* h = new ModelHandle;
+    if (!h->weights.load(path)) { g_model_error = h->weights.error(); delete h; return nullptr; }
+    if (!h->model.bind(h->weights)) { g_model_error = h->model.error(); delete h; return nullptr; }
+    g_model_error.clear();
+    return h;
+}
+void pkai_model_close(void* m) { delete static_cast<ModelHandle*>(m); }
+const char* pkai_model_error(void) { return g_model_error.c_str(); }
+int pkai_model_gru_size(const void* m) { return m ? int(static_cast<const ModelHandle*>(m)->model.gru_size()) : -1; }
+int pkai_model_run(void* mp, const void* features, const int8_t* ev8, int16_t* hidden, int16_t* logits_q8, uint8_t* probs, int32_t* value_acc) {
+    if (!mp || !features) return -1;
+    PepModel& m = static_cast<ModelHandle*>(mp)->model;
+    Features F; std::memcpy(&F, features, sizeof F);
+    m.run(F, ev8, hidden);
+    const unsigned g = m.gru_size();
+    if (hidden) std::memcpy(hidden, m.hidden(), g * sizeof(int16_t));
+    if (logits_q8) std::memcpy(logits_q8, m.logits_q8(), N_ACTIONS * sizeof(int16_t));
+    if (probs) std::memcpy(probs, m.probs(), N_ACTIONS);
+    if (value_acc) *value_acc = m.value_acc();
+    return int(g);
+}
+const char* pkai_backend_name(void) { return kernels::backend_name(); }
 
 }

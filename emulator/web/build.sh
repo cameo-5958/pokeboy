@@ -44,6 +44,11 @@ CORE=(
     pkai/scheduler.cpp
     pkai/calc.cpp
     pkai/features.cpp
+    pkai/weights.cpp
+    pkai/model.cpp
+    pkai/kernels/gemm.cpp
+    pkai/kernels/attention.cpp
+    pkai/kernels/gru.cpp
     gameboy/adapter/gb_api.cpp
 )
 

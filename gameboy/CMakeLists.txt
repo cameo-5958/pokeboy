@@ -72,11 +72,15 @@ if(BUILD_TESTING)
     add_test(NAME pkai_protocol COMMAND pkai_protocol_tests)
 endif()
 if(BUILD_TESTING)
+    # Trained PEP checkpoint (gitignored): pkai_model_tests needs pkai.weights + vectors/bin,
+    # pkai_rom_battles runs a model-backed battle when pkai.weights is present.
+    set(PKAI_CHECKPOINT ${CMAKE_CURRENT_SOURCE_DIR}/../ai/checkpoints/pep/stone-v1 CACHE PATH "PEP checkpoint used by the pkai tests")
     add_executable(pkai_rom_battle_tests ../pkai/tests/rom_battle_tests.cpp)
     target_link_libraries(pkai_rom_battle_tests PRIVATE gbcore)
     target_compile_definitions(pkai_rom_battle_tests PRIVATE
         AI_ROM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.gbc"
-        AI_SYM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.sym")
+        AI_SYM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.sym"
+        AI_WEIGHTS="${PKAI_CHECKPOINT}/pkai.weights")
     add_test(NAME pkai_rom_battles COMMAND pkai_rom_battle_tests)
     set_tests_properties(pkai_rom_battles PROPERTIES TIMEOUT 120)
     add_executable(pkai_calc_tests ../pkai/tests/calc_tests.cpp)
@@ -89,6 +93,12 @@ if(BUILD_TESTING)
         AI_ROM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.gbc"
         AI_SYM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.sym")
     add_test(NAME pkai_trainers COMMAND pkai_trainer_tests)
+    # Integer model vs ai/models/pep_int.py reference vectors (skips if the
+    # gitignored checkpoint/vectors are absent; see pkai/CMakeLists.txt pkai_vectors).
+    add_executable(pkai_model_tests ../pkai/tests/model_tests.cpp)
+    target_link_libraries(pkai_model_tests PRIVATE pkai)
+    add_test(NAME pkai_model_tests COMMAND pkai_model_tests ${PKAI_CHECKPOINT}/pkai.weights ${PKAI_CHECKPOINT}/vectors/bin)
+    set_tests_properties(pkai_model_tests PROPERTIES SKIP_RETURN_CODE 77)
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
         add_test(NAME pkai_python_binding COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../pkai/tests/test_python_binding.py
