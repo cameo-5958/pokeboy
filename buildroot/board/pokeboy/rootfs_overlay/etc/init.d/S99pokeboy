@@ -1,0 +1,20 @@
+#!/bin/sh
+# Pokeboy: run the emulator on the panel. ROM, save and weights live on the boot partition.
+BOOT=/boot
+ROM=$BOOT/pokered-ai.gbc
+case "$1" in
+  start)
+    mkdir -p $BOOT
+    mountpoint -q $BOOT || mount -t vfat /dev/mmcblk0p1 $BOOT 2>/dev/null
+    INPUT=/dev/input/event0
+    for e in /sys/class/input/event*; do
+      if grep -q gpio-keys "$e/device/name" 2>/dev/null; then INPUT=/dev/input/$(basename $e); break; fi
+    done
+    if [ -f "$ROM" ]; then
+      ( while :; do /usr/bin/pokeboy "$ROM" --input "$INPUT" --save "$BOOT/pokered-ai.sav" >/var/log/pokeboy.log 2>&1; sleep 2; done ) &
+    else
+      echo "pokeboy: no ROM at $ROM" > /dev/console
+    fi
+    ;;
+  stop) killall pokeboy 2>/dev/null ;;
+esac
