@@ -1,6 +1,7 @@
 // Save-state fixture construction executes the ROM's own AddPartyMon and
 // InitBattle routines. No ROM byte is patched and all battle logic is native.
 #include "core.h"
+#include "pkai/features.h"
 #include <fstream>
 #include <iterator>
 #include <iostream>
@@ -101,6 +102,23 @@ struct Fixture {
   CHECK(g.load_state(ready.data(),ready.size()));finish_call();CHECK(g.bus.read8(wAIAction)==result.kind && g.bus.read8(wAIAction+1)==result.payload);
   CHECK(g.load_state(pending.data(),pending.size()));g.ai_step(monotonic_ns()+100000000);finish_call();CHECK(g.bus.read8(wAIAction)==result.kind && g.bus.read8(wAIAction+1)==result.payload);
   auto_ai=true;
+  // Entity features: fixed layout, candidates wired to the 16-way head, deterministic hash.
+  restore();
+  {
+    auto mem=g.ai_memory();auto obs=observe(mem,g.ai.tracker);auto legal=legal_mask(mem,obs,0);
+    auto F=build_features(mem,obs,legal,0);
+    CHECK(F.count==27);CHECK(F.legal==legal.bits);
+    CHECK(F.tokens[0].type==TokField);
+    for(unsigned i=0;i<6;++i){CHECK(F.tokens[1+i].type==TokOwnMon && F.tokens[1+i].candidate==5+i);CHECK(F.tokens[7+i].type==TokPlayerMon);CHECK(F.tokens[21+i].type==TokItem && F.tokens[21+i].candidate==11+i);}
+    for(unsigned i=0;i<4;++i){CHECK(F.tokens[13+i].type==TokOwnMove && F.tokens[13+i].candidate==1+i);CHECK(F.tokens[17+i].type==TokPlayerMove);}
+    CHECK(F.tokens[1].present && F.tokens[1].f[0]==127);           // own active present and flagged active
+    CHECK(F.tokens[13].present && F.tokens[13].f[18]==127);        // first own move is damaging (Ember-class fixture)
+    CHECK(F.tokens[13].f[5]>0 && F.tokens[13].f[8]>0);             // max damage fraction and hit rate populated
+    CHECK(F.tokens[7].present && F.tokens[7].f[1]==127);           // player active is known
+    CHECK(features_hash(F)==features_hash(build_features(mem,obs,legal,0)));
+    g.bus.write8(wEnemyMonHP+1,1);auto obs2=observe(mem,g.ai.tracker);
+    CHECK(features_hash(build_features(mem,obs2,legal_mask(mem,obs2,0),0))!=features_hash(F));
+  }
   // Recognised ROM without backend: native selection and original TrainerAI.
   restore();g.ai.backend_available=false;call("AISelect");CHECK(g.bus.read8(wAIDisarmed)==1);CHECK(!g.ai.scheduler.pending());call("AIDispatch");CHECK(!g.cpu.flag(CPU::FC));g.ai.backend_available=true;
   restore();
