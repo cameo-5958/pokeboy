@@ -50,9 +50,7 @@ def play_battle(env: TrainerEnv, teacher: TrainerTeacher, opponent, max_decision
     seq = 0
     while not env.done() and seq < max_decisions:
         if env.request_kind() is None:
-            oc = opponent(env)
-            env.b.raw.update(*((0, oc) if env.me == 0 else (oc, 0)))
-            env.b._track_reveals(); env._refill_pp(); env._observe_player()
+            env.auto_step(opponent(env))
             continue
         feats, mask, kind = env.features()
         probs, scores = teacher.policy(env, temperature)
@@ -112,8 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--trainers", type=pathlib.Path, default=None, help="trainers.json (default: datasets/trainers.json)")
     args = ap.parse_args(argv)
 
-    from sim.trainers import load_parties
-    parties = load_parties(args.trainers)
+    from sim import trainers
+    parties = (trainers.load(args.trainers) if args.trainers else trainers.load()).parties
     rng = random.Random(args.seed)
     teacher = TrainerTeacher(depth=args.depth, rolls=args.rolls, alpha=args.alpha, seed=args.seed)
     opponent = greedy_opponent(TrainerTeacher(depth=1, rolls=1, seed=args.seed + 1)) if args.opponent == "greedy" else random_opponent(rng)

@@ -122,10 +122,39 @@ class TrainerEnv:
                 self._write(a + 25 + m * 2, bytes([40]))
 
     # ---------------------------------------------------------------- state
+    # Bide, Thrashing, Charging, Binding, Recharging, Rage: the ROM never polls the AI in these states.
+    _FORCED_BITS = (1 << 0) | (1 << 1) | (1 << 4) | (1 << 5) | (1 << 11) | (1 << 12)
+
+    def forced(self) -> bool:
+        """True when the cartridge would not ask the trainer for a decision this round."""
+        if self._volatiles(self.me) & self._FORCED_BITS:
+            return True
+        if self.buf[self._slot(self.me, self._active_ix(self.me)) + 20] & 0x27:   # asleep or frozen
+            return True
+        return bool(self._volatiles(self.opp) & (1 << 5))                        # caught in the player's Wrap
+
     def request_kind(self) -> int | None:
         """0 turn decision, 1 replacement switch, None = no trainer decision this update."""
         r = self.b.raw.requests()[self.me]
+        if r == MOVE and self.forced():
+            return None
         return {MOVE: 0, SWITCH: 1, PASS: None}[r]
+
+    def auto_choice(self) -> int:
+        """Engine choice the trainer takes when no decision is asked (forced move or PASS)."""
+        r = self.b.raw.requests()[self.me]
+        if r == PASS:
+            return 0
+        choices = self.b.raw.choices(self.me, r) or [0]
+        moves = [c for c in choices if engine.choice_type(c) == MOVE]
+        return moves[0] if moves else choices[0]
+
+    def auto_step(self, player_choice: int) -> None:
+        """Advance one update without a trainer decision."""
+        pre = self._snapshot_sides()
+        c = self.auto_choice()
+        self.b.raw.update(*((c, player_choice) if self.me == 0 else (player_choice, c)))
+        self._after_update(pre, action=-1)
 
     def done(self) -> bool:
         return self.b.raw.result_type() != RESULT_NONE
@@ -230,10 +259,9 @@ class TrainerEnv:
             for c in choices:
                 if engine.choice_type(c) == MOVE and engine.choice_data(c) == action + 1:
                     return c
-            if action == 0:
-                for c in choices:
-                    if engine.choice_type(c) == MOVE and engine.choice_data(c) == 0:
-                        return c  # Struggle
+            moves = [c for c in choices if engine.choice_type(c) == MOVE]
+            if moves:
+                return moves[0]   # Struggle (data 0) or an engine-side restriction the mask cannot see
             raise ValueError(f"move slot {action} not offered by the engine")
         if action < 10:
             target = action - 4
@@ -299,12 +327,22 @@ class TrainerEnv:
                 self._apply_item(item)
             else:
                 item_after = True
-            choice = 0  # PASS
+            # libpkmn has no "use item" choice and PASS is only valid without a move request, so the
+            # trainer's turn is consumed the way the engine already models a lost turn: the
+            # Recharging volatile makes beforeMove skip the move (and clears the flag) without
+            # selecting a move, touching PP or last-move state. Choice data 1 is what the engine
+            # expects for a forced Pokémon.
+            act = self._active(self.me)
+            self._write(act + 16, (self._volatiles(self.me) | (1 << 11)).to_bytes(8, "little"))
+            choice = engine.choice_init(MOVE, 1)
             self.b.raw.update(*((choice, player_choice) if self.me == 0 else (player_choice, choice)))
             if item_after and not self.done():
                 self._apply_item(item)
         else:
             self.b.raw.update(*((choice, player_choice) if self.me == 0 else (player_choice, choice)))
+        self._after_update(pre, action)
+
+    def _after_update(self, pre, action: int) -> None:
         self.b._track_reveals()
         self._refill_pp()
         active = self._active_ix(self.me)
@@ -317,7 +355,8 @@ class TrainerEnv:
     def _event(self, pre, action: int) -> list[float]:
         post = self._snapshot_sides()
         ev = [0.0] * EVENT_DIM
-        ev[0 if action < 4 else 1 if action < 10 else 2] = 1.0
+        if action >= 0:
+            ev[0 if action < 4 else 1 if action < 10 else 2] = 1.0
         for i, (side_pre, side_post) in enumerate(zip(pre, post)):
             _, hp0, max0, st0 = side_pre; ix1, hp1, max1, st1 = side_post
             base = 3 + i * 6

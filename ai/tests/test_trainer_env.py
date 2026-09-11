@@ -59,9 +59,7 @@ def test_random_battle_to_completion_with_items():
         while not env.done() and steps < 300:
             kind = env.request_kind()
             if kind is None:
-                env.step_player_only = None
-                env.b.raw.update(*((0, env.player_choices()[0]) if env.me == 0 else (env.player_choices()[0], 0)))
-                env.b._track_reveals(); continue
+                env.auto_step(env.player_choices()[0]); continue
             legal = env.legal_actions()
             assert legal, "no legal action"
             env.step(rng.choice(legal), rng.choice(env.player_choices()))
