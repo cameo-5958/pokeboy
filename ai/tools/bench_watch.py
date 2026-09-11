@@ -20,7 +20,7 @@ import time
 from sim import trainers
 from tools.eval_trainer import run
 
-STEP_RE = re.compile(r"step-(\d+)\.pt$")
+STEP_RE = re.compile(r"(?:step|iter)-(\d+)\.pt$")
 
 
 def done_steps(csv_path: str) -> set[int]:
@@ -30,10 +30,10 @@ def done_steps(csv_path: str) -> set[int]:
         return {int(r["step"]) for r in csv.DictReader(fh)}
 
 
-def bench_one(ckpt: str, parties, battles: int, seed: int, temperature: float) -> dict:
+def bench_one(ckpt: str, parties, battles: int, seed: int, temperature: float, matchups: str = "random") -> dict:
     from serve.pep_agent import PEPAgent
     agent = PEPAgent(ckpt, temperature=temperature, seed=seed)
-    return run({"pep": agent}, parties, battles, seed)["pep"]
+    return run({"pep": agent}, parties, battles, seed, "greedy", matchups)["pep"]
 
 
 def main(argv=None) -> int:
@@ -44,6 +44,7 @@ def main(argv=None) -> int:
     ap.add_argument("--temperature", type=float, default=0.5)
     ap.add_argument("--interval", type=float, default=60.0)
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--matchups", default="random", help="random | balanced | mirror | mix")
     args = ap.parse_args(argv)
     parties = trainers.load().parties
     while True:
@@ -58,7 +59,7 @@ def main(argv=None) -> int:
                 path = os.path.join(run_dir, f)
                 if time.time() - os.path.getmtime(path) < 5:
                     continue  # still being written
-                r = bench_one(path, parties, args.battles, args.seed, args.temperature)
+                r = bench_one(path, parties, args.battles, args.seed, args.temperature, args.matchups)
                 new = not os.path.exists(csv_path)
                 with open(csv_path, "a", newline="") as fh:
                     w = csv.writer(fh)

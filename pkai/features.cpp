@@ -50,6 +50,47 @@ void move_feats(Token& t, const Memory& m, const calc::Combatant& atk, const cal
     f[18] = flag(d.damaging); f[19] = frac(std::min<unsigned>(d.max, def.max_hp), std::max<unsigned>(1, def.max_hp));
 }
 
+// Roster-slot combatants for bench damage estimates: own side exact roster stats (stages
+// neutral, no volatiles), player side estimated from public information like the active.
+calc::Combatant own_slot_combatant(const Memory& m, const Observation& o, unsigned i) {
+    calc::Combatant c{};
+    const auto& p = o.own[i];
+    const auto b = calc::base_stats(m, p.species);
+    c.species = p.species; c.level = p.level; c.types[0] = p.types[0]; c.types[1] = p.types[1]; c.base_speed = b.spd;
+    c.hp = p.hp; c.max_hp = p.max_hp;
+    c.attack = c.unmod_attack = p.stats[0]; c.defense = c.unmod_defense = p.stats[1];
+    c.speed = p.stats[2]; c.special = c.unmod_special = p.stats[3];
+    return c;
+}
+calc::Combatant player_slot_combatant(const Memory& m, const Observation& o, unsigned i) {
+    calc::Combatant c{};
+    const auto& p = o.player[i];
+    const auto b = calc::base_stats(m, p.species);
+    c.species = p.species; c.level = p.level; c.types[0] = p.types[0]; c.types[1] = p.types[1]; c.base_speed = b.spd;
+    c.hp = p.hp; c.max_hp = p.max_hp;
+    const uint16_t prior = calc::player_statexp_prior(p.level);
+    c.attack = c.unmod_attack = calc::calc_stat(b.atk, 8, prior, p.level, false);
+    c.defense = c.unmod_defense = calc::calc_stat(b.def, 8, prior, p.level, false);
+    c.speed = calc::calc_stat(b.spd, 8, prior, p.level, false);
+    c.special = c.unmod_special = calc::calc_stat(b.spc, 8, prior, p.level, false);
+    return c;
+}
+// Best single-use damage (non-critical max roll as a fraction of the defender's current HP)
+// and best KO probability over a move list; empty / unknown moves are skipped.
+struct BestDamage { int8_t frac{}, ko{}; };
+BestDamage best_damage(const Memory& m, const calc::Combatant& atk, const calc::Combatant& def, const uint8_t* moves, unsigned n) {
+    BestDamage out{};
+    const unsigned hp = std::max<unsigned>(1, def.hp);
+    for (unsigned i = 0; i < n; ++i) {
+        if (!moves[i]) continue;
+        const auto mv = calc::move_data(m, moves[i]);
+        const auto d = calc::damage(m, atk, def, mv);
+        out.frac = std::max(out.frac, frac(std::min<unsigned>(d.max, hp), hp));
+        out.ko = std::max(out.ko, q(calc::ko_probability(m, atk, def, mv, d) / 255.0));
+    }
+    return out;
+}
+
 }
 
 calc::Combatant own_combatant(const Memory& m, const Observation& o) {
@@ -142,6 +183,13 @@ Features build_features(const Memory& m, const Observation& o, const Mask& mask,
         f[30] = q(best_type_effect(m, pa.moves, 4, p.types[0], p.types[1]) / 40.0);
         f[31] = flag(mask.legal(4 + i)); f[32] = q(p.max_hp / 999.0); f[33] = q(b.spd / 255.0);
         f[34] = q(p.stats[0] / 999.0); f[35] = q(p.stats[1] / 999.0); f[36] = q(p.stats[2] / 999.0); f[37] = q(p.stats[3] / 999.0);
+        if (p.hp && pa.known) {
+            // Damage both ways for this slot vs the player's active (spec §7.3, bench damage).
+            const auto me_c = active ? own : own_slot_combatant(m, o, i);
+            const auto out = best_damage(m, me_c, ply, p.moves, 4);
+            const auto in = best_damage(m, ply, me_c, pa.moves, 4);
+            f[38] = out.frac; f[39] = out.ko; f[40] = in.frac; f[41] = in.ko;
+        }
     }
     // Player Pokémon tokens.
     for (unsigned i = 0; i < 6; ++i) {
@@ -165,6 +213,12 @@ Features build_features(const Memory& m, const Observation& o, const Mask& mask,
         f[31] = q(best_type_effect(m, p.moves, 4, o.active.types[0], o.active.types[1]) / 40.0);
         f[32] = q(best_type_effect(m, own_move_ids, 4, p.types[0], p.types[1]) / 40.0);
         f[33] = q(p.max_hp / 999.0);
+        if (p.hp) {
+            const auto them = active ? ply : player_slot_combatant(m, o, i);
+            const auto out = best_damage(m, own, them, own_move_ids, 4);
+            const auto in = best_damage(m, them, own, p.moves, 4);
+            f[34] = out.frac; f[35] = out.ko; f[36] = in.frac; f[37] = in.ko;
+        }
     }
     // Own move tokens (candidates 0..3).
     for (unsigned i = 0; i < 4; ++i) {
