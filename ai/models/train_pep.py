@@ -105,6 +105,28 @@ def batch_to_device(arrays: dict[str, np.ndarray], device) -> dict[str, torch.Te
     return out
 
 
+@torch.no_grad()
+def distill_targets(teacher: PEP, batch: dict[str, torch.Tensor], autocast_dtype=None) -> dict[str, torch.Tensor]:
+    """Replace the parquet targets with the frozen fp32 `teacher`'s own outputs (self-distillation).
+
+    The teacher is run over the full battle sequence from h = 0 (its own hidden
+    trajectory).  `teacher_probs` <- softmax over legal actions at T = 1;
+    `won` <- sigmoid(value logit), i.e. the teacher's win probability (soft BCE target).
+    """
+    dev = batch["mask"].device
+    feats = {k: batch[k] for k in ("type", "present", "candidate", "cat", "f", "legal")}
+    use_amp = autocast_dtype is not None and dev.type == "cuda"
+    with torch.autocast(device_type=dev.type, dtype=autocast_dtype or torch.bfloat16, enabled=use_amp):
+        logits, value, _h = teacher.forward_seq(feats, batch["event"], None, batch["mask"])
+    logits = logits.float()
+    legal = torch.isfinite(logits)
+    probs = torch.softmax(logits.masked_fill(~legal, -1e9), dim=-1).masked_fill(~legal, 0.0)
+    out = dict(batch)
+    out["teacher_probs"] = probs
+    out["won"] = torch.sigmoid(value.float())
+    return out
+
+
 def _slice_t(batch: dict[str, torch.Tensor], s: int, e: int) -> dict[str, torch.Tensor]:
     return {k: v[:, s:e] for k, v in batch.items()}
 
@@ -172,15 +194,20 @@ def train_on_batch(
 
 @torch.no_grad()
 def evaluate(
-    model: PEP, battles: list[Battle], device, *, batch_battles: int = 16, chunk: int = 64, autocast_dtype=None
+    model: PEP, battles: list[Battle], device, *, batch_battles: int = 16, chunk: int = 64, autocast_dtype=None,
+    teacher: PEP | None = None,
 ) -> dict[str, float]:
-    """Holdout KL / CE and top-1 agreement over full battle sequences (no burn-in)."""
+    """Holdout KL / CE and top-1 agreement over full battle sequences (no burn-in).
+
+    With `teacher`, targets are the frozen model's outputs (see distill_targets)."""
     model.eval()
     tot = {"policy": 0.0, "kl": 0.0, "value": 0.0, "top1": 0.0, "n": 0}
     n_kl = 0
     use_amp = autocast_dtype is not None and device.type == "cuda"
     for i in range(0, len(battles), batch_battles):
         batch = batch_to_device(collate_battles(battles[i : i + batch_battles]), device)
+        if teacher is not None:
+            batch = distill_targets(teacher, batch, autocast_dtype)
         B, T = batch["mask"].shape
         h = model.init_hidden(B, device)
         for s in range(0, T, chunk):
@@ -256,6 +283,14 @@ def train(args: argparse.Namespace) -> dict:
         f"(excl matchup {model.num_params(False):,}) device={device}",
         file=sys.stderr,
     )
+    teacher: PEP | None = None
+    if args.distill_from:
+        from models.pep import load_checkpoint
+        teacher, _blob = load_checkpoint(args.distill_from, map_location=device)
+        teacher = teacher.to(device).eval()
+        for p_ in teacher.parameters():
+            p_.requires_grad_(False)
+        print(f"[distill] policy/value targets from frozen fp32 {args.distill_from}", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd, betas=(0.9, 0.95))
     sched = make_scheduler(opt, args.steps, args.warmup)
 
@@ -273,6 +308,8 @@ def train(args: argparse.Namespace) -> dict:
     while step < args.steps:
         idx = rng.choice(len(train_ds), size=min(args.batch, len(train_ds)), replace=len(train_ds) < args.batch)
         batch = batch_to_device(collate_battles([train_ds[int(i)] for i in idx]), device)
+        if teacher is not None:
+            batch = distill_targets(teacher, batch, autocast_dtype)
         for m in train_on_batch(
             model,
             batch,
@@ -299,7 +336,7 @@ def train(args: argparse.Namespace) -> dict:
                     file=sys.stderr,
                 )
             if args.eval_every and step % args.eval_every == 0 and len(hold_ds):
-                ev = evaluate(model, hold_ds.battles, device, autocast_dtype=autocast_dtype)
+                ev = evaluate(model, hold_ds.battles, device, autocast_dtype=autocast_dtype, teacher=teacher)
                 ev["step"] = step
                 evals.append(ev)
                 log.write(json.dumps({"eval": ev}) + "\n")
@@ -314,7 +351,7 @@ def train(args: argparse.Namespace) -> dict:
             if step >= args.steps:
                 break
 
-    final_eval = evaluate(model, hold_ds.battles, device, autocast_dtype=autocast_dtype) if len(hold_ds) else {}
+    final_eval = evaluate(model, hold_ds.battles, device, autocast_dtype=autocast_dtype, teacher=teacher) if len(hold_ds) else {}
     if final_eval:
         final_eval["step"] = step
         evals.append(final_eval)
@@ -324,7 +361,8 @@ def train(args: argparse.Namespace) -> dict:
             f"top1={final_eval['top1']:.3f} n={final_eval['n']}",
             file=sys.stderr,
         )
-    save_checkpoint(getattr(model, "model", model), ckpt_path, step, {"final_eval": final_eval, "fake_quant": bool(args.fake_quant)})
+    save_checkpoint(getattr(model, "model", model), ckpt_path, step,
+                    {"final_eval": final_eval, "fake_quant": bool(args.fake_quant), "distill_from": args.distill_from})
     log.close()
     print(f"[ckpt] {ckpt_path} (steps={step})", file=sys.stderr)
     return {"steps": step, "history": history, "evals": evals, "checkpoint": ckpt_path, "model": model}
@@ -362,6 +400,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fake-quant", action="store_true",
                    help="quantisation-aware fine-tune: calibrate integer scales on --data rows and train through FakeQuantPEP")
     p.add_argument("--calib-rows", type=int, default=4096)
+    p.add_argument("--distill-from", default=None,
+                   help="self-distillation: policy (softmax over legal, T=1) and value (sigmoid) targets come from this "
+                        "frozen fp32 checkpoint instead of the parquet teacher_probs/won (meant for --fake-quant)")
     return p
 
 
