@@ -1,7 +1,12 @@
-add_custom_target(pkai_rom
-    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/build_ai.sh
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch
-    COMMENT "Build the AI ROM and derive its symbols/CRC")
+option(PKAI_BUILD_ROM "Rebuild the AI ROM and its generated headers with rgbds at build time" ON)
+if(PKAI_BUILD_ROM)
+    add_custom_target(pkai_rom
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/build_ai.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch
+        COMMENT "Build the AI ROM and derive its symbols/CRC")
+else()
+    add_custom_target(pkai_rom)
+endif()
 add_library(pkai STATIC hook.cpp tracker.cpp observe.cpp mask.cpp scheduler.cpp calc.cpp features.cpp)
 target_include_directories(pkai PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_compile_features(pkai PUBLIC cxx_std_17)

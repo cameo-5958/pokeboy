@@ -1,0 +1,6 @@
+config BR2_PACKAGE_POKEBOY
+	bool "pokeboy emulator with on-device battle AI"
+	select BR2_PACKAGE_TINYALSA
+	help
+	  Game Boy emulator core (gameboy/) + pkai backend + Linux fbdev/evdev/tinyalsa frontend,
+	  built from this repository checkout. Installs /usr/bin/pokeboy.
