@@ -28,7 +28,7 @@ syms={}
 for line in (root/'pokered-ai.sym').read_text().splitlines():
     m=re.fullmatch(r'([\da-fA-F]+):([\da-fA-F]+) (\S+)',line)
     if m: syms[m[3]]=(int(m[1],16),int(m[2],16))
-required='wEnemyMons wEnemyMon wBattleMon wPartyMons wPartyCount wEnemyPartyCount wEnemyMonPartyPos wEnemyDisabledMove wEnemySelectedMove wEnemyMoveListIndex wAICount wTrainerClass wIsInBattle wLinkState wPlayerMonStatMods wEnemyMonStatMods wPlayerBattleStatus1 wPlayerBattleStatus2 wPlayerBattleStatus3 wEnemyBattleStatus1 wEnemyBattleStatus2 wEnemyBattleStatus3 wEnemySubstituteHP wPlayerSubstituteHP wDamage wCriticalHitOrOHKO wMoveMissed wTypeEffectiveness wPlayerMoveNum wEnemyMoveNum wPlayerUsedMove wEnemyUsedMove wAIAction wAIDisarmed wAIRoundOpen wAISwitchTarget wAIReplacement wAIWaiting wPlayerMonNumber hWhoseTurn hRandomAdd hRandomSub wEnemyConfusedCounter wEnemyToxicCounter wPlayerMovePower wPlayerMoveType wPlayerMoveEffect wPlayerMoveAccuracy wEnemyMovePower wEnemyMoveType wEnemyMoveEffect wEnemyMoveAccuracy wPlayerMoveNum wEnemyMoveNum wDamageMultipliers wMoveType wCurSpecies wMonHeader wMonHBaseSpeed wPlayerSelectedMove wEnemySelectedMove wPlayerMoveListIndex wEnemyMoveListIndex wPlayerMonMinimized wEnemyMonMinimized hLoadedROMBank'.split()
+required='wEnemyMons wEnemyMon wBattleMon wPartyMons wPartyCount wEnemyPartyCount wEnemyMonPartyPos wEnemyDisabledMove wEnemySelectedMove wEnemyMoveListIndex wAICount wTrainerClass wIsInBattle wLinkState wPlayerMonStatMods wEnemyMonStatMods wPlayerBattleStatus1 wPlayerBattleStatus2 wPlayerBattleStatus3 wEnemyBattleStatus1 wEnemyBattleStatus2 wEnemyBattleStatus3 wEnemySubstituteHP wPlayerSubstituteHP wDamage wCriticalHitOrOHKO wMoveMissed wTypeEffectiveness wPlayerMoveNum wEnemyMoveNum wPlayerUsedMove wEnemyUsedMove wAIAction wAIDisarmed wAIRoundOpen wAISwitchTarget wAIReplacement wAIWaiting wPlayerMonNumber hWhoseTurn hRandomAdd hRandomSub wEnemyConfusedCounter wEnemyToxicCounter wPlayerMovePower wPlayerMoveType wPlayerMoveEffect wPlayerMoveAccuracy wEnemyMovePower wEnemyMoveType wEnemyMoveEffect wEnemyMoveAccuracy wPlayerMoveNum wEnemyMoveNum wDamageMultipliers wMoveType wCurSpecies wMonHeader wMonHBaseSpeed wPlayerSelectedMove wEnemySelectedMove wPlayerMoveListIndex wEnemyMoveListIndex wPlayerMonMinimized wEnemyMonMinimized hLoadedROMBank wCurOpponent wTrainerNo wLoneAttackNo wRivalStarter wCurEnemyLevel wMonDataLocation wCurPartySpecies wTrainerBaseMoney wAmountMoneyWon wEnemyPartySpecies'.split()
 # Generate all fields too: struct offsets are never copied from a different checkout.
 required += [n for n in syms if n.startswith(('wEnemyMon','wBattleMon','wPartyMon')) and '.' not in n]
 header='#pragma once\n#include <cstdint>\nnamespace pkai::symbols {\n'
@@ -37,11 +37,15 @@ for n in sorted(set(required)):
 write(out/'wram_symbols.h',header+'}\n')
 rom='#pragma once\n#include <cstdint>\nnamespace pkai::tables {\nstruct Address { uint8_t bank; uint16_t address; constexpr unsigned offset() const { return bank ? bank * 0x4000u + address - 0x4000u : address; } };\n'
 for n in sorted(syms):
-    if n in ['BaseStats','MewBaseStats','PokedexOrder','TypeEffects','Moves','TrainerAIPointers','AIItemTable','StatModifierRatios','HighCriticalMoves','StartBattle','MainInBattleLoop','SelectEnemyMove','EnemySendOutFirstMon','GetDamageVarsForPlayerAttack','GetDamageVarsForEnemyAttack','CalculateDamage','AdjustDamageForMoveType','CalcHitChance','CriticalHitTest'] or (n.startswith('AI') and '.' not in n) or '.AIEventHook_' in n:
+    if n in ['BaseStats','MewBaseStats','PokedexOrder','TypeEffects','Moves','TrainerAIPointers','AIItemTable','StatModifierRatios','HighCriticalMoves','StartBattle','MainInBattleLoop','SelectEnemyMove','EnemySendOutFirstMon','GetDamageVarsForPlayerAttack','GetDamageVarsForEnemyAttack','CalculateDamage','AdjustDamageForMoveType','CalcHitChance','CriticalHitTest','ReadTrainer','TrainerDataPointers','LoneMoves','TeamMoves'] or (n.startswith('AI') and '.' not in n) or '.AIEventHook_' in n:
         b,a=syms[n]
         ident=n.replace('.', '__')
         if a < 0x8000: rom+=f'inline constexpr Address {ident}{{{b},0x{a:04x}}};\n'
 rom+=f'inline constexpr unsigned trainer_classes = {len(rows)};\n'
+# Trainer class names in id order (index 0 is NOBODY), from constants/trainer_constants.asm.
+classes=re.findall(r'^\ttrainer_const (\w+)', (root/'constants/trainer_constants.asm').read_text(), re.M)
+assert len(classes)==len(rows)+1, (len(classes), len(rows))
+rom+='inline constexpr const char* trainer_class_names[] = {'+', '.join(f'"{c}"' for c in classes)+'};\n'
 rom+=f'inline constexpr uint32_t rom_crc32 = 0x{zlib.crc32((root/"pokered-ai.gbc").read_bytes()):08x}u;\n'
 write(out/'rom_tables.h',rom+'}\n')
 print('Generated symbols and CRC for pokered-ai.gbc')

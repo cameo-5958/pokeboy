@@ -14,7 +14,7 @@ def test_teacher_prefers_electric_move_on_pidgeotto():
     # Switch the player to Pidgeotto (Flying) so Thunderbolt-class moves dominate once Raichu is out.
     env.step(5, first_move(env))          # trainer brings Raichu; player attacks
     while env.request_kind() is None and not env.done():
-        env.b.raw.update(0, env.player_choices()[0]); env.b._track_reveals()
+        env.auto_step(env.player_choices()[0])
     teacher = TrainerTeacher(depth=1, rolls=2, seed=1)
     probs, scores = teacher.policy(env)
     assert abs(sum(probs) - 1.0) < 1e-6
@@ -30,7 +30,7 @@ def test_teacher_plays_full_battle_and_is_fast_enough():
     t0 = time.perf_counter(); decisions = 0
     while not env.done() and decisions < 60:
         if env.request_kind() is None:
-            env.b.raw.update(0, env.player_choices()[0]); env.b._track_reveals(); env._refill_pp(); continue
+            env.auto_step(env.player_choices()[0]); continue
         a = teacher.choose(env)
         env.step(a, teacher._greedy_player(env))
         decisions += 1

@@ -60,9 +60,7 @@ class TrainerTeacher:
     def _advance_to_decision(self, env: TrainerEnv, depth: int) -> None:
         """Play out updates where only the player acts (e.g. their replacement after our KO)."""
         while not env.done() and env.request_kind() is None:
-            oc = self._greedy_player(env)
-            env.b.raw.update(*((0, oc) if env.me == 0 else (oc, 0)))
-            env.b._track_reveals(); env._refill_pp(); env._observe_player()
+            env.auto_step(self._greedy_player(env))
 
     def _pair_value(self, env: TrainerEnv, action: int, oc: int, depth: int, rolls: int) -> float:
         total = 0.0
@@ -86,7 +84,7 @@ class TrainerTeacher:
             if pending:
                 child.step(probe, oc)
             else:
-                child.b.raw.update(*((0, oc) if env.me == 0 else (oc, 0)))
+                child.auto_step(oc)
             v = leaf_value(child.buf, env.opp)
             if v > best_v:
                 best, best_v = oc, v

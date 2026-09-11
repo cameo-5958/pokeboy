@@ -43,6 +43,14 @@ if(WIN32)
     set_target_properties(gbemu PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif()
 
+# Dumps every enemy trainer party by executing the ROM's ReadTrainer (see
+# pkai/tools/trainer_dump.h); ai/tools/dump_trainers.py drives it.
+add_executable(pkai_dump_trainers ../pkai/tools/dump_trainers.cpp)
+target_link_libraries(pkai_dump_trainers PRIVATE gbcore)
+target_compile_definitions(pkai_dump_trainers PRIVATE
+    AI_ROM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.gbc"
+    AI_SYM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.sym")
+
 if(BUILD_TESTING)
     add_executable(pkai_protocol_tests ../pkai/tests/protocol_tests.cpp)
     target_link_libraries(pkai_protocol_tests PRIVATE gbcore)
@@ -61,6 +69,12 @@ if(BUILD_TESTING)
     target_link_libraries(pkai_calc_tests PRIVATE gbcore)
     target_compile_definitions(pkai_calc_tests PRIVATE AI_ROM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.gbc")
     add_test(NAME pkai_calc COMMAND pkai_calc_tests)
+    add_executable(pkai_trainer_tests ../pkai/tests/trainer_tests.cpp)
+    target_link_libraries(pkai_trainer_tests PRIVATE gbcore)
+    target_compile_definitions(pkai_trainer_tests PRIVATE
+        AI_ROM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.gbc"
+        AI_SYM="${CMAKE_CURRENT_SOURCE_DIR}/../pred-patch/pokered-ai.sym")
+    add_test(NAME pkai_trainers COMMAND pkai_trainer_tests)
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
         add_test(NAME pkai_python_binding COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../pkai/tests/test_python_binding.py
