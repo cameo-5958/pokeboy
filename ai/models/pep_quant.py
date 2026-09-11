@@ -139,6 +139,13 @@ class FakeQuantPEP(nn.Module):
                     self.shifts[k] = int(v[0])
         self._ctx: tuple[torch.Tensor | None, torch.Tensor | None] = (None, None)
 
+    # PEP surface the trainer relies on.
+    def num_params(self, *a, **k):
+        return self.model.num_params(*a, **k)
+
+    def init_hidden(self, *a, **k):
+        return self.model.init_hidden(*a, **k)
+
     # -- quant primitives -------------------------------------------------------
 
     def _act(self, x: torch.Tensor, name: str, bits: int, mask: torch.Tensor | None = None) -> torch.Tensor:
@@ -220,6 +227,26 @@ class FakeQuantPEP(nn.Module):
         return fq(x + fq(a * b, s_res, I16_MAX), s_res, I16_MAX)
 
     # -- forward ----------------------------------------------------------------
+
+    def forward_seq(
+        self,
+        features: dict[str, torch.Tensor],
+        ev: torch.Tensor | None = None,
+        h0: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Whole-sequence API with PEP.forward_seq semantics, stepping the fake-quant forward per decision."""
+        B, T = features["present"].shape[:2]
+        dev = features["present"].device
+        h = self.model.init_hidden(B, dev) if h0 is None else h0.float()
+        logits_t, value_t, h_t = [], [], []
+        for t in range(T):
+            step = {k: v[:, t] for k, v in features.items() if v.dim() >= 2 and v.shape[1] == T}
+            ev_t = None if ev is None else ev[:, t]
+            lg, val, h_new = self.forward(step, ev_t, h, None if mask is None else mask[:, t])
+            h = h_new if mask is None else torch.where(mask[:, t, None], h_new, h)
+            logits_t.append(lg); value_t.append(val); h_t.append(h)
+        return torch.stack(logits_t, 1), torch.stack(value_t, 1), torch.stack(h_t, 1)
 
     def forward(
         self,

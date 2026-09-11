@@ -240,6 +240,17 @@ def train(args: argparse.Namespace) -> dict:
 
     cfg = config_for(args.tier, **_overrides(args))
     model = PEP(cfg).to(device)
+    if args.init_ckpt:
+        from models.pep import load_checkpoint
+        init_model, _blob = load_checkpoint(args.init_ckpt, map_location=device)
+        model.load_state_dict(init_model.state_dict())
+        print(f"[init] weights from {args.init_ckpt}", flush=True)
+    if args.fake_quant:
+        from models.pep_quant import FakeQuantPEP, load_calibration, quantize
+        calib = load_calibration(args.data, rows=args.calib_rows, seed=args.seed)
+        qp = quantize(model, calib, tier=args.tier)
+        model = FakeQuantPEP(model, qp).to(device)
+        print(f"[qat] fake-quant training with {len(qp.scales)} calibrated activation scales", flush=True)
     print(
         f"[model] tier={args.tier} cfg={asdict(cfg)} params={model.num_params():,} "
         f"(excl matchup {model.num_params(False):,}) device={device}",
@@ -298,7 +309,7 @@ def train(args: argparse.Namespace) -> dict:
                     file=sys.stderr,
                 )
             if args.save_every and step % args.save_every == 0:
-                save_checkpoint(model, ckpt_path, step)
+                save_checkpoint(getattr(model, "model", model), ckpt_path, step)
             if step >= args.steps:
                 break
 
@@ -312,7 +323,7 @@ def train(args: argparse.Namespace) -> dict:
             f"top1={final_eval['top1']:.3f} n={final_eval['n']}",
             file=sys.stderr,
         )
-    save_checkpoint(model, ckpt_path, step, {"tier": args.tier, "final_eval": final_eval})
+    save_checkpoint(getattr(model, "model", model), ckpt_path, step, {"tier": args.tier, "final_eval": final_eval, "fake_quant": bool(args.fake_quant)})
     log.close()
     print(f"[ckpt] {ckpt_path} (steps={step})", file=sys.stderr)
     return {"steps": step, "history": history, "evals": evals, "checkpoint": ckpt_path, "model": model}
@@ -347,6 +358,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
     p.add_argument("--no-amp", action="store_true", help="disable bf16 autocast on CUDA")
     p.add_argument("--ckpt-dir", default=DEFAULT_CKPT_DIR)
+    p.add_argument("--init-ckpt", default=None, help="initialise weights from an existing PEP checkpoint")
+    p.add_argument("--fake-quant", action="store_true",
+                   help="quantisation-aware fine-tune: calibrate integer scales on --data rows and train through FakeQuantPEP")
+    p.add_argument("--calib-rows", type=int, default=4096)
     return p
 
 
