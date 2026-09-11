@@ -19,6 +19,12 @@ size_t pkai_layout(char* buf, size_t len);
 // or -1 on bad arguments.
 int pkai_build_features(const uint8_t* rom, size_t rom_len, const void* observation, uint8_t request_kind, void* out_features);
 uint32_t pkai_features_hash(const void* features);
+// Internal species id (1..190) for a Pokédex number (1..151) via the ROM's PokedexOrder; 0 if none.
+uint8_t pkai_species_from_dex(const uint8_t* rom, size_t rom_len, uint8_t dex);
+// Trainer class item table row (generated AIItemTable): item id, HP divisor, status-required; 0 if no item.
+int pkai_class_item(const uint8_t* rom, size_t rom_len, uint8_t trainer_class, uint8_t* item, uint8_t* divisor, uint8_t* status_required);
+// Per-send-out item use count for a trainer class (TrainerAIPointers), or -1.
+int pkai_class_item_count(const uint8_t* rom, size_t rom_len, uint8_t trainer_class);
 
 #ifdef __cplusplus
 }
