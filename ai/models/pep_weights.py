@@ -3,7 +3,7 @@
 Layout (all little-endian, offsets in bytes):
 
     header (128 B, struct HEADER_FMT):
-        magic "PKAI" | version u32 = 1 | tier char[16] (NUL padded)
+        magic "PKAI" | version u32 = 1 | model char[16] (NUL padded, "pep")
         d, layers, heads, ffn, gru u32          (model config)
         feature_schema char[32] (NUL padded) | feature_schema_crc32 u32
         rom_crc32 u32 (placeholder 0)           | n_tensors u32
@@ -27,6 +27,10 @@ from collections import OrderedDict
 import numpy as np
 
 from models.pep_int import QuantParams
+
+# Fixed model identifier written into the 16-byte header name field. Readers accept any
+# value there (files written before this field was fixed carry a run-configuration name).
+MODEL_ID = "pep"
 
 MAGIC = b"PKAI"
 VERSION = 1
@@ -90,7 +94,7 @@ def write_weights(qp: QuantParams, path: str | os.PathLike) -> list[dict]:
         HEADER_FMT,
         MAGIC,
         VERSION,
-        qp.tier.encode("utf-8")[:15],
+        MODEL_ID.encode("utf-8")[:15],
         *[int(cfg[k]) for k in CONFIG_KEYS],
         schema[:31],
         zlib.crc32(schema) & 0xFFFFFFFF,
@@ -124,7 +128,7 @@ def read_header(data: bytes | memoryview) -> dict:
     if bytes(data[:4]) != MAGIC:
         raise ValueError("not a pkai.weights file (bad magic)")
     fields = struct.unpack_from(HEADER_FMT, data, 0)
-    (magic, version, tier, d, layers, heads, ffn, gru, schema, schema_crc, rom_crc, n, toc_off, data_off, size, es, em, emu, esm) = fields
+    (magic, version, model_id, d, layers, heads, ffn, gru, schema, schema_crc, rom_crc, n, toc_off, data_off, size, es, em, emu, esm) = fields
     if version != VERSION:
         raise ValueError(f"unsupported pkai.weights version {version}")
     schema_s = schema.split(b"\0", 1)[0].decode("utf-8")
@@ -133,7 +137,7 @@ def read_header(data: bytes | memoryview) -> dict:
     return {
         "magic": magic.decode(),
         "version": version,
-        "tier": tier.split(b"\0", 1)[0].decode("utf-8"),
+        "model": model_id.split(b"\0", 1)[0].decode("utf-8", "replace"),
         "config": {"d": d, "layers": layers, "heads": heads, "ffn": ffn, "gru": gru,
                    "emb_species": es, "emb_move": em, "emb_matchup": emu, "emb_small": esm},
         "feature_schema": schema_s,
@@ -176,7 +180,6 @@ def load_weights(path: str | os.PathLike) -> QuantParams:
         tensors[e["name"]] = arr.reshape(e["shape"]).astype(np.dtype(e["dtype"]), copy=True)
     scales = _unpack_scales(tensors.pop("scales.names"), tensors.pop("scales.values"))
     return QuantParams(
-        tier=header["tier"],
         config=dict(header["config"]),
         feature_schema=header["feature_schema"],
         tensors=tensors,
@@ -189,7 +192,7 @@ def describe(path: str | os.PathLike) -> str:
     with open(path, "rb") as fh:
         data = fh.read()
     h = read_header(data)
-    lines = [f"{h['magic']} v{h['version']} tier={h['tier']} cfg={h['config']} schema={h['feature_schema']} "
+    lines = [f"{h['magic']} v{h['version']} model={h['model']} cfg={h['config']} schema={h['feature_schema']} "
              f"rom_crc32={h['rom_crc32']:#010x} tensors={h['n_tensors']} size={h['file_size']}"]
     for e in read_toc(data, h):
         lines.append(f"{e['name']:40s} {e['dtype']:8s} {str(e['shape']):22s} @{e['offset']:<9d} {e['nbytes']} B")

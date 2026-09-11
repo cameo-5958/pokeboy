@@ -82,7 +82,6 @@ TOKEN_EMBEDS = {
 class QuantParams:
     """Everything the integer model needs; `tensors` is exactly what pkai.weights stores."""
 
-    tier: str
     config: dict  # d, layers, heads, ffn, gru, emb_species, emb_move, emb_matchup, emb_small
     feature_schema: str
     tensors: "OrderedDict[str, np.ndarray]" = field(default_factory=OrderedDict)

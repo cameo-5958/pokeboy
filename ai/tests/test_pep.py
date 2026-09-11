@@ -12,7 +12,6 @@ from models import pep_data  # noqa: E402
 from models.pep import (  # noqa: E402
     N_ACTIONS,
     PEP,
-    TIERS,
     PEPConfig,
     features_to_tensors,
     load_checkpoint,
@@ -205,7 +204,7 @@ def test_shapes_and_masks():
 
 def test_pointer_permutation_equivariance():
     torch.manual_seed(0)
-    model = PEP(TIERS["pebble"])
+    model = PEP(PEPConfig(d=64, layers=2, ffn=128, gru=32))
     with torch.no_grad():  # make ReZero paths live so attention matters
         for layer in model.layers:
             layer.alpha_attn.fill_(0.5)
@@ -238,11 +237,11 @@ def test_pointer_permutation_equivariance():
 
 
 def test_param_budget():
-    n = PEP(TIERS["stone"]).num_params(include_matchup=False)
+    cfg = PEPConfig()
+    m = PEP(cfg)
+    n = m.num_params(include_matchup=False)
     assert 700_000 <= n <= 1_400_000, n
-    for name, cfg in TIERS.items():
-        m = PEP(cfg)
-        assert m.num_params(True) - m.num_params(False) == 36481 * cfg.emb_matchup, name
+    assert m.num_params(True) - m.num_params(False) == 36481 * cfg.emb_matchup
 
 
 # --------------------------------------------------------------------------- trainer
@@ -263,7 +262,7 @@ def test_train_synthetic_and_checkpoint(tmp_path):
     args = build_parser().parse_args(
         [
             "--data", str(data), "--run", "t", "--ckpt-dir", str(tmp_path / "ckpt"),
-            "--tier", "pebble", "--d", "64", "--ffn", "128", "--gru", "32", "--heads", "4",
+            "--d", "64", "--layers", "2", "--ffn", "128", "--gru", "32", "--heads", "4",
             "--steps", "30", "--batch", "8", "--window", "6", "--burnin", "2",
             "--lr", "3e-3", "--warmup", "3", "--holdout-frac", "0.1",
             "--eval-every", "15", "--save-every", "0", "--log-every", "10", "--device", "cpu",

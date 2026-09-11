@@ -1,7 +1,7 @@
 """Integer PEP reference (models/pep_int), PTQ + fake-quant (models/pep_quant), pkai.weights (models/pep_weights).
 
 CPU only; a trained checkpoint is reused when checkpoints/pep/stone-v1/model.pt exists,
-otherwise a small pebble model is trained for a few hundred steps on real rows.
+otherwise a small model is trained for a few hundred steps on real rows.
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from models.pep_int import (  # noqa: E402
     softmax_int,
     srdmh,
 )
-from models.pep_quant import FakeQuantPEP, infer_tier, load_calibration, quantize  # noqa: E402
+from models.pep_quant import FakeQuantPEP, load_calibration, quantize  # noqa: E402
 from models.pep_weights import ALIGN, TOC_SIZE, load_weights, read_header, read_toc, write_weights  # noqa: E402
 
 torch.set_num_threads(2)
@@ -69,7 +69,7 @@ def model(tmp_path_factory, battles):
     args = build_parser().parse_args(
         [
             "--data", _first_parquet(), "--run", "t", "--ckpt-dir", str(tmp_path_factory.mktemp("ckpt")),
-            "--tier", "pebble", "--steps", "200", "--batch", "8", "--window", "12", "--burnin", "4",
+            "--d", "96", "--layers", "2", "--steps", "200", "--batch", "8", "--window", "12", "--burnin", "4",
             "--lr", "1e-3", "--warmup", "10", "--max-battles", "200", "--holdout-frac", "0.05",
             "--eval-every", "0", "--save-every", "0", "--log-every", "100", "--device", "cpu",
         ]
@@ -183,7 +183,7 @@ def test_int_forward_deterministic_and_roundtrip(qp, weights_path, rows):
     a = ip.forward(rows, ev8, None, record=True)
     b = ip.forward(rows, ev8, None, record=True)
     qp2 = load_weights(weights_path)
-    assert list(qp2.tensors) == list(qp.tensors) and qp2.config == qp.config and qp2.tier == qp.tier
+    assert list(qp2.tensors) == list(qp.tensors) and qp2.config == qp.config
     for k, v in qp.tensors.items():
         assert qp2.tensors[k].dtype == v.dtype and np.array_equal(qp2.tensors[k], v), k
     assert qp2.scales == qp.scales
@@ -299,7 +299,7 @@ def test_recurrent_state_carries(model, qp, battles):
 def test_weights_header_and_toc(qp, weights_path):
     data = open(weights_path, "rb").read()
     h = read_header(data)
-    assert h["magic"] == "PKAI" and h["version"] == 1 and h["tier"] == qp.tier
+    assert h["magic"] == "PKAI" and h["version"] == 1 and h["model"] == "pep"
     assert h["feature_schema"] == "pkai-features-v1" and h["rom_crc32"] == 0
     assert {k: h["config"][k] for k in ("d", "layers", "heads", "ffn", "gru")} == {k: qp.config[k] for k in ("d", "layers", "heads", "ffn", "gru")}
     assert h["n_tensors"] == len(qp.tensors) + 2 and h["file_size"] == len(data)
@@ -336,11 +336,11 @@ def test_export_cli_writes_vectors(tmp_path, model):
     from tools.export_weights import export
 
     ckpt = tmp_path / "model.pt"
-    save_checkpoint(model, str(ckpt), 1, {"tier": infer_tier(model)})
+    save_checkpoint(model, str(ckpt), 1)
     out = tmp_path / "pkai.weights"
     vec = tmp_path / "vectors"
     t0 = time.time()
-    rep = export(str(ckpt), _first_parquet(), str(out), str(vec), calib_rows=300, vector_rows=32, tier=None)
+    rep = export(str(ckpt), _first_parquet(), str(out), str(vec), calib_rows=300, vector_rows=32)
     assert out.exists() and rep["file_size"] == os.path.getsize(out)
     for f in ("inputs.npz", "intermediates.npz", "outputs.npz", "fp32.npz", "sequence.npz", "manifest.json"):
         assert (vec / f).exists(), f

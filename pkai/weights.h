@@ -41,7 +41,8 @@ public:
     bool loaded() const { return !entries_.empty(); }
     const std::string& error() const { return error_; }
     const WeightsConfig& config() const { return config_; }
-    const char* tier() const { return tier_; }
+    // 16-byte model identifier from the header ("pep"); informational only, never validated.
+    const char* model_id() const { return model_id_; }
     const char* feature_schema() const { return schema_; }
     uint32_t rom_crc32() const { return rom_crc32_; }
     size_t tensor_count() const { return entries_.size(); }
@@ -57,7 +58,7 @@ private:
     size_t size_{};
     std::vector<Entry> entries_;
     WeightsConfig config_{};
-    char tier_[16]{}, schema_[32]{};
+    char model_id_[16]{}, schema_[32]{};
     uint32_t rom_crc32_{};
     std::string error_;
     bool fail(const char* why) { clear(); error_ = why; return false; }

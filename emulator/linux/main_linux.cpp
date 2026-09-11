@@ -204,8 +204,8 @@ int main(int argc, char** argv) {
     if (!weights_path.empty()) {
         if (!gb.ai.load_weights(weights_path.c_str())) { fprintf(stderr, "ai: cannot use %s: %s\n", weights_path.c_str(), gb.ai.scheduler.weights_error().c_str()); return 1; }
         const auto& cfg = gb.ai.scheduler.model.config();
-        fprintf(stderr, "ai: model %s tier %s (d=%u layers=%u heads=%u ffn=%u gru=%u), %u ops/decision, %s kernels\n", weights_path.c_str(),
-                gb.ai.scheduler.weights.tier(), cfg.d, cfg.layers, cfg.heads, cfg.ffn, cfg.gru, gb.ai.scheduler.model.op_count(), pkai::kernels::backend_name());
+        fprintf(stderr, "ai: model %s (%s d=%u layers=%u heads=%u ffn=%u gru=%u), %u ops/decision, %s kernels\n", weights_path.c_str(),
+                gb.ai.scheduler.weights.model_id(), cfg.d, cfg.layers, cfg.heads, cfg.ffn, cfg.gru, gb.ai.scheduler.model.op_count(), pkai::kernels::backend_name());
     }
     if (bench_ai > 0) {
         // Full-decision timing of the model on this host/device, plus the per-op-kind
