@@ -18,6 +18,7 @@ struct Fixture {
  bool auto_input=true, auto_ai=true;
  uint32_t seen[15]{};
  uint32_t replacement_decisions{}, turn_decisions{};
+ bool check_events=false; int8_t second_event[EVENT_DIM]{}; bool second_event_seen=false;
  std::vector<uint8_t> start_state;
  bool expected_ai=true;
  Fixture(bool recognised=true):expected_ai(recognised){
@@ -42,8 +43,25 @@ struct Fixture {
     CHECK(legal_action(legal_mask(g.ai_memory(),observe(g.ai_memory(),g.ai.tracker),sched.request.kind),sched.request.result));
     CHECK(sched.request.visible_frames<=300);
     if(sched.request.kind==1)++replacement_decisions;else ++turn_decisions;
-  }g.ppu.tick(t,g.bus);g.timer.tick(t,g.bus);g.apu.tick(t);cycles+=t;
+  }
+  if(opcode==0xeb && check_events && !second_event_seen && g.ai.scheduler.pending() && g.ai.scheduler.request.sequence==2) second_decision_event();g.ppu.tick(t,g.bus);g.timer.tick(t,g.bus);g.apu.tick(t);cycles+=t;
   if(cycles>=70224){cycles-=70224;++g.ai.frame;if(auto_input)g.set_input((g.ai.frame%8)<4?1:0,0);if(auto_ai)g.ai_step(monotonic_ns()+4000000);}
+ }
+ // The event vector the second decision of a battle feeds the GRU: the first decision
+ // committed a snapshot, so round is 1 and the HP fractions come from the live RAM.
+ void second_decision_event(){
+  second_event_seen=true;const auto& st=g.ai.tracker.event;const auto m=g.ai_memory();
+  CHECK(st.decisions==1);CHECK(st.last_action<3);build_event(st,m,second_event);
+  std::cout<<"second decision event:";for(unsigned i=0;i<16;++i)std::cout<<' '<<int(second_event[i]);std::cout<<"\n";
+  CHECK(second_event[st.last_action]==127);CHECK(second_event[0]+second_event[1]+second_event[2]==127);
+  CHECK(second_event[15]==3);                                                       // rint(127*1/50)
+  CHECK(second_event[7]==event_q127(m.word(wEnemyMonHP),m.word(wEnemyMonMaxHP)));   // enemy hp/max
+  CHECK(second_event[13]==event_q127(m.word(wBattleMonHP),m.word(wBattleMonMaxHP)));CHECK(second_event[13]>0);
+  const bool enemy_same=st.side[0].slot==m.read(wEnemyMonPartyPos);
+  CHECK(second_event[5]==(enemy_same?0:127));CHECK(second_event[11]==(st.side[1].slot==m.read(wPlayerMonNumber)?0:127));
+  if(enemy_same&&st.side[0].hp>m.word(wEnemyMonHP))CHECK(second_event[3]>0);        // the player's move landed
+  CHECK((second_event[4]==127)==(m.word(wEnemyMonHP)==0));
+  for(unsigned i=16;i<EVENT_DIM;++i)CHECK(second_event[i]==0);
  }
  void begin_call(const std::string& n){g.cpu.sp=0xdff0;g.bus.write8(--g.cpu.sp,0xc1);g.bus.write8(--g.cpu.sp,0x00);jump(n);}
  void finish_call(){for(unsigned i=0;i<20000000;++i){if(g.cpu.pc==0xc100)return;tick();}CHECK(false);}
@@ -156,17 +174,20 @@ struct Fixture {
   auto_ai=true;restore();
  }
  void battle(){
-  bool began=false;unsigned frames=0;uint64_t prev=0;
+  bool began=false;unsigned frames=0;uint64_t prev=0;check_events=expected_ai;second_event_seen=false;
   for(;frames<18000;++frames){
    g.set_input((frames%8)<4?1:0,0);
    auto stop=g.ai.frame+1;while(g.ai.frame<stop && g.cpu.pc!=0xc100)tick();
    began|=g.ai.battle;
-   if(g.ai.scheduler.completions!=prev){prev=g.ai.scheduler.completions;std::cout<<"decision "<<prev<<" round "<<g.ai.tracker.round<<" action "<<int(g.ai.scheduler.request.result.kind)<<":"<<int(g.ai.scheduler.request.result.payload)<<" playerMove "<<int(g.bus.read8(wPlayerMoveNum))<<" HP "<<g.ai_memory().word(wBattleMonHP)<<":"<<g.ai_memory().word(wEnemyMonHP)<<" slot "<<int(g.bus.read8(wEnemyMonPartyPos))<<"\n";}
+   if(g.ai.scheduler.completions!=prev){prev=g.ai.scheduler.completions;
+    CHECK(g.ai.tracker.event.decisions>=prev);                     // every published decision committed a snapshot
+    if(prev==2&&g.ai.scheduler.model_loaded()){CHECK(second_event_seen);for(unsigned i=0;i<EVENT_DIM;++i)CHECK(g.ai.scheduler.event[i]==second_event[i]);}   // the model saw exactly this vector
+std::cout<<"decision "<<prev<<" round "<<g.ai.tracker.round<<" action "<<int(g.ai.scheduler.request.result.kind)<<":"<<int(g.ai.scheduler.request.result.payload)<<" playerMove "<<int(g.bus.read8(wPlayerMoveNum))<<" HP "<<g.ai_memory().word(wBattleMonHP)<<":"<<g.ai_memory().word(wEnemyMonHP)<<" slot "<<int(g.bus.read8(wEnemyMonPartyPos))<<"\n";}
    if(g.cpu.pc==0xc100)break;
   }
   std::cout<<"frames="<<frames<<" began="<<began<<" rounds="<<g.ai.tracker.round<<" events="<<g.ai.tracker.event_count<<" decisions="<<prev<<" pc="<<std::hex<<g.cpu.pc<<std::dec<<"\n";
   CHECK(began==expected_ai);CHECK(frames<18000);
-  if(expected_ai){CHECK(prev>0);CHECK(g.ai.tracker.round>0);CHECK(seen[FaintEnemy]>0);CHECK(seen[AnnouncedPlayer]>0);CHECK(seen[MoveEndPlayer]>0);CHECK(replacement_decisions>0 && turn_decisions>0);}
+  if(expected_ai){CHECK(second_event_seen);CHECK(prev>0);CHECK(g.ai.tracker.round>0);CHECK(seen[FaintEnemy]>0);CHECK(seen[AnnouncedPlayer]>0);CHECK(seen[MoveEndPlayer]>0);CHECK(replacement_decisions>0 && turn_decisions>0);}
   else {CHECK(prev==0);CHECK(g.ai.tracker.event_count==0);CHECK(g.bus.read8(wAIDisarmed)==1);}
  }
 };

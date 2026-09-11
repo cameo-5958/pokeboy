@@ -37,6 +37,7 @@ public:
     Weights weights;
     PepModel model;
     const Features& features() const {return features_;}
+    std::array<int8_t,EVENT_DIM> event{};   // event vector of the last Featurize (not serialized)
 private:
     Observation observation{};
     Mask mask{};

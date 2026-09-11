@@ -69,6 +69,10 @@ void Tracker::capture(const Memory& m, uint8_t kind, uint8_t b) {
         }
         move_open=false;
     }
+    // The sim advances one update without a trainer decision when only the player's
+    // mon fainted (trainer PASS, player SWITCH); mirror its snapshot here. A fainted
+    // or already replaced enemy means a replacement decision follows instead.
+    if(kind==FaintPlayer && m.word(wEnemyMonHP)!=0 && m.read(wEnemyMonPartyPos)==event.side[0].slot) event.auto_step(m);
     if(pending==64) { overflow=true; ++dropped; hidden.fill(0); --pending; }
     events[head]=e; head=(head+1)%64; if(size<64) ++size;
     ++pending; ++event_count;
@@ -80,6 +84,7 @@ void Tracker::serialize(StateIO& s) {
     before.serialize(s); s.v(round); s.v(event_count); s.v(dropped);
     s.v(head); s.v(size); s.v(pending); s.v(actor); s.v(announced_move);
     s.v(move_open); s.v(announced); s.v(overflow);
+    event.serialize(s);
     if(head>=64 || size>64 || pending>64 || actor>1) s.fail();
 }
 }
