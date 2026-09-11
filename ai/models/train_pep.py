@@ -248,7 +248,7 @@ def train(args: argparse.Namespace) -> dict:
     if args.fake_quant:
         from models.pep_quant import FakeQuantPEP, load_calibration, quantize
         calib = load_calibration(args.data, rows=args.calib_rows, seed=args.seed)
-        qp = quantize(model, calib)
+        qp = quantize(model.to("cpu"), calib)   # calibration rows are CPU tensors
         model = FakeQuantPEP(model, qp).to(device)
         print(f"[qat] fake-quant training with {len(qp.scales)} calibrated activation scales", flush=True)
     print(
