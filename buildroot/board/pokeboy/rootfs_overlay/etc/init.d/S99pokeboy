@@ -10,8 +10,10 @@ case "$1" in
     for e in /sys/class/input/event*; do
       if grep -q gpio-keys "$e/device/name" 2>/dev/null; then INPUT=/dev/input/$(basename $e); break; fi
     done
+    WEIGHTS=""
+    [ -f "$BOOT/pkai.weights" ] && WEIGHTS="--weights $BOOT/pkai.weights"
     if [ -f "$ROM" ]; then
-      ( while :; do /usr/bin/pokeboy "$ROM" --input "$INPUT" --save "$BOOT/pokered-ai.sav" >/var/log/pokeboy.log 2>&1; sleep 2; done ) &
+      ( while :; do /usr/bin/pokeboy "$ROM" --input "$INPUT" --save "$BOOT/pokered-ai.sav" $WEIGHTS >/var/log/pokeboy.log 2>&1; sleep 2; done ) &
     else
       echo "pokeboy: no ROM at $ROM" > /dev/console
     fi
