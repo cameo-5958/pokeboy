@@ -129,6 +129,32 @@ struct Fixture {
   restore();g.ai.backend_available=false;call("AISelect");CHECK(g.bus.read8(wAIDisarmed)==1);CHECK(!g.ai.scheduler.pending());call("AIDispatch");CHECK(!g.cpu.flag(CPU::FC));g.ai.backend_available=true;
   restore();
  }
+ void model_battle(){
+  CHECK(g.ai.load_weights(AI_WEIGHTS));prepare();model_scenarios();
+  const auto& sched=g.ai.scheduler;const auto before=sched.model_decisions;   // counter is not part of the save state
+  battle();
+  std::cout<<"model decisions="<<sched.model_decisions-before<<" completions="<<sched.completions<<" timeouts="<<sched.timeouts<<"\n";
+  CHECK(sched.completions>0);CHECK(sched.model_decisions-before==sched.completions);CHECK(sched.timeouts==0);
+ }
+ void model_scenarios(){
+  auto& sched=g.ai.scheduler;CHECK(sched.model_loaded());
+  // A decision interrupted mid-inference by a save restarts on load and reaches the
+  // same action and the same GRU hidden as the uninterrupted run.
+  restore();auto_ai=false;begin_call("AISelect");until("AIInferHook");tick();CHECK(sched.pending());
+  for(unsigned i=0;i<100000 && !(sched.stage==Scheduler::Infer && sched.model.op_index()>2);++i) g.ai_step(monotonic_ns()+150000);
+  CHECK(sched.stage==Scheduler::Infer && !sched.model.done());
+  std::vector<uint8_t> mid;CHECK(g.save_state(mid));
+  g.ai_step(monotonic_ns()+1000000000);CHECK(sched.stage==Scheduler::Ready);auto result=sched.request.result;auto hidden=g.ai.tracker.hidden;
+  CHECK(sched.model_decisions==1);bool moved=false;for(auto h:hidden) moved|=h!=0;CHECK(moved);
+  CHECK(g.load_state(mid.data(),mid.size()));CHECK(sched.stage==Scheduler::Events);
+  g.ai_step(monotonic_ns()+1000000000);CHECK(sched.stage==Scheduler::Ready);
+  CHECK(sched.request.result.kind==result.kind && sched.request.result.payload==result.payload);CHECK(g.ai.tracker.hidden==hidden);
+  finish_call();CHECK(g.bus.read8(wAIAction)==result.kind && g.bus.read8(wAIAction+1)==result.payload);
+  // The 300-frame timeout still falls back to a random legal action and leaves the hidden state alone.
+  restore();begin_call("AISelect");until("AIInferHook");tick();CHECK(sched.pending());auto before=g.ai.tracker.hidden;
+  finish_call();CHECK(sched.timeouts==1);CHECK(g.ai.tracker.hidden==before);CHECK(!sched.model.active());
+  auto_ai=true;restore();
+ }
  void battle(){
   bool began=false;unsigned frames=0;uint64_t prev=0;
   for(;frames<18000;++frames){
@@ -145,4 +171,7 @@ struct Fixture {
  }
 };
 int main(){auto fixture=std::make_unique<Fixture>();fixture->prepare();fixture->scenarios();fixture->battle();
- auto unknown=std::make_unique<Fixture>(false);unknown->prepare();unknown->battle();}
+ auto unknown=std::make_unique<Fixture>(false);unknown->prepare();unknown->battle();
+ // Model backend: same battle with pkai.weights loaded (skipped when the gitignored checkpoint is absent).
+ if(std::ifstream(AI_WEIGHTS).good()){auto model=std::make_unique<Fixture>();model->model_battle();}
+ else std::cout<<"model battle skipped: no "<<AI_WEIGHTS<<"\n";}

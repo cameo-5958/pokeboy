@@ -26,6 +26,21 @@ int pkai_class_item(const uint8_t* rom, size_t rom_len, uint8_t trainer_class, u
 // Per-send-out item use count for a trainer class (TrainerAIPointers), or -1.
 int pkai_class_item_count(const uint8_t* rom, size_t rom_len, uint8_t trainer_class);
 
+// PEP integer model (pkai/model.h) for parity checks against ai/models/pep_int.py.
+// pkai_model_open loads a pkai.weights file; NULL on failure (pkai_model_error
+// then describes why). pkai_model_run performs one decision: `features` is a
+// pkai::Features block, `ev8` an int8[64] event vector (NULL = zeros), `hidden`
+// the int16[gru] GRU state read before and written after (NULL = zeros, not
+// written). Outputs (each optional): logits_q8 int16[16], probs uint8[16],
+// value_acc int32. Returns the GRU size, or -1 on bad arguments.
+void*       pkai_model_open(const char* weights_path);
+void        pkai_model_close(void* model);
+const char* pkai_model_error(void);
+int         pkai_model_gru_size(const void* model);
+int         pkai_model_run(void* model, const void* features, const int8_t* ev8, int16_t* hidden,
+                           int16_t* logits_q8, uint8_t* probs, int32_t* value_acc);
+const char* pkai_backend_name(void);
+
 #ifdef __cplusplus
 }
 #endif

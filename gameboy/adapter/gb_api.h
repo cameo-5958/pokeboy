@@ -75,6 +75,12 @@ void    gb_write_mem(gb_handle* gb, uint16_t addr, uint8_t value);
 // Absolute steady-clock nanosecond deadline, after rendering and audio.
 void gb_ai_step(gb_handle* gb, int64_t deadline);
 
+// Loads a pkai.weights file and makes the PEP model the AI backend (until then
+// decisions are random legal actions). Returns 1 on success, 0 on failure with
+// gb_ai_weights_error() describing why; the random backend stays active.
+int         gb_ai_load_weights(gb_handle* gb, const char* path);
+const char* gb_ai_weights_error(const gb_handle* gb);
+
 // Output-mix channel mask: bit n (0-3) = 0 silences APU channel n+1 in the
 // mixed output without affecting emulation. 0x0F (default) = all audible.
 // Used by the custom-music player to mute game music but keep SFX channels.

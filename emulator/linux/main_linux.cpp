@@ -1,7 +1,7 @@
 // emulator/linux/main_linux.cpp — Pokeboy device frontend for Linux (Buildroot on the OSD3358).
 //
 //   gbemu_linux rom.gbc [--fb /dev/fb0] [--input /dev/input/eventN] [--audio card,device|none]
-//                       [--save path.sav] [--bench N] [--margin-us N]
+//                       [--save path.sav] [--weights pkai.weights] [--bench N] [--bench-ai N] [--margin-us N]
 //
 // One process, one thread. Per frame (spec §6.1): run_frame → blit → audio →
 // ai_step(absolute deadline) → sleep until the next 16.742 ms tick. The AI
@@ -183,14 +183,15 @@ void write_file(const std::string& path, const uint8_t* data, size_t len) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) { fprintf(stderr, "usage: %s rom.gbc [--fb dev] [--input dev] [--audio card,dev|none] [--save path] [--bench N] [--margin-us N]\n", argv[0]); return 1; }
-    std::string rom_path = argv[1], fb_path = "/dev/fb0", input_path = "/dev/input/event0", audio = "0,0", save_path;
-    long bench = 0, margin_us = 600;
+    if (argc < 2) { fprintf(stderr, "usage: %s rom.gbc [--fb dev] [--input dev] [--audio card,dev|none] [--save path] [--weights pkai.weights] [--bench N] [--bench-ai N] [--margin-us N]\n", argv[0]); return 1; }
+    std::string rom_path = argv[1], fb_path = "/dev/fb0", input_path = "/dev/input/event0", audio = "0,0", save_path, weights_path;
+    long bench = 0, bench_ai = 0, margin_us = 600;
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
         if (a == "--fb") fb_path = next(); else if (a == "--input") input_path = next(); else if (a == "--audio") audio = next();
         else if (a == "--save") save_path = next(); else if (a == "--bench") bench = atol(next()); else if (a == "--margin-us") margin_us = atol(next());
+        else if (a == "--weights") weights_path = next(); else if (a == "--bench-ai") bench_ai = atol(next());
     }
     if (save_path.empty()) save_path = rom_path + ".sav";
 
@@ -200,6 +201,39 @@ int main(int argc, char** argv) {
     if (!gb.load_rom(rom.data(), rom.size())) { fprintf(stderr, "bad rom\n"); return 1; }
     gb.reset_post_boot();
     fprintf(stderr, "ai: %s\n", gb.ai.recognised ? "armed (ROM recognised)" : "disarmed (unknown ROM, native AI)");
+    if (!weights_path.empty()) {
+        if (!gb.ai.load_weights(weights_path.c_str())) { fprintf(stderr, "ai: cannot use %s: %s\n", weights_path.c_str(), gb.ai.scheduler.weights_error().c_str()); return 1; }
+        const auto& cfg = gb.ai.scheduler.model.config();
+        fprintf(stderr, "ai: model %s tier %s (d=%u layers=%u heads=%u ffn=%u gru=%u), %u ops/decision, %s kernels\n", weights_path.c_str(),
+                gb.ai.scheduler.weights.tier(), cfg.d, cfg.layers, cfg.heads, cfg.ffn, cfg.gru, gb.ai.scheduler.model.op_count(), pkai::kernels::backend_name());
+    }
+    if (bench_ai > 0) {
+        // Full-decision timing of the model on this host/device, plus the per-op-kind
+        // split the scheduler admits against the frame deadline.
+        if (!gb.ai.scheduler.model_loaded()) { fprintf(stderr, "--bench-ai needs --weights\n"); return 1; }
+        auto& model = gb.ai.scheduler.model;
+        const pkai::Memory mem = gb.ai_memory();
+        const auto obs = pkai::observe(mem, gb.ai.tracker);
+        const auto legal = pkai::legal_mask(mem, obs, 0);
+        const auto F = pkai::build_features(mem, obs, legal, 0);
+        int16_t h[128] = {};
+        for (int i = 0; i < 3; ++i) model.run(F, nullptr, h);   // warm caches
+        const int64_t t0 = now_ns();
+        for (long i = 0; i < bench_ai; ++i) { model.run(F, nullptr, h); memcpy(h, model.hidden(), model.gru_size() * sizeof(int16_t)); }
+        const int64_t t1 = now_ns();
+        uint64_t kind_ns[pkai::OpKindCount] = {}; unsigned kind_n[pkai::OpKindCount] = {};
+        for (long i = 0; i < bench_ai; ++i) {
+            model.begin(F, nullptr, h);
+            while (!model.done()) { const auto k = model.next_kind(); const int64_t s = now_ns(); model.step(); kind_ns[k] += uint64_t(now_ns() - s); ++kind_n[k]; }
+        }
+        printf("bench-ai: %ld decisions  %.1f us/decision (%s)  ops: %u  per-kind avg(us)/count:", bench_ai, double(t1 - t0) / bench_ai / 1e3,
+               pkai::kernels::backend_name(), model.op_count());
+        for (unsigned k = 0; k < pkai::OpKindCount; ++k) printf(" %s %.2f/%u", pkai::model_op_kind_name(pkai::ModelOpKind(k)), kind_n[k] ? double(kind_ns[k]) / kind_n[k] / 1e3 : 0.0, kind_n[k] / unsigned(bench_ai));
+        printf("  calibrated op cost(ns):");
+        for (auto c : gb.ai.scheduler.op_cost_ns) printf(" %llu", (unsigned long long)c);
+        printf("\n");
+        return 0;
+    }
     std::vector<uint8_t> sav;
     if (gb.has_battery() && read_file(save_path, sav)) gb.load_save_ram(sav.data(), sav.size());
 
@@ -254,8 +288,8 @@ int main(int argc, char** argv) {
         }
     }
     if (gb.has_battery()) { size_t len = 0; const uint8_t* ram = gb.save_ram(&len); if (ram && len) write_file(save_path, ram, len); }
-    fprintf(stderr, "frames %llu, late %llu, ai completions %llu timeouts %llu\n", (unsigned long long)frames, (unsigned long long)late,
-            (unsigned long long)gb.ai.scheduler.completions, (unsigned long long)gb.ai.scheduler.timeouts);
+    fprintf(stderr, "frames %llu, late %llu, ai completions %llu (model %llu) timeouts %llu\n", (unsigned long long)frames, (unsigned long long)late,
+            (unsigned long long)gb.ai.scheduler.completions, (unsigned long long)gb.ai.scheduler.model_decisions, (unsigned long long)gb.ai.scheduler.timeouts);
     delete out;
     return 0;
 }

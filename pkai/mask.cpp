@@ -20,13 +20,22 @@ Mask legal_mask(const Memory& m,const Observation& o,uint8_t kind) {
     if(slot>=0) {mask.item=id;mask.bits|=1u<<slot;}
     return mask;
 }
+static Action action_at(const Mask& mask,unsigned i,uint8_t sequence) {
+    return {uint8_t(i<4?0:i<10?1:2),uint8_t(i<4?i:i<10?i-4:mask.item),sequence};
+}
 Action random_action(const Mask& mask,uint32_t draw,uint8_t sequence) {
     unsigned n=0; for(unsigned i=0;i<16;++i) n+=mask.legal(i);
     if(!n) return {255,0,sequence};
     unsigned k=(uint64_t(draw)*n)>>32;
-    for(unsigned i=0;i<16;++i) if(mask.legal(i) && k--==0)
-        return {uint8_t(i<4?0:i<10?1:2),uint8_t(i<4?i:i<10?i-4:mask.item),sequence};
+    for(unsigned i=0;i<16;++i) if(mask.legal(i) && k--==0) return action_at(mask,i,sequence);
     return {255,0,sequence};
+}
+Action sample_action(const Mask& mask,const uint8_t* probs,uint32_t draw,uint8_t sequence) {
+    uint32_t total=0; for(unsigned i=0;i<16;++i) if(mask.legal(i)) total+=probs[i];
+    if(!total) return random_action(mask,draw,sequence);
+    uint32_t k=uint32_t((uint64_t(draw)*total)>>32);   // uniform in [0,total)
+    for(unsigned i=0;i<16;++i) if(mask.legal(i)) { if(k<probs[i]) return action_at(mask,i,sequence); k-=probs[i]; }
+    return random_action(mask,draw,sequence);
 }
 bool legal_action(const Mask& m,const Action& a) {
     if(a.kind==0) return a.payload<4 && m.legal(a.payload);
