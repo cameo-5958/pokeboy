@@ -310,6 +310,7 @@ def train(args: argparse.Namespace) -> dict:
                 )
             if args.save_every and step % args.save_every == 0:
                 save_checkpoint(getattr(model, "model", model), ckpt_path, step)
+                save_checkpoint(getattr(model, "model", model), os.path.join(run_dir, f"step-{step:07d}.pt"), step)
             if step >= args.steps:
                 break
 
