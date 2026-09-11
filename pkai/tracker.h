@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include "memory.h"
+#include "event.h"
 #include "../gameboy/core/state/state.h"
 namespace pkai {
 enum EventKind : uint8_t { RoundBegin=0, MoveBeginPlayer=2, MoveBeginEnemy=3,
@@ -33,6 +34,7 @@ struct Tracker {
     std::array<PublicMon,6> player{};
     std::array<Event,64> events{};
     std::array<int16_t,128> hidden{};
+    EventState event{};   // GRU event-vector state, see event.h
     Sample before{};
     uint32_t round{}, event_count{}, dropped{};
     uint8_t head{}, size{}, pending{}, actor{}, announced_move{};

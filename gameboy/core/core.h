@@ -42,7 +42,7 @@ public:
     // AI tracker, RNG, pending identity and READY result are transactional.
     bool  save_state(std::vector<uint8_t>& out);
     bool  load_state(const uint8_t* data, size_t len);
-    static constexpr uint32_t STATE_VERSION = 3;
+    static constexpr uint32_t STATE_VERSION = 4;   // 4: tracker carries the event-vector state
 
     Bus    bus;
     CPU    cpu;

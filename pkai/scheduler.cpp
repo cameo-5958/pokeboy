@@ -3,6 +3,7 @@
 #include <algorithm>
 namespace pkai {
 using namespace symbols;
+static_assert(EVENT_DIM==EV_DIM,"event vector width");
 int64_t monotonic_ns() { return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 Scheduler::Scheduler() {
     // Calibrate the fixed stages on a blank machine. Model op costs are calibrated
@@ -10,7 +11,7 @@ Scheduler::Scheduler() {
     std::array<uint8_t,65536> bytes{};
     Memory m{bytes.data(), [](void* p,uint16_t a){return static_cast<uint8_t*>(p)[a];},
         [](void* p,uint16_t a,uint8_t v){static_cast<uint8_t*>(p)[a]=v;},nullptr,0};
-    Tracker t; Observation o; Mask legal; Features F;
+    Tracker t; Observation o; Mask legal; Features F; int8_t ev[EVENT_DIM];
     volatile uint32_t sink=0;
     for(Stage stage_index:{Events,Read,Masking,Featurize,SampleAction,Write}) {
         uint64_t total=0;
@@ -21,7 +22,7 @@ Scheduler::Scheduler() {
             case Events:t.drain_one();sink=t.pending;break;
             case Read:o=observe(m,t);sink=o.active.hp;break;
             case Masking:legal=legal_mask(m,o,0);sink=legal.bits;break;
-            case Featurize:F=build_features(m,o,legal,0);sink=F.legal;break;
+            case Featurize:F=build_features(m,o,legal,0);build_event(t.event,m,ev);sink=F.legal^ev[15];break;
             case SampleAction:sink=random_action(legal,i,0).payload;break;
             case Write: {
                 auto current=observe(m,t);auto mask=legal_mask(m,current,0);
@@ -101,6 +102,10 @@ uint8_t Scheduler::poll(const Memory& m,Tracker& t,uint8_t kind,uint64_t frame) 
     }
     if(stage==Ready) {
         publish(m,t); // Restore READY is transactional, including action bytes.
+        // The decision is final: snapshot for the next event vector. RAM has not
+        // changed since Write (the ROM only polls), so a state saved at Ready commits
+        // the same snapshot on load.
+        t.event.commit(m,request.result.kind);
         stage=Idle;++completions;
         return legal_action(mask,request.result)?1:2;
     }
@@ -117,12 +122,13 @@ void Scheduler::step(const Memory& m,Tracker& t,int64_t deadline) {
         case Read: observation=observe(m,t);stage=Masking;break;
         case Masking: mask=legal_mask(m,observation,request.kind);stage=model.bound()?Featurize:SampleAction;break;
         case Featurize:
-            // No event vector is produced on device yet (the trainer treats it as
-            // optional and zero-fills it), so the GRU input is [0 ⊕ c_s]. The hidden
-            // state lives in the tracker: it persists across decisions of one battle,
-            // is zeroed by $DB (tracker.reset) and is part of the save state.
+            // GRU input is [event ⊕ c_s]. The event vector compares RAM now with the
+            // snapshot taken when the previous decision was published (tracker.event,
+            // committed in poll); it and the hidden state persist across the decisions
+            // of one battle, are zeroed by $DB (tracker.reset) and are in the save state.
             features_=build_features(m,observation,mask,request.kind);
-            model.begin(features_,nullptr,t.hidden.data());stage=Infer;break;
+            build_event(t.event,m,event.data());
+            model.begin(features_,event.data(),t.hidden.data());stage=Infer;break;
         case Infer: if(model.step()) {inferred=true;stage=SampleAction;}break;
         case SampleAction:
             request.result=inferred?sample_action(mask,model.probs(),request.reserved_draw,uint8_t(request.sequence))

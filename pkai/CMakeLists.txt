@@ -9,7 +9,7 @@ else()
     add_custom_target(pkai_rom)
 endif()
 
-set(PKAI_SOURCES hook.cpp tracker.cpp observe.cpp mask.cpp scheduler.cpp calc.cpp features.cpp
+set(PKAI_SOURCES hook.cpp tracker.cpp event.cpp observe.cpp mask.cpp scheduler.cpp calc.cpp features.cpp
     weights.cpp model.cpp kernels/gemm.cpp kernels/attention.cpp kernels/gru.cpp)
 
 # NEON kernels only where the compiler targets NEON; elsewhere kernels/gemm.cpp

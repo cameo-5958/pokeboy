@@ -44,6 +44,7 @@ CORE=(
     pkai/scheduler.cpp
     pkai/calc.cpp
     pkai/features.cpp
+    pkai/event.cpp
     pkai/weights.cpp
     pkai/model.cpp
     pkai/kernels/gemm.cpp
