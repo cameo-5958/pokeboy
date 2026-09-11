@@ -56,6 +56,7 @@ def main(argv=None) -> int:
     ap.add_argument("--temperature", type=float, default=0.5)
     ap.add_argument("--opponent", default="greedy", choices=["greedy", "random"])
     ap.add_argument("--no-teacher", action="store_true")
+    ap.add_argument("--int-weights", default=None, help="pkai.weights: add an `int` policy run through the C++ integer model")
     args = ap.parse_args(argv)
     parties = trainers.load().parties
     rng = random.Random(args.seed + 3)
@@ -65,6 +66,9 @@ def main(argv=None) -> int:
     if args.checkpoint:
         from serve.pep_agent import PEPAgent
         policies["pep"] = PEPAgent(args.checkpoint, temperature=args.temperature, seed=args.seed)
+    if args.int_weights:
+        from serve.int_agent import IntAgent
+        policies["int"] = IntAgent(args.int_weights, seed=args.seed)
     res = run(policies, parties, args.battles, args.seed, args.opponent)
     for name, r in res.items():
         print(f"{name:12s} win {r['win_rate']:.3f}  ({r['wins']}/{r['losses']}/{r['ties']} w/l/t)  {r['seconds']:.1f}s")
