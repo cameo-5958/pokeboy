@@ -15,7 +15,8 @@ class PEPAgent:
         if model is None:
             if checkpoint is None:
                 raise ValueError("checkpoint or model required")
-            model = load_checkpoint(checkpoint, map_location=device)
+            loaded = load_checkpoint(checkpoint, map_location=device)
+            model = loaded[0] if isinstance(loaded, tuple) else loaded
         self.model = model.to(device).eval()
         self.temperature = temperature
         self.device = device
