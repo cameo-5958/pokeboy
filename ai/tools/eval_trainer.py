@@ -13,6 +13,7 @@ import random
 import time
 
 from sim import trainers
+from sim.matchups import parse_mix, sample_matchup
 from sim.trainer_env import TrainerEnv
 from sim.trainer_search import TrainerTeacher
 
@@ -26,11 +27,18 @@ def play(env: TrainerEnv, trainer_policy, opponent, max_decisions: int = 300) ->
     return env.winner_is_trainer()
 
 
-def run(policies: dict, parties, battles: int, seed: int, opponent_kind: str = "greedy") -> dict[str, dict]:
+def run(policies: dict, parties, battles: int, seed: int, opponent_kind: str = "greedy",
+        matchups_mode: str = "random") -> dict[str, dict]:
+    """`matchups_mode`: random (any two parties), balanced (strongest levels within 2), mirror (same party), or a mix."""
     rng = random.Random(seed)
+    mix = parse_mix(matchups_mode)
     matchups = []
     for _ in range(battles):
-        t, o = rng.choice(parties), rng.choice(parties)
+        if matchups_mode == "random":   # legacy sampling order, keeps older numbers reproducible
+            t, o = rng.choice(parties), rng.choice(parties)
+        else:
+            ti, oi, _mode = sample_matchup(rng, parties, mix)
+            t, o = parties[ti], parties[oi]
         matchups.append((t, o, rng.getrandbits(62), rng.getrandbits(30)))
     results = {}
     for name, policy in policies.items():
@@ -55,6 +63,7 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--temperature", type=float, default=0.5)
     ap.add_argument("--opponent", default="greedy", choices=["greedy", "random"])
+    ap.add_argument("--matchups", default="random", help="random | balanced | mirror | mix such as mirror:0.5,balanced:0.5")
     ap.add_argument("--no-teacher", action="store_true")
     ap.add_argument("--int-weights", default=None, help="pkai.weights: add an `int` policy run through the C++ integer model")
     args = ap.parse_args(argv)
@@ -69,7 +78,7 @@ def main(argv=None) -> int:
     if args.int_weights:
         from serve.int_agent import IntAgent
         policies["int"] = IntAgent(args.int_weights, seed=args.seed)
-    res = run(policies, parties, args.battles, args.seed, args.opponent)
+    res = run(policies, parties, args.battles, args.seed, args.opponent, args.matchups)
     for name, r in res.items():
         print(f"{name:12s} win {r['win_rate']:.3f}  ({r['wins']}/{r['losses']}/{r['ties']} w/l/t)  {r['seconds']:.1f}s")
     return 0

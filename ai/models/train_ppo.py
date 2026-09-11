@@ -40,15 +40,44 @@ import torch.nn.functional as F
 from models.pep import EV_DIM, N_ACTIONS, PEP, PEPConfig, features_to_tensors, load_checkpoint, save_checkpoint
 from models.pep_data import FEAT, FEATURES_BYTES, MAX_TOKENS, TOKEN_TYPES, decode_features, decode_features_batch
 from models.train_pep import DEFAULT_CKPT_DIR
+from sim.matchups import parse_mix, sample_matchup
+from sim.player_seat import NetPlayer
+from sim.trainer_env import _u16
 
-OPPONENTS = ("greedy", "random")
+OPPONENTS = ("greedy", "random", "self", "past")
 
 
 # --------------------------------------------------------------------------- opponents
 
 
-def make_opponent(name: str, seed: int):
-    """Player-seat policy `f(env) -> engine choice`."""
+def parse_opponents(spec: str) -> list[tuple[str, float]]:
+    """"greedy,random" or "self:0.4,past:0.3,greedy:0.3" -> [(name, weight)] normalised."""
+    out: list[tuple[str, float]] = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        name, _, w = part.partition(":")
+        if name not in OPPONENTS:
+            raise ValueError(f"unknown opponent {name!r}; choose from {OPPONENTS}")
+        out.append((name, float(w) if w else 1.0))
+    total = sum(w for _, w in out)
+    if not out or total <= 0:
+        raise ValueError(f"empty opponent pool {spec!r}")
+    return [(n, w / total) for n, w in out]
+
+
+def make_opponent(name: str, seed: int, models: dict | None = None, temperature: float = 1.0):
+    """Player-seat policy `f(env) -> engine choice`.
+
+    `self` plays the current policy (models["self"]); `past:<ckpt>` a frozen snapshot loaded
+    through models["load"](path) (cached by the caller). Both use the trainer-seat network on
+    the player's side of the battle (sim.player_seat)."""
+    if name == "self" or name.startswith("past:"):
+        if models is None:
+            raise ValueError(f"opponent {name!r} needs the model table")
+        model = models["self"] if name == "self" else models["load"](name[5:])
+        return NetPlayer(model, seed=seed, temperature=temperature).choose
     if name == "greedy":
         from sim.trainer_search import TrainerTeacher
 
@@ -71,11 +100,12 @@ class Matchup:
     rng_seed: int
     opponent: str
     sample_seed: int
+    mode: str = "random"
 
 
 @dataclass
 class Episode:
-    """One battle's trainer-seat decisions (leading axis T) plus the terminal reward."""
+    """One battle's trainer-seat decisions (leading axis T) plus the per-decision rewards."""
 
     feats: np.ndarray  # (T, 1626) u8 raw pkai::Features
     legal: np.ndarray  # (T,) u16
@@ -83,25 +113,46 @@ class Episode:
     action: np.ndarray  # (T,) i64
     logp: np.ndarray  # (T,) f32 log-prob of `action` under the rollout policy
     value: np.ndarray  # (T,) f32 rollout value estimate in [-1, 1]
-    reward: float  # +1 win / -1 loss / 0 tie (at the last decision)
+    reward: float  # +1 win / -1 loss / 0 tie (terminal outcome)
     opponent: str
     trainer_class: int
+    rewards: np.ndarray | None = None  # (T,) f32 per-decision reward: shaping deltas + terminal outcome at T-1
+    mode: str = "random"
 
     def __len__(self) -> int:
         return int(self.legal.shape[0])
 
 
+def hp_potential(env) -> float:
+    """Shaping potential: mean roster HP fraction, trainer minus player (full information, reward only)."""
+    buf = env.buf
+
+    def side(s: int, n: int) -> float:
+        tot = 0.0
+        for ix in range(n):
+            o = env._slot(s, ix)
+            tot += _u16(buf, o + 18) / max(1, _u16(buf, o))
+        return tot / max(1, n)
+
+    return side(env.me, len(env.trainer_specs)) - side(env.opp, len(env.player_specs))
+
+
 @torch.no_grad()
 def play_episode(model: PEP, env, opponent, gen: torch.Generator, *, temperature: float = 1.0,
-                 max_decisions: int = 300, opponent_name: str = "") -> Episode:
-    """Play one battle with the trainer seat sampled from `model` (GRU state carried from zero)."""
+                 max_decisions: int = 300, opponent_name: str = "", shaping: float = 0.0, mode: str = "random") -> Episode:
+    """Play one battle with the trainer seat sampled from `model` (GRU state carried from zero).
+
+    Per-decision reward = shaping * (potential after the decision's consequences - potential before)
+    (potential-based shaping, Ng et al. 1999; telescopes to a per-battle constant so the optimal
+    policy is unchanged) plus the +1/-1/0 outcome at the last decision."""
     feats_l: list[bytes] = []; legal_l: list[int] = []; event_l: list[np.ndarray] = []
-    action_l: list[int] = []; logp_l: list[float] = []; value_l: list[float] = []
+    action_l: list[int] = []; logp_l: list[float] = []; value_l: list[float] = []; phi_l: list[float] = []
     h = None
     while not env.done() and len(action_l) < max_decisions:
         if env.request_kind() is None:
             env.auto_step(opponent(env))
             continue
+        phi_l.append(hp_potential(env) if shaping else 0.0)
         feats, mask, _kind = env.features()
         raw = bytes(feats)
         arrays = decode_features(raw)
@@ -126,6 +177,12 @@ def play_episode(model: PEP, env, opponent, gen: torch.Generator, *, temperature
     w = env.winner_is_trainer()
     reward = 1.0 if w is True else -1.0 if w is False else 0.0
     T = len(action_l)
+    rewards = np.zeros(T, np.float32)
+    if T:
+        phi_l.append(hp_potential(env) if shaping else 0.0)
+        for t in range(T):
+            rewards[t] = shaping * (phi_l[t + 1] - phi_l[t])
+        rewards[T - 1] += reward
     return Episode(
         feats=np.frombuffer(b"".join(feats_l), dtype=np.uint8).reshape(T, FEATURES_BYTES) if T else np.zeros((0, FEATURES_BYTES), np.uint8),
         legal=np.asarray(legal_l, dtype=np.uint16),
@@ -136,22 +193,46 @@ def play_episode(model: PEP, env, opponent, gen: torch.Generator, *, temperature
         reward=reward,
         opponent=opponent_name,
         trainer_class=int(env.trainer_class),
+        rewards=rewards,
+        mode=mode,
     )
 
 
 def rollout_matchups(model: PEP, parties, matchups: list[Matchup], *, temperature: float = 1.0,
-                     max_decisions: int = 300) -> list[Episode]:
+                     max_decisions: int = 300, models: dict | None = None, shaping: float = 0.0) -> list[Episode]:
     from sim.trainer_env import TrainerEnv
 
+    if models is None:
+        models = {"self": model, "load": _PastCache().load}
     out: list[Episode] = []
     for m in matchups:
         t, o = parties[m.trainer_idx], parties[m.player_idx]
         env = TrainerEnv(t.to_specs(), t.class_id, o.to_specs(), seed=m.battle_seed, rng_seed=m.rng_seed)
-        opponent = make_opponent(m.opponent, m.sample_seed ^ 0x5EED)
+        opponent = make_opponent(m.opponent, m.sample_seed ^ 0x5EED, models, temperature=temperature)
         gen = torch.Generator(device="cpu").manual_seed(m.sample_seed)
         out.append(play_episode(model, env, opponent, gen, temperature=temperature, max_decisions=max_decisions,
-                                opponent_name=m.opponent))
+                                opponent_name=m.opponent, shaping=shaping, mode=m.mode))
     return out
+
+
+class _PastCache:
+    """Frozen league snapshots by checkpoint path (small LRU, CPU, eval mode)."""
+
+    def __init__(self, limit: int = 6):
+        self.limit = limit
+        self.models: dict[str, PEP] = {}
+
+    def load(self, path: str) -> PEP:
+        m = self.models.pop(path, None)
+        if m is None:
+            m, _ = load_checkpoint(path, map_location="cpu")
+            m = m.eval()
+            for p in m.parameters():
+                p.requires_grad_(False)
+            while len(self.models) >= self.limit:
+                self.models.pop(next(iter(self.models)))
+        self.models[path] = m
+        return m
 
 
 # -- multiprocessing workers (spawn context; each holds a CPU policy copy) --------------
@@ -166,15 +247,17 @@ def _worker_init(cfg: dict, threads: int) -> None:
     _W["model"] = PEP(PEPConfig(**cfg)).eval()
     _W["version"] = -1
     _W["parties"] = trainers.load().parties
+    _W["models"] = {"self": _W["model"], "load": _PastCache().load}
 
 
 def _worker_task(job: tuple) -> list[Episode]:
-    version, state, matchups, temperature, max_decisions = job
+    version, state, matchups, temperature, max_decisions, shaping = job
     model: PEP = _W["model"]
     if version != _W["version"]:
         model.load_state_dict(state)
         _W["version"] = version
-    return rollout_matchups(model, _W["parties"], matchups, temperature=temperature, max_decisions=max_decisions)
+    return rollout_matchups(model, _W["parties"], matchups, temperature=temperature, max_decisions=max_decisions,
+                            models=_W["models"], shaping=shaping)
 
 
 class RolloutPool:
@@ -196,39 +279,56 @@ class RolloutPool:
         if self.pool is not None:
             self.pool.close(); self.pool.join(); self.pool = None
 
-    def play(self, model: PEP, matchups: list[Matchup], *, temperature: float, max_decisions: int) -> list[Episode]:
+    def play(self, model: PEP, matchups: list[Matchup], *, temperature: float, max_decisions: int,
+             shaping: float = 0.0) -> list[Episode]:
         state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
         self.version += 1
         if self.pool is None:
             self._local.load_state_dict(state)
-            return rollout_matchups(self._local, self.parties, matchups, temperature=temperature, max_decisions=max_decisions)
+            return rollout_matchups(self._local, self.parties, matchups, temperature=temperature,
+                                    max_decisions=max_decisions, shaping=shaping)
         n = max(1, min(len(matchups), self.workers * 2))
         chunks = [matchups[i::n] for i in range(n)]
-        jobs = [(self.version, state, c, temperature, max_decisions) for c in chunks if c]
+        jobs = [(self.version, state, c, temperature, max_decisions, shaping) for c in chunks if c]
         out: list[Episode] = []
         for eps in self.pool.map(_worker_task, jobs, chunksize=1):
             out.extend(eps)
         return out
 
 
-def sample_matchups(rng: random.Random, n_parties: int, n: int, opponents: list[str]) -> list[Matchup]:
-    return [
-        Matchup(rng.randrange(n_parties), rng.randrange(n_parties), rng.getrandbits(62), rng.getrandbits(30),
-                rng.choice(opponents), rng.getrandbits(31))
-        for _ in range(n)
-    ]
+def sample_matchups(rng: random.Random, parties, n: int, opponents: list[tuple[str, float]],
+                    mix: list[tuple[str, float]], past: list[str]) -> list[Matchup]:
+    """`n` battles: matchup mode from `mix`, opponent from the weighted pool (`past` picks a snapshot path)."""
+    names = [o for o, _ in opponents]; weights = [w for _, w in opponents]
+    out: list[Matchup] = []
+    for _ in range(n):
+        t, o, mode = sample_matchup(rng, parties, mix)
+        opp = rng.choices(names, weights)[0]
+        if opp == "past":
+            opp = f"past:{rng.choice(past)}" if past else "self"
+        out.append(Matchup(t, o, rng.getrandbits(62), rng.getrandbits(30), opp, rng.getrandbits(31), mode))
+    return out
+
+
+def opponent_kind(name: str) -> str:
+    return "past" if name.startswith("past:") else name
 
 
 # --------------------------------------------------------------------------- batching / GAE
 
 
-def gae(values: np.ndarray, reward: float, gamma: float, lam: float) -> tuple[np.ndarray, np.ndarray]:
-    """Advantages and returns for one episode whose only reward arrives at the last decision (V_T = 0)."""
+def gae(values: np.ndarray, rewards: np.ndarray | float, gamma: float, lam: float) -> tuple[np.ndarray, np.ndarray]:
+    """Advantages and returns for one episode (V_T = 0); a scalar `rewards` is the terminal-only reward."""
     T = values.shape[0]
+    if np.isscalar(rewards):
+        r_arr = np.zeros(T, np.float32)
+        if T:
+            r_arr[T - 1] = float(rewards)
+        rewards = r_arr
     adv = np.zeros(T, np.float32)
     last = 0.0
     for t in range(T - 1, -1, -1):
-        r = reward if t == T - 1 else 0.0
+        r = float(rewards[t])
         v_next = 0.0 if t == T - 1 else float(values[t + 1])
         delta = r + gamma * v_next - float(values[t])
         last = delta + gamma * lam * last
@@ -268,7 +368,7 @@ def collate_episodes(episodes: list[Episode], gamma: float, lam: float) -> dict[
         out["action"][i, :t] = e.action
         out["old_logp"][i, :t] = e.logp
         out["old_value"][i, :t] = e.value
-        adv, ret = gae(e.value, e.reward, gamma, lam)
+        adv, ret = gae(e.value, e.rewards if e.rewards is not None else e.reward, gamma, lam)
         out["adv"][i, :t] = adv
         out["ret"][i, :t] = ret
         out["mask"][i, :t] = True
@@ -425,14 +525,45 @@ def ppo_update(
 
 
 def evaluate(model: PEP, parties, battles: int, seed: int, temperature: float = 0.5,
-             opponent_kind: str = "greedy") -> dict:
+             opponent_kind: str = "greedy", matchups_mode: str = "random") -> dict:
     """Win-rate of the current policy (fp32, CPU) over a fixed matchup sequence via tools.eval_trainer.run."""
     from serve.pep_agent import PEPAgent
     from tools.eval_trainer import run
 
     cpu = copy.deepcopy(model).to("cpu").eval()
     agent = PEPAgent(model=cpu, temperature=temperature, seed=seed)
-    return run({"pep": agent}, parties, battles, seed, opponent_kind)["pep"]
+    return run({"pep": agent}, parties, battles, seed, opponent_kind, matchups_mode)["pep"]
+
+
+def parse_feat_cols(spec: str) -> dict[str, list[int]]:
+    """"own:38-41,player:34-37" -> {"own": [38,39,40,41], "player": [34,35,36,37]}."""
+    out: dict[str, list[int]] = {}
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        tok, _, rng_s = part.partition(":")
+        cols: list[int] = []
+        for r in rng_s.split("+"):
+            a, _, b = r.partition("-")
+            cols.extend(range(int(a), int(b or a) + 1))
+        out.setdefault(tok, []).extend(cols)
+    return out
+
+
+def reset_feature_columns(model: PEP, spec: str) -> None:
+    """Zero the input-projection columns of newly populated feature slots so a checkpoint trained
+    with those slots always at zero starts unchanged (the token's feature vector is the first FEAT
+    columns of each token-type projection)."""
+    lin = {"own": model.embed.in_own_mon, "player": model.embed.in_player_mon,
+           "own_move": model.embed.in_own_move, "player_move": model.embed.in_player_move,
+           "field": model.embed.in_field, "item": model.embed.in_item}
+    with torch.no_grad():
+        for tok, cols in parse_feat_cols(spec).items():
+            for c in cols:
+                if not 0 <= c < FEAT:
+                    raise ValueError(f"feature column {c} out of range")
+                lin[tok].weight[:, c].zero_()
 
 
 # --------------------------------------------------------------------------- driver
@@ -444,15 +575,16 @@ def train(args: argparse.Namespace) -> dict:
     gen = torch.Generator().manual_seed(args.seed)
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     torch.set_num_threads(max(1, args.threads))
-    opponents = [o.strip() for o in args.opponents.split(",") if o.strip()]
-    for o in opponents:
-        make_opponent(o, 0)  # validate names early
+    opponents = parse_opponents(args.opponents)
+    mix = parse_mix(args.matchups)
 
     from sim import trainers
 
     parties = trainers.load().parties
     model, blob = load_checkpoint(args.init_ckpt, map_location="cpu")
     init_steps = int(blob.get("steps", 0))
+    if args.reset_feat_cols:
+        reset_feature_columns(model, args.reset_feat_cols)
     model = model.to(device).eval()
     init_model = None
     if args.kl_init > 0:
@@ -471,10 +603,18 @@ def train(args: argparse.Namespace) -> dict:
     ckpt_path = os.path.join(run_dir, "model.pt")
     log = open(os.path.join(run_dir, "log.jsonl"), "a")
     pool = RolloutPool(model.cfg, args.workers, parties, threads=args.worker_threads)
+    league_dir = os.path.join(run_dir, "league")
+    past: list[str] = []
+    if any(o == "past" for o, _ in opponents):
+        os.makedirs(league_dir, exist_ok=True)
+        past = sorted(os.path.join(league_dir, f) for f in os.listdir(league_dir) if f.endswith(".pt"))
+        if not past or args.past_init:
+            past.insert(0, os.path.abspath(args.init_ckpt))
 
     def do_eval(it: int) -> dict:
         t0 = time.time()
-        ev = evaluate(model, parties, args.eval_battles, args.eval_seed, temperature=args.eval_temperature)
+        ev = evaluate(model, parties, args.eval_battles, args.eval_seed, temperature=args.eval_temperature,
+                      matchups_mode=args.eval_matchups)
         ev = {"iter": it, "win_rate": ev["win_rate"], "wins": ev["wins"], "losses": ev["losses"], "ties": ev["ties"],
               "seconds": time.time() - t0}
         print(
@@ -500,15 +640,19 @@ def train(args: argparse.Namespace) -> dict:
     try:
         for it in range(1, args.iters + 1):
             t_it = time.time()
-            matchups = sample_matchups(rng, len(parties), args.battles_per_iter, opponents)
-            episodes = pool.play(model, matchups, temperature=args.temperature, max_decisions=args.max_decisions)
+            matchups = sample_matchups(rng, parties, args.battles_per_iter, opponents, mix, past)
+            episodes = pool.play(model, matchups, temperature=args.temperature, max_decisions=args.max_decisions,
+                                 shaping=args.shaping)
             t_roll = time.time() - t_it
             n_dec = sum(len(e) for e in episodes)
             wins = sum(e.reward > 0 for e in episodes); losses = sum(e.reward < 0 for e in episodes)
             per_opp = {}
-            for o in opponents:
-                es = [e for e in episodes if e.opponent == o]
-                per_opp[o] = (sum(e.reward > 0 for e in es) / len(es)) if es else float("nan")
+            for o in sorted({opponent_kind(e.opponent) for e in episodes}):
+                es = [e for e in episodes if opponent_kind(e.opponent) == o]
+                per_opp[o] = sum(e.reward > 0 for e in es) / len(es)
+            for md in sorted({e.mode for e in episodes}):
+                es = [e for e in episodes if e.mode == md]
+                per_opp[f"m:{md}"] = sum(e.reward > 0 for e in es) / len(es)
             print(
                 f"[rollout] iter={it} battles={len(episodes)} decisions={n_dec} win={wins / max(1, len(episodes)):.3f} "
                 f"(w/l/t {wins}/{losses}/{len(episodes) - wins - losses}) "
@@ -541,6 +685,12 @@ def train(args: argparse.Namespace) -> dict:
                     f"{t_up:.1f}s iter={rec['iter_s']:.1f}s",
                     file=sys.stderr, flush=True,
                 )
+            if past and args.past_every and it % args.past_every == 0:
+                path = os.path.join(league_dir, f"iter-{it:05d}.pt")
+                save_checkpoint(model, path, init_steps + total_updates, {"ppo": {"iter": it, "league": True}})
+                past.append(path)
+                if len(past) > args.past_keep:
+                    past.pop(1 if args.past_init else 0)
             if args.eval_every and (it % args.eval_every == 0 or it == args.iters):
                 if args.eval_battles > 0:
                     last_eval = do_eval(it); evals.append(last_eval)
@@ -561,7 +711,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--run", required=True, help="run name -> <ckpt-dir>/<run>/model.pt")
     p.add_argument("--iters", type=int, default=100)
     p.add_argument("--battles-per-iter", type=int, default=256)
-    p.add_argument("--opponents", default="greedy,random", help=f"comma list from {OPPONENTS}")
+    p.add_argument("--opponents", default="greedy,random",
+                   help=f"weighted pool from {OPPONENTS}, e.g. self:0.4,past:0.3,greedy:0.3")
+    p.add_argument("--matchups", default="random", help="random | balanced | mirror | mix, e.g. mirror:0.5,balanced:0.5")
+    p.add_argument("--shaping", type=float, default=0.0, help="potential-based HP-differential shaping coefficient")
+    p.add_argument("--past-every", type=int, default=25, help="iterations between frozen league snapshots")
+    p.add_argument("--past-keep", type=int, default=8, help="league snapshots kept in the pool")
+    p.add_argument("--past-init", action="store_true", help="always keep the init checkpoint in the league pool")
+    p.add_argument("--reset-feat-cols", default="", help="zero input columns for new feature slots, e.g. own:38-41,player:34-37")
+    p.add_argument("--eval-matchups", default="mirror", help="matchup mode for the periodic eval")
     p.add_argument("--workers", type=int, default=8, help="rollout processes (0 = in-process)")
     p.add_argument("--worker-threads", type=int, default=1, help="torch threads per rollout worker")
     p.add_argument("--threads", type=int, default=4, help="torch CPU threads in the main process")
