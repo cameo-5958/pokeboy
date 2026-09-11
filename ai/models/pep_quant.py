@@ -28,7 +28,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.pep import EV_DIM, N_ACTIONS, N_TOKEN_TYPES, PEP, TIERS, FEATURE_SCHEMA
+from models.pep import EV_DIM, N_ACTIONS, N_TOKEN_TYPES, PEP, FEATURE_SCHEMA
 from models.pep_int import (
     EV_SCALE,
     I8_MAX,
@@ -438,13 +438,6 @@ def _np(t: torch.Tensor) -> np.ndarray:
     return t.detach().cpu().double().numpy()
 
 
-def infer_tier(model: PEP) -> str:
-    for name, cfg in TIERS.items():
-        if cfg == model.cfg:
-            return name
-    return "custom"
-
-
 class _Builder:
     def __init__(self, model: PEP, stats: dict[str, tuple[float, float]]):
         self.m = model
@@ -614,7 +607,7 @@ class _Builder:
         t.update(make_luts())
 
 
-def build_quant_params(model: PEP, stats: dict[str, tuple[float, float]], tier: str | None = None) -> QuantParams:
+def build_quant_params(model: PEP, stats: dict[str, tuple[float, float]]) -> QuantParams:
     b = _Builder(model, stats)
     b.build()
     cfg = model.cfg
@@ -629,16 +622,16 @@ def build_quant_params(model: PEP, stats: dict[str, tuple[float, float]], tier: 
         "emb_matchup": cfg.emb_matchup,
         "emb_small": cfg.emb_small,
     }
-    return QuantParams(tier=tier or infer_tier(model), config=config, feature_schema=FEATURE_SCHEMA, tensors=b.t, scales=b.s)
+    return QuantParams(config=config, feature_schema=FEATURE_SCHEMA, tensors=b.t, scales=b.s)
 
 
-def quantize(model: PEP, calib, tier: str | None = None, pct: float = 99.99, batch_battles: int = 64) -> QuantParams:
+def quantize(model: PEP, calib, pct: float = 99.99, batch_battles: int = 64) -> QuantParams:
     """Post-training quantisation: calibrate activation scales on `calib`, then build QuantParams.
 
     calib: FeaturesDataset / list[Battle] (h carried through each battle) or a flat dict of
     decision arrays (N, ...) as produced by pep_data.decode_features_batch (+ optional "event").
     """
     stats = collect_stats(model, calib, pct=pct, batch_battles=batch_battles)
-    qp = build_quant_params(model, stats, tier)
+    qp = build_quant_params(model, stats)
     qp.stats = stats  # type: ignore[attr-defined]  (kept for reports; not exported)
     return qp

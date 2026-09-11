@@ -13,7 +13,7 @@ window after the first are re-run from the carried (detached) state without
 contributing to the loss.  One optimizer update per window.
 
 Usage:
-    cd ai && uv run python -m models.train_pep --data datasets/pep --run stone-v1 --tier stone --steps 20000
+    cd ai && uv run python -m models.train_pep --data datasets/pep --run stone-v1 --steps 20000
 """
 from __future__ import annotations
 
@@ -238,7 +238,7 @@ def train(args: argparse.Namespace) -> dict:
         file=sys.stderr,
     )
 
-    cfg = config_for(args.tier, **_overrides(args))
+    cfg = config_for(**_overrides(args))
     model = PEP(cfg).to(device)
     if args.init_ckpt:
         from models.pep import load_checkpoint
@@ -248,11 +248,11 @@ def train(args: argparse.Namespace) -> dict:
     if args.fake_quant:
         from models.pep_quant import FakeQuantPEP, load_calibration, quantize
         calib = load_calibration(args.data, rows=args.calib_rows, seed=args.seed)
-        qp = quantize(model, calib, tier=args.tier)
+        qp = quantize(model, calib)
         model = FakeQuantPEP(model, qp).to(device)
         print(f"[qat] fake-quant training with {len(qp.scales)} calibrated activation scales", flush=True)
     print(
-        f"[model] tier={args.tier} cfg={asdict(cfg)} params={model.num_params():,} "
+        f"[model] cfg={asdict(cfg)} params={model.num_params():,} "
         f"(excl matchup {model.num_params(False):,}) device={device}",
         file=sys.stderr,
     )
@@ -324,7 +324,7 @@ def train(args: argparse.Namespace) -> dict:
             f"top1={final_eval['top1']:.3f} n={final_eval['n']}",
             file=sys.stderr,
         )
-    save_checkpoint(getattr(model, "model", model), ckpt_path, step, {"tier": args.tier, "final_eval": final_eval, "fake_quant": bool(args.fake_quant)})
+    save_checkpoint(getattr(model, "model", model), ckpt_path, step, {"final_eval": final_eval, "fake_quant": bool(args.fake_quant)})
     log.close()
     print(f"[ckpt] {ckpt_path} (steps={step})", file=sys.stderr)
     return {"steps": step, "history": history, "evals": evals, "checkpoint": ckpt_path, "model": model}
@@ -338,7 +338,6 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Imitation-train the PEP on-device policy from parquet rows.")
     p.add_argument("--data", required=True, help="parquet file, glob, or directory (searched recursively)")
     p.add_argument("--run", required=True, help="run name -> <ckpt-dir>/<run>/model.pt")
-    p.add_argument("--tier", default="stone", choices=("pebble", "stone", "boulder"))
     for k in ("d", "layers", "heads", "ffn", "gru"):
         p.add_argument(f"--{k}", type=int, default=None, help=f"override PEPConfig.{k}")
     p.add_argument("--steps", type=int, default=20000, help="optimizer updates (one per TBPTT window)")

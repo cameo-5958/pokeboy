@@ -63,20 +63,15 @@ class PEPConfig:
             raise ValueError(f"d={self.d} must be divisible by heads={self.heads}")
 
 
-TIERS: dict[str, PEPConfig] = {
-    "pebble": PEPConfig(d=96, layers=2),
-    "stone": PEPConfig(),
-    "boulder": PEPConfig(d=192, layers=4),
-}
-
-
-def config_for(name_or_cfg: str | PEPConfig | dict, **overrides) -> PEPConfig:
-    if isinstance(name_or_cfg, PEPConfig):
-        cfg = name_or_cfg
-    elif isinstance(name_or_cfg, dict):
-        cfg = PEPConfig(**name_or_cfg)
+def config_for(base: PEPConfig | dict | None = None, **overrides) -> PEPConfig:
+    """The model configuration: `PEPConfig` defaults, optionally seeded from a checkpoint's
+    `config` dict, with explicit field overrides applied on top."""
+    if base is None:
+        cfg = PEPConfig()
+    elif isinstance(base, PEPConfig):
+        cfg = base
     else:
-        cfg = TIERS[name_or_cfg]
+        cfg = PEPConfig(**base)
     return replace(cfg, **overrides) if overrides else cfg
 
 
@@ -398,18 +393,17 @@ def load_checkpoint(path: str, map_location="cpu") -> tuple[PEP, dict]:
     blob = torch.load(path, map_location=map_location, weights_only=False)
     if blob.get("feature_schema") != FEATURE_SCHEMA:
         raise ValueError(f"checkpoint feature_schema {blob.get('feature_schema')!r} != {FEATURE_SCHEMA!r}")
+    # Older checkpoints carry a "tier" name alongside "config"; the config dict is authoritative.
     model = PEP(PEPConfig(**blob["config"]))
     model.load_state_dict(blob["model"])
     return model, blob
 
 
-def param_report() -> dict[str, dict[str, int]]:
-    return {
-        name: {"total": PEP(cfg).num_params(True), "excl_matchup": PEP(cfg).num_params(False)}
-        for name, cfg in TIERS.items()
-    }
+def param_report(cfg: PEPConfig | None = None) -> dict[str, int]:
+    m = PEP(cfg or PEPConfig())
+    return {"total": m.num_params(True), "excl_matchup": m.num_params(False)}
 
 
 if __name__ == "__main__":
-    for name, counts in param_report().items():
-        print(f"{name:8s} total={counts['total']:,}  excl_matchup={counts['excl_matchup']:,}")
+    counts = param_report()
+    print(f"{asdict(PEPConfig())} total={counts['total']:,}  excl_matchup={counts['excl_matchup']:,}")

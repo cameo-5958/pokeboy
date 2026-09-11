@@ -42,7 +42,7 @@ import torch
 from models.pep import EV_DIM, features_to_tensors, load_checkpoint
 from models.pep_data import Battle, collate_battles
 from models.pep_int import IntPEP
-from models.pep_quant import infer_tier, load_calibration, quantize
+from models.pep_quant import load_calibration, quantize
 from models.pep_weights import describe, load_weights, write_weights
 
 
@@ -143,16 +143,15 @@ def dump_vectors(model, ip: IntPEP, battles: list[Battle], out_dir: str, n_rows:
     return manifest
 
 
-def export(checkpoint: str, calib: str, out: str, vectors: str | None, calib_rows: int, vector_rows: int, tier: str | None,
+def export(checkpoint: str, calib: str, out: str, vectors: str | None, calib_rows: int, vector_rows: int,
            rom_crc32: int = 0) -> dict:
     t0 = time.time()
     model, blob = load_checkpoint(checkpoint)
     model.eval()
-    tier = tier or blob.get("tier") or infer_tier(model)
     battles = load_calibration(calib, calib_rows)
     n_dec = sum(len(b) for b in battles)
     print(f"[calib] battles={len(battles)} decisions={n_dec} ({time.time() - t0:.1f}s)", file=sys.stderr)
-    qp = quantize(model, battles, tier=tier)
+    qp = quantize(model, battles)
     qp.rom_crc32 = rom_crc32
     print(f"[quant] tensors={len(qp.tensors)} bytes={qp.nbytes():,} ({time.time() - t0:.1f}s)", file=sys.stderr)
     toc = write_weights(qp, out)
@@ -160,7 +159,7 @@ def export(checkpoint: str, calib: str, out: str, vectors: str | None, calib_row
     for k, v in qp.tensors.items():
         assert np.array_equal(qp2.tensors[k], v), k
     print(f"[export] {out} size={os.path.getsize(out):,} tensors={len(toc)}", file=sys.stderr)
-    report = {"checkpoint": checkpoint, "tier": tier, "out": out, "file_size": os.path.getsize(out), "tensors": toc,
+    report = {"checkpoint": checkpoint, "config": dict(qp.config), "out": out, "file_size": os.path.getsize(out), "tensors": toc,
               "stats": getattr(qp, "stats", {})}
     if vectors:
         ip = IntPEP(qp2)
@@ -179,7 +178,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--vectors", default=None, help="directory for reference vectors (*.npz)")
     p.add_argument("--calib-rows", type=int, default=4096)
     p.add_argument("--vector-rows", type=int, default=64)
-    p.add_argument("--tier", default=None)
     p.add_argument("--rom-crc32", type=lambda s: int(s, 0), default=0)
     p.add_argument("--describe", action="store_true", help="print the TOC after writing")
     return p
@@ -187,7 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    export(args.checkpoint, args.calib, args.out, args.vectors, args.calib_rows, args.vector_rows, args.tier, args.rom_crc32)
+    export(args.checkpoint, args.calib, args.out, args.vectors, args.calib_rows, args.vector_rows, args.rom_crc32)
     if args.describe:
         print(describe(args.out))
 

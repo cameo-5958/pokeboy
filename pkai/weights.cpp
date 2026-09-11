@@ -11,7 +11,7 @@ uint32_t rd32(const uint8_t* p) { return uint32_t(p[0]) | uint32_t(p[1]) << 8 | 
 
 void Weights::clear() {
     entries_.clear(); storage_.reset(); base_ = nullptr; size_ = 0; config_ = {};
-    std::memset(tier_, 0, sizeof tier_); std::memset(schema_, 0, sizeof schema_); rom_crc32_ = 0;
+    std::memset(model_id_, 0, sizeof model_id_); std::memset(schema_, 0, sizeof schema_); rom_crc32_ = 0;
 }
 
 bool Weights::load(const char* path) {
@@ -36,7 +36,7 @@ bool Weights::load_from_memory(const uint8_t* bytes, size_t len) {
     if (file_size != len) return fail("file size mismatch");
     if (toc_offset != HEADER_SIZE || n_tensors == 0 || n_tensors > 4096) return fail("bad table of contents");
     if (size_t(toc_offset) + size_t(n_tensors) * TOC_SIZE > data_offset || data_offset > len || data_offset % ALIGN) return fail("bad data offset");
-    std::memcpy(tier_, bytes + 8, 15);
+    std::memcpy(model_id_, bytes + 8, 15);
     config_.d = rd32(bytes + 24); config_.layers = rd32(bytes + 28); config_.heads = rd32(bytes + 32);
     config_.ffn = rd32(bytes + 36); config_.gru = rd32(bytes + 40);
     std::memcpy(schema_, bytes + 44, 31);
