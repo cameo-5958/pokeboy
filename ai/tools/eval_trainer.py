@@ -13,7 +13,7 @@ import random
 import time
 
 from sim import trainers
-from sim.matchups import parse_mix, sample_matchup
+from sim.matchups import parse_mix, parties_for, sample_matchup
 from sim.trainer_env import TrainerEnv
 from sim.trainer_search import TrainerTeacher
 
@@ -32,12 +32,13 @@ def run(policies: dict, parties, battles: int, seed: int, opponent_kind: str = "
     """`matchups_mode`: random (any two parties), balanced (strongest levels within 2), mirror (same party), or a mix."""
     rng = random.Random(seed)
     mix = parse_mix(matchups_mode)
+    parties, ou_range = parties_for(mix, parties, seed)
     matchups = []
     for _ in range(battles):
         if matchups_mode == "random":   # legacy sampling order, keeps older numbers reproducible
             t, o = rng.choice(parties), rng.choice(parties)
         else:
-            ti, oi, _mode = sample_matchup(rng, parties, mix)
+            ti, oi, _mode = sample_matchup(rng, parties, mix, ou_range=ou_range)
             t, o = parties[ti], parties[oi]
         matchups.append((t, o, rng.getrandbits(62), rng.getrandbits(30)))
     results = {}

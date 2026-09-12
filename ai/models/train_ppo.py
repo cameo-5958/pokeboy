@@ -40,7 +40,7 @@ import torch.nn.functional as F
 from models.pep import EV_DIM, N_ACTIONS, PEP, PEPConfig, features_to_tensors, load_checkpoint, save_checkpoint
 from models.pep_data import FEAT, FEATURES_BYTES, MAX_TOKENS, TOKEN_TYPES, decode_features, decode_features_batch
 from models.train_pep import DEFAULT_CKPT_DIR
-from sim.matchups import parse_mix, sample_matchup
+from sim.matchups import parse_mix, parties_for, sample_matchup
 from sim.player_seat import NetPlayer
 from sim.trainer_env import _u16
 
@@ -240,13 +240,13 @@ class _PastCache:
 _W: dict = {}
 
 
-def _worker_init(cfg: dict, threads: int) -> None:
+def _worker_init(cfg: dict, threads: int, matchups: str = "random", seed: int = 0) -> None:
     torch.set_num_threads(threads)
     from sim import trainers
 
     _W["model"] = PEP(PEPConfig(**cfg)).eval()
     _W["version"] = -1
-    _W["parties"] = trainers.load().parties
+    _W["parties"], _ = parties_for(parse_mix(matchups), trainers.load().parties, seed)
     _W["models"] = {"self": _W["model"], "load": _PastCache().load}
 
 
@@ -263,14 +263,14 @@ def _worker_task(job: tuple) -> list[Episode]:
 class RolloutPool:
     """Plays batches of matchups with the current policy, on `workers` CPU processes (0 = in-process)."""
 
-    def __init__(self, cfg: PEPConfig, workers: int, parties, threads: int = 1):
+    def __init__(self, cfg: PEPConfig, workers: int, parties, threads: int = 1, matchups: str = "random", seed: int = 0):
         self.workers = workers
         self.parties = parties
         self.version = 0
         self._local: PEP | None = None
         if workers > 0:
             ctx = mp.get_context("spawn")
-            self.pool = ctx.Pool(workers, initializer=_worker_init, initargs=(asdict(cfg), threads))
+            self.pool = ctx.Pool(workers, initializer=_worker_init, initargs=(asdict(cfg), threads, matchups, seed))
         else:
             self.pool = None
             self._local = PEP(cfg).eval()
@@ -297,12 +297,12 @@ class RolloutPool:
 
 
 def sample_matchups(rng: random.Random, parties, n: int, opponents: list[tuple[str, float]],
-                    mix: list[tuple[str, float]], past: list[str]) -> list[Matchup]:
+                    mix: list[tuple[str, float]], past: list[str], ou_range: tuple[int, int] | None = None) -> list[Matchup]:
     """`n` battles: matchup mode from `mix`, opponent from the weighted pool (`past` picks a snapshot path)."""
     names = [o for o, _ in opponents]; weights = [w for _, w in opponents]
     out: list[Matchup] = []
     for _ in range(n):
-        t, o, mode = sample_matchup(rng, parties, mix)
+        t, o, mode = sample_matchup(rng, parties, mix, ou_range=ou_range)
         opp = rng.choices(names, weights)[0]
         if opp == "past":
             opp = f"past:{rng.choice(past)}" if past else "self"
@@ -580,7 +580,7 @@ def train(args: argparse.Namespace) -> dict:
 
     from sim import trainers
 
-    parties = trainers.load().parties
+    parties, ou_range = parties_for(mix, trainers.load().parties, args.seed)
     model, blob = load_checkpoint(args.init_ckpt, map_location="cpu")
     init_steps = int(blob.get("steps", 0))
     if args.reset_feat_cols:
@@ -602,7 +602,7 @@ def train(args: argparse.Namespace) -> dict:
     os.makedirs(run_dir, exist_ok=True)
     ckpt_path = os.path.join(run_dir, "model.pt")
     log = open(os.path.join(run_dir, "log.jsonl"), "a")
-    pool = RolloutPool(model.cfg, args.workers, parties, threads=args.worker_threads)
+    pool = RolloutPool(model.cfg, args.workers, parties, threads=args.worker_threads, matchups=args.matchups, seed=args.seed)
     league_dir = os.path.join(run_dir, "league")
     past: list[str] = []
     if any(o == "past" for o, _ in opponents):
@@ -613,8 +613,8 @@ def train(args: argparse.Namespace) -> dict:
 
     def do_eval(it: int) -> dict:
         t0 = time.time()
-        ev = evaluate(model, parties, args.eval_battles, args.eval_seed, temperature=args.eval_temperature,
-                      matchups_mode=args.eval_matchups)
+        ev = evaluate(model, parties[: ou_range[0]] if ou_range else parties, args.eval_battles, args.eval_seed,
+                      temperature=args.eval_temperature, matchups_mode=args.eval_matchups)
         ev = {"iter": it, "win_rate": ev["win_rate"], "wins": ev["wins"], "losses": ev["losses"], "ties": ev["ties"],
               "seconds": time.time() - t0}
         print(
@@ -640,7 +640,7 @@ def train(args: argparse.Namespace) -> dict:
     try:
         for it in range(1, args.iters + 1):
             t_it = time.time()
-            matchups = sample_matchups(rng, parties, args.battles_per_iter, opponents, mix, past)
+            matchups = sample_matchups(rng, parties, args.battles_per_iter, opponents, mix, past, ou_range)
             episodes = pool.play(model, matchups, temperature=args.temperature, max_decisions=args.max_decisions,
                                  shaping=args.shaping)
             t_roll = time.time() - t_it
