@@ -70,8 +70,12 @@ class TrainerEnv:
         teams[1 - self.trainer_side] = self.player_specs
         self.b = Battle(teams[0], teams[1], self.seed)
         self.me, self.opp = self.trainer_side, 1 - self.trainer_side
-        self.item, self.item_divisor, self.item_status = self.br.class_item(self.trainer_class)
-        self.count_max = self.br.class_item_count(self.trainer_class)
+        if self.trainer_class == 0:   # no trainer class: no item candidates (OU / player-like seat)
+            self.item, self.item_divisor, self.item_status = None, 0, 0
+            self.count_max = 0
+        else:
+            self.item, self.item_divisor, self.item_status = self.br.class_item(self.trainer_class)
+            self.count_max = self.br.class_item_count(self.trainer_class)
         self.count = self.count_max
         self.rng = random.Random(self.rng_seed)
         self.round = 0
