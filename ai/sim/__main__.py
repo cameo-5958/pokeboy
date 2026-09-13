@@ -60,9 +60,17 @@ def make_agent(name: str, seed: int):
         depth = int(name.partition(":")[2] or 1)
         return SearchTeacher(depth=depth, seed=seed)
     if name.startswith("model:"):
-        from models.agent import ModelAgent  # keep sim torch-free for other seats
-
-        return ModelAgent(name.removeprefix("model:"), seed=seed)
+        # models.agent.ModelAgent is the pre-PEP architecture (FieldValueEncoder/TIERS) and
+        # cannot load any checkpoint written since the tiers were removed in 2d134c1. The
+        # seats here take a raw engine state, while PEP policies take a TrainerEnv, so there
+        # is no drop-in replacement -- use the TrainerEnv-native harness instead.
+        raise SystemExit(
+            "`model:` is not supported by `sim battle` (pre-PEP loader, retired).\n"
+            "For a PEP checkpoint vs a fixed opponent:\n"
+            "  python -m tools.eval_trainer --checkpoint <a.pt> --opponent search\n"
+            "For checkpoint vs checkpoint:\n"
+            "  python -m tools.eval_trainer --checkpoint <a.pt> --opponent net:<b.pt>"
+        )
     raise SystemExit(f"unknown agent {name!r}")
 
 
