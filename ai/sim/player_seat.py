@@ -93,3 +93,37 @@ class NetPlayer:
         self._last_class = 0 if a < 4 else 1
         c = v._engine_choice(a)
         return v.auto_choice() if c is None else c
+
+
+class SearchPlayer:
+    """Player-seat policy `choose(env) -> engine choice` backed by the depth-limited search
+    teacher, played on the player's side via `player_view`.
+
+    The `greedy` opponent is a 1-ply engine choice; this is the same search that produced the
+    imitation corpus, so a league trained against it faces a materially stronger seat. Cost
+    scales with depth*rolls: depth 2 is roughly 5x a greedy rollout."""
+
+    def __init__(self, depth: int = 2, rolls: int = 2, topk: int = 3, alpha: float = 0.3,
+                 seed: int = 0):
+        from sim.trainer_search import TrainerTeacher
+
+        self.teacher = TrainerTeacher(depth=depth, rolls=rolls, topk=topk, alpha=alpha, seed=seed)
+        self._battle_key = None
+        self._view: TrainerEnv | None = None
+
+    def _sync(self, env: TrainerEnv) -> TrainerEnv:
+        key = env.b.battle_id
+        if key != self._battle_key or self._view is None:
+            self._battle_key = key
+            self._view = player_view(env)
+        v = self._view
+        v.round = env.round
+        v._observe_player()
+        return v
+
+    def choose(self, env: TrainerEnv) -> int:
+        v = self._sync(env)
+        if v.request_kind() is None:
+            return v.auto_choice()
+        c = v._engine_choice(self.teacher.choose(v))
+        return v.auto_choice() if c is None else c

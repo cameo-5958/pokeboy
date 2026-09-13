@@ -27,6 +27,32 @@ def play(env: TrainerEnv, trainer_policy, opponent, max_decisions: int = 300) ->
     return env.winner_is_trainer()
 
 
+def _make_player_seat(kind: str, opp_teacher, opp_rng, seed: int):
+    """Player-seat opponent for evaluation.
+
+    greedy        1-ply engine choice (the historical default; weak)
+    random        uniform legal
+    search[:d]    the depth-limited search teacher on the player side (default depth 2)
+    net:<ckpt>    a PEP checkpoint on the player side -- this is how you run
+                  checkpoint-vs-checkpoint head-to-heads
+    """
+    if kind == "random":
+        return lambda env: opp_rng.choice(env.player_choices())
+    if kind == "greedy":
+        return lambda env: opp_teacher._greedy_player(env)
+    if kind == "search" or kind.startswith("search:"):
+        from sim.player_seat import SearchPlayer
+
+        return SearchPlayer(depth=int(kind.partition(":")[2] or 2), seed=seed + 13).choose
+    if kind.startswith("net:"):
+        from models.pep import load_checkpoint
+        from sim.player_seat import NetPlayer
+
+        model, _ = load_checkpoint(kind[4:], map_location="cpu")
+        return NetPlayer(model.eval(), seed=seed + 13, temperature=0.5).choose
+    raise ValueError(f"unknown opponent {kind!r}")
+
+
 def run(policies: dict, parties, battles: int, seed: int, opponent_kind: str = "greedy",
         matchups_mode: str = "random") -> dict[str, dict]:
     """`matchups_mode`: random (any two parties), balanced (strongest levels within 2), mirror (same party), or a mix."""
@@ -46,7 +72,7 @@ def run(policies: dict, parties, battles: int, seed: int, opponent_kind: str = "
         wins = losses = ties = 0; t0 = time.time()
         opp_teacher = TrainerTeacher(depth=1, rolls=1, seed=seed + 7)
         opp_rng = random.Random(seed + 11)
-        opponent = (lambda env: opp_teacher._greedy_player(env)) if opponent_kind == "greedy" else (lambda env: opp_rng.choice(env.player_choices()))
+        opponent = _make_player_seat(opponent_kind, opp_teacher, opp_rng, seed)
         for t, o, bseed, rseed in matchups:
             env = TrainerEnv(t.to_specs(), t.class_id, o.to_specs(), seed=bseed, rng_seed=rseed)
             if hasattr(policy, "reset"):
@@ -63,7 +89,8 @@ def main(argv=None) -> int:
     ap.add_argument("--battles", type=int, default=200)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--temperature", type=float, default=0.5)
-    ap.add_argument("--opponent", default="greedy", choices=["greedy", "random"])
+    ap.add_argument("--opponent", default="greedy",
+                    help="greedy | random | search[:depth] | net:<ckpt>")
     ap.add_argument("--matchups", default="random", help="random | balanced | mirror | mix such as mirror:0.5,balanced:0.5")
     ap.add_argument("--no-teacher", action="store_true")
     ap.add_argument("--int-weights", default=None, help="pkai.weights: add an `int` policy run through the C++ integer model")

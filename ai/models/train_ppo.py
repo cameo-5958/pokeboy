@@ -44,7 +44,7 @@ from sim.matchups import parse_mix, parties_for, sample_matchup
 from sim.player_seat import NetPlayer
 from sim.trainer_env import _u16
 
-OPPONENTS = ("greedy", "random", "self", "past")
+OPPONENTS = ("greedy", "random", "search", "self", "past")
 
 
 # --------------------------------------------------------------------------- opponents
@@ -86,6 +86,11 @@ def make_opponent(name: str, seed: int, models: dict | None = None, temperature:
     if name == "random":
         rng = random.Random(seed)
         return lambda env: rng.choice(env.player_choices())
+    if name == "search" or name.startswith("search:"):
+        from sim.player_seat import SearchPlayer
+
+        depth = int(name.partition(":")[2] or 2)
+        return SearchPlayer(depth=depth, seed=seed).choose
     raise ValueError(f"unknown opponent {name!r}; choose from {OPPONENTS}")
 
 
