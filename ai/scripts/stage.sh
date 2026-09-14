@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Stage a finalised version as the shipping model: checkpoints/pep/current/{model-fp32.pt,model-qat.pt,pkai.weights}.
+# Stage a finalised version as the shipping model:
+#   checkpoints/pep/current/{model-fp32.pt,model-qat.pt,pkai.weights,vectors/bin}
+# The reference vectors travel with the weights so pkai_model_tests can verify the shipped
+# model bit-for-bit straight out of the staged directory (that is PKAI_CHECKPOINT's default).
 # The previous contents move to checkpoints/pep/current-<prev> when a name is given.
 # usage: scripts/stage.sh v3 [prev-name]        (expects checkpoints/pep/v3/model.pt and v3-sdq/{model.pt,pkai.weights})
 set -euo pipefail
@@ -18,4 +21,7 @@ mkdir -p "$CUR"
 cp "$CKPT_ROOT/$V/model.pt" "$CUR/model-fp32.pt"
 cp "$CKPT_ROOT/$V-sdq/model.pt" "$CUR/model-qat.pt"
 cp "$CKPT_ROOT/$V-sdq/pkai.weights" "$CUR/pkai.weights"
+if [ -d "$CKPT_ROOT/$V-sdq/vectors/bin" ]; then
+  rm -rf "$CUR/vectors"; mkdir -p "$CUR/vectors"; cp -r "$CKPT_ROOT/$V-sdq/vectors/bin" "$CUR/vectors/bin"
+fi
 ls -l "$CUR"; echo "staged $V as current${PREV:+ (previous kept as current-$PREV)}"

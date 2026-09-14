@@ -1,7 +1,7 @@
 """Integer PEP reference (models/pep_int), PTQ + fake-quant (models/pep_quant), pkai.weights (models/pep_weights).
 
-CPU only; a trained checkpoint is reused when checkpoints/pep/stone-v1/model.pt exists,
-otherwise a small model is trained for a few hundred steps on real rows.
+CPU only; the staged checkpoint (checkpoints/pep/current, or $PEP_INT_TEST_CKPT) is reused
+when present, otherwise a small model is trained for a few hundred steps on real rows.
 """
 from __future__ import annotations
 
@@ -35,13 +35,23 @@ from models.pep_weights import ALIGN, TOC_SIZE, load_weights, read_header, read_
 torch.set_num_threads(2)
 
 AI_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(AI_DIR, "datasets", "trainer", "v1")
-STONE = os.environ.get("PEP_INT_TEST_CKPT", os.path.join(AI_DIR, "checkpoints", "pep", "stone-v1", "model.pt"))
+def _first_dir(*candidates: str) -> str:
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return candidates[-1]
+
+
+DATA = _first_dir(os.path.join(AI_DIR, "datasets", "trainer", "imitation", "v1"),
+                  os.path.join(AI_DIR, "datasets", "trainer", "league-d1"))
+STONE = os.environ.get("PEP_INT_TEST_CKPT",
+                       _first_dir(os.path.join(AI_DIR, "checkpoints", "pep", "current", "model-fp32.pt"),
+                                  os.path.join(AI_DIR, "checkpoints", "pep", "archive", "stone-v1", "model.pt")))
 
 
 def _first_parquet() -> str:
     if not os.path.isdir(DATA):
-        pytest.skip("datasets/trainer/v1 missing")
+        pytest.skip(f"{DATA} missing")
     files = sorted(f for f in os.listdir(DATA) if f.endswith(".parquet"))
     if not files:
         pytest.skip("no parquet rows")
