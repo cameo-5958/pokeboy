@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import random
 
-MODES = ("random", "balanced", "mirror", "ou")
+MODES = ("random", "balanced", "mirror", "ou", "oucomp")
 
 
 def max_level(party) -> int:
@@ -62,7 +62,7 @@ def load_ou_parties(seed: int = 0, shuffle_leads: bool = True) -> list[OUParty]:
     import pickle
     from sim.teams import STANDARD_SETS
     from sim.teamsets import TEAMS_ROOT, TeamSampler
-    cache = TEAMS_ROOT / f"ou_parties-s{seed}-{int(shuffle_leads)}.pkl"
+    cache = TEAMS_ROOT / f"ou_parties-v2-s{seed}-{int(shuffle_leads)}.pkl"
     if cache.exists():
         with open(cache, "rb") as fh:
             return pickle.load(fh)
@@ -70,7 +70,10 @@ def load_ou_parties(seed: int = 0, shuffle_leads: bool = True) -> list[OUParty]:
     out: list[OUParty] = []
     pools = dict(TeamSampler().pools)
     pools["standard"] = [rng.sample(STANDARD_SETS, 6) for _ in range(40)]
-    for name, teams in pools.items():
+    # curated pools first, replay-derived teams last, so `oucomp` is a prefix of the OU range
+    order = sorted(pools, key=lambda k: k == "replays")
+    for name in order:
+        teams = pools[name]
         for i, team in enumerate(teams):
             out.append(OUParty(team, i, name))
             if shuffle_leads:
@@ -80,14 +83,16 @@ def load_ou_parties(seed: int = 0, shuffle_leads: bool = True) -> list[OUParty]:
     return out
 
 
-def sample_pair(rng: random.Random, parties, mode: str, gap: int = 2, ou_range: tuple[int, int] | None = None) -> tuple[int, int]:
-    """(trainer party index, player party index) for one battle. `ou_range` = [start, end) of OU parties
-    appended to the ROM parties; `ou` draws both sides from it, the other modes stay inside the ROM range."""
+def sample_pair(rng: random.Random, parties, mode: str, gap: int = 2, ou_range: tuple[int, ...] | None = None) -> tuple[int, int]:
+    """(trainer party index, player party index) for one battle. `ou_range` = (start, end, curated_end) of the
+    OU parties appended to the ROM parties: `ou` draws both sides from [start, end), `oucomp` from the curated
+    prefix [start, curated_end) (competitive / variety / standard sets, the pools external evals use); the
+    other modes stay inside the ROM range."""
     n = len(parties) if ou_range is None else ou_range[0]
-    if mode == "ou":
+    if mode in ("ou", "oucomp"):
         if ou_range is None:
-            raise ValueError("ou matchups need ou_range")
-        a, b = ou_range
+            raise ValueError(f"{mode} matchups need ou_range")
+        a, b = ou_range[0], ou_range[2] if mode == "oucomp" else ou_range[1]
         return rng.randrange(a, b), rng.randrange(a, b)
     t = rng.randrange(n)
     if mode == "mirror":
@@ -105,16 +110,18 @@ def sample_pair(rng: random.Random, parties, mode: str, gap: int = 2, ou_range: 
 
 
 def sample_matchup(rng: random.Random, parties, mix: list[tuple[str, float]], gap: int = 2,
-                   ou_range: tuple[int, int] | None = None) -> tuple[int, int, str]:
+                   ou_range: tuple[int, ...] | None = None) -> tuple[int, int, str]:
     mode = sample_mode(rng, mix)
     t, o = sample_pair(rng, parties, mode, gap, ou_range)
     return t, o, mode
 
 
 def parties_for(mix: list[tuple[str, float]], rom_parties, seed: int = 0):
-    """(parties, ou_range): ROM parties plus the OU pool when the mix uses `ou`."""
+    """(parties, ou_range): ROM parties plus the OU pool when the mix uses `ou` or `oucomp`."""
     parties = list(rom_parties)
-    if any(m == "ou" for m, _ in mix):
+    if any(m in ("ou", "oucomp") for m, _ in mix):
         ou = load_ou_parties(seed)
-        return parties + ou, (len(rom_parties), len(rom_parties) + len(ou))
+        n_curated = sum(1 for p in ou if p.pool != "replays")
+        a = len(rom_parties)
+        return parties + ou, (a, a + len(ou), a + n_curated)
     return parties, None
