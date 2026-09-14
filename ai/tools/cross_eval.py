@@ -3,8 +3,9 @@
     python -m tools.cross_eval --battles 600 --seed 7 --matchups mirror,balanced --workers 14 --out logs/cross.md
 
 Rows (trainer seat): random, native (the cartridge's own AI), maxdmg, teacher_d1, teacher_d2,
-ppo_v1, ppo_v4, ppo_v4_int. Columns (player seat): random, greedy (1-ply engine leaf value),
-teacher_d1 (search through the swapped view), ppo_v4 (the network in the player seat).
+pep_v0, pep_v1, pep_v1_int, pep_v3, pep_v3_int (staged PEP versions, *_int = the exported int8
+weights through the C++ model). Columns (player seat): random, greedy (1-ply engine leaf value),
+teacher_d1 (search through the swapped view), pep_v1 / pep_v3 (the network in the player seat).
 Every cell plays the same matchup list (same parties, seeds) so numbers are comparable.
 """
 from __future__ import annotations
@@ -15,13 +16,11 @@ import random
 import sys
 import time
 
-ROWS = ("random", "native", "maxdmg", "teacher_d1", "teacher_d2", "ppo_v1", "ppo_v4", "ppo_v4_int", "ppo_v6", "ppo_v6_int")
-COLS = ("random", "greedy", "teacher_d1", "ppo_v4", "ppo_v6")
-CKPT_V1 = "checkpoints/pep/current-ppo-v1/model-fp32.pt"
-CKPT_V4 = "checkpoints/pep/current-ppo-v4/model-fp32.pt"
-WEIGHTS_V4 = "checkpoints/pep/current-ppo-v4/pkai.weights"
-CKPT_V6 = "checkpoints/pep/current/model-fp32.pt"
-WEIGHTS_V6 = "checkpoints/pep/current/pkai.weights"
+ROWS = ("random", "native", "maxdmg", "teacher_d1", "teacher_d2", "pep_v0", "pep_v1", "pep_v1_int", "pep_v3", "pep_v3_int")
+COLS = ("random", "greedy", "teacher_d1", "pep_v1", "pep_v3")
+# PEP versions: v0 = pre-league PPO baseline, v1 = first league round (ROM matchups),
+# v2 = v1 continued (tied, not staged), v3 = OU-mix league round = current shipping model.
+STAGED = {"pep_v0": "checkpoints/pep/v0", "pep_v1": "checkpoints/pep/current-v1", "pep_v3": "checkpoints/pep/current"}
 
 # token indices in pkai::Features: field 0, own 1-6, player 7-12, own moves 13-16
 _OWN, _MOVES = 1, 13
@@ -51,13 +50,12 @@ def make_row(name: str, seed: int):
         return TrainerTeacher(depth=1, rolls=2, seed=seed)
     if name == "teacher_d2":
         return TrainerTeacher(depth=2, rolls=2, seed=seed)
-    if name in ("ppo_v1", "ppo_v4", "ppo_v6"):
+    if name in STAGED:
         from serve.pep_agent import PEPAgent
-        ckpt = {"ppo_v1": CKPT_V1, "ppo_v4": CKPT_V4, "ppo_v6": CKPT_V6}[name]
-        return PEPAgent(ckpt, temperature=0.5, seed=seed)
-    if name in ("ppo_v4_int", "ppo_v6_int"):
+        return PEPAgent(f"{STAGED[name]}/model-fp32.pt", temperature=0.5, seed=seed)
+    if name.endswith("_int") and name[:-4] in STAGED:
         from serve.int_agent import IntAgent
-        return IntAgent(WEIGHTS_V4 if name == "ppo_v4_int" else WEIGHTS_V6, seed=seed)
+        return IntAgent(f"{STAGED[name[:-4]]}/pkai.weights", seed=seed)
     raise ValueError(name)
 
 
@@ -94,10 +92,10 @@ def make_col(name: str, seed: int):
         return lambda env: t._greedy_player(env)
     if name == "teacher_d1":
         return _ViewOpponent(TrainerTeacher(depth=1, rolls=2, seed=seed))
-    if name in ("ppo_v4", "ppo_v6"):
+    if name in STAGED:
         from models.pep import load_checkpoint
         from sim.player_seat import NetPlayer
-        model, _ = load_checkpoint(CKPT_V4 if name == "ppo_v4" else CKPT_V6, map_location="cpu")
+        model, _ = load_checkpoint(f"{STAGED[name]}/model-fp32.pt", map_location="cpu")
         return NetPlayer(model.eval(), seed=seed, temperature=0.5).choose
     raise ValueError(name)
 
@@ -145,7 +143,7 @@ def main(argv=None) -> int:
     rows = args.rows.split(","); cols = args.cols.split(","); modes = args.matchups.split(",")
     jobs = [(r, c, m, args.battles, args.seed) for m in modes for r in rows for c in cols]
     # slowest first
-    jobs.sort(key=lambda j: (j[0] != "teacher_d2", j[1] != "ppo_v4", j[1] != "teacher_d1"))
+    jobs.sort(key=lambda j: (j[0] != "teacher_d2", j[1] not in STAGED, j[1] != "teacher_d1"))
     results = {}
     with mp.get_context("spawn").Pool(args.workers) as pool:
         for row, col, mode, w, l, t, secs in pool.imap_unordered(run_cell, jobs):

@@ -19,7 +19,7 @@ is exact; padded rows are masked.
 
 Usage:
     cd ai && uv run python -m models.train_ppo --init-ckpt checkpoints/pep/v3/model.pt \
-        --run ppo-v1 --iters 200 --battles-per-iter 256 --opponents greedy,random --device cuda
+        --run v1 --iters 200 --battles-per-iter 256 --opponents greedy,random --device cuda
 """
 from __future__ import annotations
 
