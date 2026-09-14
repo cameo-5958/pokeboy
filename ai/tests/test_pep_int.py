@@ -1,7 +1,9 @@
 """Integer PEP reference (models/pep_int), PTQ + fake-quant (models/pep_quant), pkai.weights (models/pep_weights).
 
-CPU only; the staged checkpoint (checkpoints/pep/current, or $PEP_INT_TEST_CKPT) is reused
-when present, otherwise a small model is trained for a few hundred steps on real rows.
+CPU only; the imitation checkpoint (checkpoints/pep/archive/stone-v1, or $PEP_INT_TEST_CKPT)
+is reused when present, otherwise a small model is trained for a few hundred steps on real
+rows. Do not point this at a PPO policy: the fake-quant comparison is calibrated for a
+checkpoint whose activations still match the imitation corpus these rows come from.
 """
 from __future__ import annotations
 
@@ -45,8 +47,7 @@ def _first_dir(*candidates: str) -> str:
 DATA = _first_dir(os.path.join(AI_DIR, "datasets", "trainer", "imitation", "v1"),
                   os.path.join(AI_DIR, "datasets", "trainer", "league-d1"))
 STONE = os.environ.get("PEP_INT_TEST_CKPT",
-                       _first_dir(os.path.join(AI_DIR, "checkpoints", "pep", "current", "model-fp32.pt"),
-                                  os.path.join(AI_DIR, "checkpoints", "pep", "archive", "stone-v1", "model.pt")))
+                       os.path.join(AI_DIR, "checkpoints", "pep", "archive", "stone-v1", "model.pt"))
 
 
 def _first_parquet() -> str:
