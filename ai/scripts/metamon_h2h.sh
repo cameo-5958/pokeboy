@@ -7,9 +7,10 @@
 set -u
 source "$(dirname "$0")/env.sh"; cd "$AI_ROOT"
 CK=${1:-$CKPT_ROOT/current/model-fp32.pt}; AGENTS=${2:-"SmallRL MediumRL SyntheticRLV2"}
-N=${BATTLES:-100}; T=${TEMP:-0.5}; STAMP=${STAMP:-$(date +%m%d%H%M)}; mkdir -p logs
+# Showdown usernames are limited to 18 characters: 1 + 6-char stamp + 5-char agent tag.
+N=${BATTLES:-100}; T=${TEMP:-0.5}; STAMP=${STAMP:-$(date +%H%M%S)}; mkdir -p logs
 for A in $AGENTS; do
-  U="Pep$STAMP$A"; M="Meta$STAMP$A"
+  U="P$STAMP${A:0:5}"; M="M$STAMP${A:0:5}"
   uv run python -m tools.showdown_eval --checkpoint "$CK" --accept "$M" --username "$U" --battles "$N" \
     --concurrency 1 --temperature "$T" --team-dir "$METAMON_TEAM_DIR" > "logs/h2h-$STAMP-$A-pep.log" 2>&1 &
   ACC=$!; sleep 30
