@@ -5,7 +5,15 @@
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 V=$1; PREV=${2:-}; CUR=$CKPT_ROOT/current
-if [ -n "$PREV" ] && [ -d "$CUR" ]; then rm -rf "$CKPT_ROOT/current-$PREV"; cp -r "$CUR" "$CKPT_ROOT/current-$PREV"; fi
+# Already staged: do nothing. Re-running must never overwrite the kept previous version
+# with a copy of the one that is live (the backup would then be the same model twice).
+if cmp -s "$CUR/pkai.weights" "$CKPT_ROOT/$V-sdq/pkai.weights"; then
+  echo "$V is already staged as current; nothing to do"; exit 0
+fi
+if [ -n "$PREV" ] && [ -d "$CUR" ]; then
+  [ -e "$CKPT_ROOT/current-$PREV" ] && { echo "refusing to overwrite $CKPT_ROOT/current-$PREV" >&2; exit 1; }
+  cp -r "$CUR" "$CKPT_ROOT/current-$PREV"
+fi
 mkdir -p "$CUR"
 cp "$CKPT_ROOT/$V/model.pt" "$CUR/model-fp32.pt"
 cp "$CKPT_ROOT/$V-sdq/model.pt" "$CUR/model-qat.pt"
