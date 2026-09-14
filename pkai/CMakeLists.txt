@@ -36,10 +36,11 @@ if(NOT EMSCRIPTEN)
     target_link_libraries(pkai_c PRIVATE pkai)
 endif()
 
-# Reference vectors for pkai_model_tests (gitignored; regenerate after retraining):
-#   cd ai && uv run python -m tools.dump_vectors checkpoints/pep/stone-v1/vectors checkpoints/pep/stone-v1/vectors/bin
+# Reference vectors for pkai_model_tests (gitignored; ai/scripts/finalize.sh writes them per
+# run and ai/scripts/stage.sh copies them next to the staged weights):
+#   cd ai && uv run python -m tools.dump_vectors checkpoints/pep/current/vectors checkpoints/pep/current/vectors/bin
 add_custom_target(pkai_vectors
-    COMMAND uv run python -m tools.dump_vectors checkpoints/pep/stone-v1/vectors checkpoints/pep/stone-v1/vectors/bin
+    COMMAND uv run python -m tools.dump_vectors checkpoints/pep/current/vectors checkpoints/pep/current/vectors/bin
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../ai
     COMMENT "Flatten the PEP reference vectors for pkai_model_tests")
 
