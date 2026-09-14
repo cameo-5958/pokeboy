@@ -4,10 +4,14 @@
 # usage: scripts/reproduce.sh [stage ...]      stages: data imitation v0 league-data v1 v2 v3 finalize stage
 #   env: DEVICE=cuda WORKERS=12
 #
-# data       depth-1 (20k battles) and depth-2 (10k) search-teacher corpora on the ROM trainer parties
-# imitation  PEP imitation of the depth-1 teacher (200k steps), continued on both corpora (150k)
+# data       search-teacher corpora on the ROM trainer parties, into datasets/trainer/imitation:
+#            v1 = depth 1, 20k battles; v2-d2 = depth 2, 10k; v3/v4-d2-s* = depth 2, 15k each.
+#            Generated in parallel during the original run; trained on as one corpus here.
+# imitation  PEP imitation of the search teacher (200k steps, then 150k continued)
 # v0         PPO vs greedy/random from the imitation policy, then finalize -> v0 (pre-league baseline)
-# league-data 2,400-battle depth-1 corpus with the league featurizer (QAT distillation/calibration data)
+# league-data 2,400-battle depth-1 corpus regenerated with the league featurizer (the imitation
+#            corpora predate the bench damage features, which is why v1 resets those columns);
+#            used only as distillation and calibration data for the quantised exports
 # v1         league round on ROM matchups (mirror/balanced), 2,000 iters, bench damage features reset
 # v2         v1 continued for another 2,000 iters (tied with v1 on mirror; kept for the record, not staged)
 # v3         league round from v1 on OU-mix matchups (Metamon team pools), 1,500 iters  -> shipping model
@@ -15,7 +19,7 @@
 # stage      copy v3 into checkpoints/pep/current (scripts/stage.sh)
 set -euo pipefail
 source "$(dirname "$0")/env.sh"; cd "$AI_ROOT"
-D=datasets/trainer; RAW=datasets/raw; R=$CKPT_ROOT; export DEVICE=${DEVICE:-cuda} WORKERS=${WORKERS:-12}
+D=datasets/trainer; I=$D/imitation; RAW=datasets/raw; R=$CKPT_ROOT; export DEVICE=${DEVICE:-cuda} WORKERS=${WORKERS:-12}
 STAGES=${*:-"data imitation v0 league-data v1 v2 v3 finalize stage"}
 have() { [ -e "$1" ]; }
 log() { echo "[$(date +%H:%M:%S)] $*"; }
@@ -24,14 +28,20 @@ for S in $STAGES; do case $S in
 data)
   # OU team corpora for the `ou` matchup mode (v3); no-op once pulled
   have $RAW/metamon/jakegrigsby__metamon-teams || uv run python -m data pull --source metamon --only teams
-  have $D/v1 || uv run python -m sim.generate_trainer --battles 20000 --out $D/v1 --seed 100 --depth 1 --rolls 2 --rows-per-part 50000
-  have $D/v2-d2 || uv run python -m sim.generate_trainer --battles 10000 --out $D/v2-d2 --seed 200 --depth 2 --rolls 2 --rows-per-part 50000
+  have $I/v1 || uv run python -m sim.generate_trainer --battles 20000 --out $I/v1 --seed 100 --depth 1 --rolls 2 --rows-per-part 50000
+  have $I/v2-d2 || uv run python -m sim.generate_trainer --battles 10000 --out $I/v2-d2 --seed 200 --depth 2 --rolls 2 --rows-per-part 50000
+  for batch in "101 102 103 104" "105 106 107 108"; do   # four generators at a time
+    for s in $batch; do
+      n=v3; [ "$s" -ge 105 ] && n=v4
+      have "$I/$n-d2-s$s" || uv run python -m sim.generate_trainer --battles 15000 --depth 2 --rolls 2 --seed "$s" --out "$I/$n-d2-s$s" &
+    done; wait
+  done
   ;;
 imitation)
   mkdir -p $R/archive
-  have $R/archive/imit-v2/model.pt || uv run python -m models.train_pep --data "$D/v[12]*/*.parquet" --run archive/imit-v2 \
+  have $R/archive/imit-v2/model.pt || uv run python -m models.train_pep --data $I --run archive/imit-v2 \
     --steps 200000 --batch 32 --eval-every 1000 --save-every 2000 --device "$DEVICE"
-  have $R/archive/imit-v3/model.pt || uv run python -m models.train_pep --data "$D/v[12]*/*.parquet" --run archive/imit-v3 \
+  have $R/archive/imit-v3/model.pt || uv run python -m models.train_pep --data $I --run archive/imit-v3 \
     --init-ckpt $R/archive/imit-v2/step-0064000.pt --steps 150000 --batch 32 --eval-every 1000 --save-every 2000 --device "$DEVICE"
   ;;
 v0)
@@ -45,9 +55,9 @@ v0)
   ;;
 league-data)
   if ! have $D/league-d1; then
-    for s in 201 202 203 204; do uv run python -m sim.generate_trainer --battles 600 --depth 1 --seed $s --out $D/league-d1-s$s & done; wait
+    for s in 201 202 203 204; do uv run python -m sim.generate_trainer --battles 600 --depth 1 --seed $s --out $D/archive/league-d1-s$s & done; wait
     mkdir -p $D/league-d1; i=0
-    for s in 201 202 203 204; do cp $D/league-d1-s$s/part-00000.parquet $D/league-d1/part-0000$i.parquet; i=$((i+1)); done
+    for s in 201 202 203 204; do cp $D/archive/league-d1-s$s/part-00000.parquet $D/league-d1/part-0000$i.parquet; i=$((i+1)); done
   fi
   ;;
 v1)
