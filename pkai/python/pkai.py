@@ -48,14 +48,14 @@ _STRUCTS = {"OwnMon": OwnMon, "PublicMon": PublicMon, "Observation": Observation
 
 
 def load(path: str | os.PathLike | None = None) -> C.CDLL:
-    """Load libpkai_c; default search: $PKAI_LIB, then build dirs next to the repo."""
+    """Load libpkai_c; default search: $PKAI_LIB, then build dirs in the repo or under ai/."""
     candidates = []
     if path:
         candidates.append(pathlib.Path(path))
     if os.environ.get("PKAI_LIB"):
         candidates.append(pathlib.Path(os.environ["PKAI_LIB"]))
     root = pathlib.Path(__file__).resolve().parents[2]
-    for d in sorted(root.glob("build*")):
+    for d in sorted(root.glob("build*")) + sorted(root.glob("ai/build*")):
         candidates += list(d.rglob("libpkai_c.*"))
     for c in candidates:
         if c.exists():
@@ -75,7 +75,7 @@ def load(path: str | os.PathLike | None = None) -> C.CDLL:
             lib.pkai_class_item_count.restype = C.c_int
             lib.pkai_class_item_count.argtypes = [C.c_char_p, C.c_size_t, C.c_uint8]
             return lib
-    raise FileNotFoundError("libpkai_c not found; build gameboy/ with CMake or set PKAI_LIB")
+    raise FileNotFoundError("libpkai_c not found; run ai/scripts/build_pkai.sh or set PKAI_LIB")
 
 
 def check_layout(lib: C.CDLL) -> None:
