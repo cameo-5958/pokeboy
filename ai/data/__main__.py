@@ -23,7 +23,7 @@ def cmd_pull(args) -> None:
         if source in HF_SOURCES:
             from data.sources.hf_corpora import pull_hf
 
-            pull_hf(source, root, dry_run=args.dry_run)
+            pull_hf(source, root, dry_run=args.dry_run, only=args.only)
         elif source == "smogon":
             from data.sources.smogon_stats import pull_smogon
 
@@ -208,6 +208,8 @@ def main() -> None:
     pull.add_argument("--source", required=True)
     pull.add_argument("--root", default=str(DATASETS_ROOT))
     pull.add_argument("--dry-run", action="store_true")
+    pull.add_argument("--only", default=None,
+                      help="for HF sources, keep only repos whose id contains this substring")
     pull.set_defaults(fn=cmd_pull)
 
     conv = sub.add_parser("convert", help="convert a raw corpus to schema_v1 parquet")

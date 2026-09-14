@@ -15,13 +15,15 @@
 # stage      copy v3 into checkpoints/pep/current (scripts/stage.sh)
 set -euo pipefail
 source "$(dirname "$0")/env.sh"; cd "$AI_ROOT"
-D=datasets/trainer; R=$CKPT_ROOT; export DEVICE=${DEVICE:-cuda} WORKERS=${WORKERS:-12}
+D=datasets/trainer; RAW=datasets/raw; R=$CKPT_ROOT; export DEVICE=${DEVICE:-cuda} WORKERS=${WORKERS:-12}
 STAGES=${*:-"data imitation v0 league-data v1 v2 v3 finalize stage"}
 have() { [ -e "$1" ]; }
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
 for S in $STAGES; do case $S in
 data)
+  # OU team corpora for the `ou` matchup mode (v3); no-op once pulled
+  have $RAW/metamon/jakegrigsby__metamon-teams || uv run python -m data pull --source metamon --only teams
   have $D/v1 || uv run python -m sim.generate_trainer --battles 20000 --out $D/v1 --seed 100 --depth 1 --rolls 2 --rows-per-part 50000
   have $D/v2-d2 || uv run python -m sim.generate_trainer --battles 10000 --out $D/v2-d2 --seed 200 --depth 2 --rolls 2 --rows-per-part 50000
   ;;

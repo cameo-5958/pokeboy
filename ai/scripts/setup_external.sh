@@ -19,5 +19,10 @@ if [ ! -x "$METAMON_VENV/bin/python" ]; then
   uv venv --python 3.11 "$METAMON_VENV"
   uv pip install --python "$METAMON_VENV/bin/python" -e "$METAMON_DIR"
 fi
+# Gen I OU team corpora (the `ou` matchup mode reads these): ~30k parties under
+# datasets/raw/metamon/jakegrigsby__metamon-teams/{competitive,paper_variety,modern_replays}.
+(cd "$AI_ROOT" && uv run python -m data pull --source metamon --only teams)
+
 echo "showdown: $SHOWDOWN_DIR"; echo "metamon:  $METAMON_DIR ($METAMON_VENV)"; echo "cache:    $METAMON_CACHE_DIR"
+echo "teams:    $AI_ROOT/datasets/raw/metamon/jakegrigsby__metamon-teams"
 echo "next: scripts/showdown_server.sh, then tools.showdown_eval / scripts/metamon_h2h.sh"
