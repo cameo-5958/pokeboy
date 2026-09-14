@@ -74,7 +74,7 @@ endif()
 if(BUILD_TESTING)
     # Trained PEP checkpoint (gitignored): pkai_model_tests needs pkai.weights + vectors/bin,
     # pkai_rom_battles runs a model-backed battle when pkai.weights is present.
-    set(PKAI_CHECKPOINT ${CMAKE_CURRENT_SOURCE_DIR}/../ai/checkpoints/pep/stone-v1 CACHE PATH "PEP checkpoint used by the pkai tests")
+    set(PKAI_CHECKPOINT ${CMAKE_CURRENT_SOURCE_DIR}/../ai/checkpoints/pep/current CACHE PATH "PEP checkpoint used by the pkai tests")
     add_executable(pkai_rom_battle_tests ../pkai/tests/rom_battle_tests.cpp)
     target_link_libraries(pkai_rom_battle_tests PRIVATE gbcore)
     target_compile_definitions(pkai_rom_battle_tests PRIVATE
