@@ -1,7 +1,7 @@
 [project]
 name = "pokeboy-ai"
 version = "0.1.0"
-description = "Pokeboy AI battle agent: simulator, data pipeline, model tiers"
+description = "Pokeboy on-device battle AI: Gen I simulator, training pipeline and int8 export"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=2.0",

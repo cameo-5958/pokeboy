@@ -7,8 +7,10 @@
 //   pkai_model_tests <pkai.weights> <vectors dir>
 //
 // The vectors dir holds vectors.bin + vectors.idx from
-//   cd ai && uv run python -m tools.dump_vectors checkpoints/pep/stone-v1/vectors <dir>
-// (or `cmake --build build-ai --target pkai_vectors`). Missing files skip (exit 77).
+//   cd ai && uv run python -m tools.dump_vectors checkpoints/pep/<run>/vectors <dir>
+// (or `cmake --build <build dir> --target pkai_vectors`). Both are produced by
+// ai/scripts/finalize.sh; ai/scripts/build_pkai.sh builds this test into ai/build/pkai.
+// Missing files skip (exit 77).
 #include "pkai/model.h"
 #include "pkai/weights.h"
 #include "pkai/kernels/kernels.h"
