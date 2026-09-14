@@ -15,12 +15,13 @@ import random
 import sys
 import time
 
-ROWS = ("random", "native", "maxdmg", "teacher_d1", "teacher_d2", "ppo_v1", "ppo_v4", "ppo_v4_int", "ppo_v6")
+ROWS = ("random", "native", "maxdmg", "teacher_d1", "teacher_d2", "ppo_v1", "ppo_v4", "ppo_v4_int", "ppo_v6", "ppo_v6_int")
 COLS = ("random", "greedy", "teacher_d1", "ppo_v4", "ppo_v6")
 CKPT_V1 = "checkpoints/pep/current-ppo-v1/model-fp32.pt"
-CKPT_V4 = "checkpoints/pep/current/model-fp32.pt"
-WEIGHTS_V4 = "checkpoints/pep/current/pkai.weights"
-CKPT_V6 = "checkpoints/pep/ppo-v6/model.pt"
+CKPT_V4 = "checkpoints/pep/current-ppo-v4/model-fp32.pt"
+WEIGHTS_V4 = "checkpoints/pep/current-ppo-v4/pkai.weights"
+CKPT_V6 = "checkpoints/pep/current/model-fp32.pt"
+WEIGHTS_V6 = "checkpoints/pep/current/pkai.weights"
 
 # token indices in pkai::Features: field 0, own 1-6, player 7-12, own moves 13-16
 _OWN, _MOVES = 1, 13
@@ -54,9 +55,9 @@ def make_row(name: str, seed: int):
         from serve.pep_agent import PEPAgent
         ckpt = {"ppo_v1": CKPT_V1, "ppo_v4": CKPT_V4, "ppo_v6": CKPT_V6}[name]
         return PEPAgent(ckpt, temperature=0.5, seed=seed)
-    if name == "ppo_v4_int":
+    if name in ("ppo_v4_int", "ppo_v6_int"):
         from serve.int_agent import IntAgent
-        return IntAgent(WEIGHTS_V4, seed=seed)
+        return IntAgent(WEIGHTS_V4 if name == "ppo_v4_int" else WEIGHTS_V6, seed=seed)
     raise ValueError(name)
 
 
