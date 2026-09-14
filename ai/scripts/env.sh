@@ -12,4 +12,4 @@ export METAMON_CACHE_DIR="${METAMON_CACHE_DIR:-$AI_EXTERNAL/metamon-cache}"   # 
 export METAMON_TEAM_DIR="${METAMON_TEAM_DIR:-$METAMON_CACHE_DIR/teams/competitive/gen1ou}"
 export PKAI_BUILD="${PKAI_BUILD:-$AI_ROOT/build/pkai}"            # C++ build tree with pkai_model_tests
 export PKAI_ROM_CRC32="${PKAI_ROM_CRC32:-0x133efc7c}"            # Pokémon Red (UE) [S][!]
-export CKPT_ROOT="$AI_ROOT/checkpoints/pep"
+export CKPT_ROOT="${CKPT_ROOT:-$AI_ROOT/checkpoints/pep}"
