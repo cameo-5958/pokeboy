@@ -1,16 +1,19 @@
 """Evaluate the PEP checkpoint on a local Pokémon Showdown server against poke-env baselines.
 
-    node pokemon-showdown start --no-security      # in ~/pokemon-showdown
+    scripts/setup_external.sh                       # once: Showdown + Metamon under ai/external
+    scripts/showdown_server.sh                      # local server on localhost:8000
     uv run python -m tools.showdown_eval --checkpoint checkpoints/pep/current/model-fp32.pt --battles 100
 
 Opponents: random (RandomPlayer), maxbp (MaxBasePowerPlayer), heuristic (SimpleHeuristicsPlayer).
-Both sides draw teams from the same built-in RBY OU standard sets. `--accept USER` instead waits
-for challenges from an external agent (e.g. Metamon's evaluator) under a fixed username.
+Both sides draw teams from `--team-dir` (default: $METAMON_TEAM_DIR when set, else the built-in
+RBY OU standard sets). `--accept USER` instead waits for challenges from an external agent
+(e.g. Metamon's evaluator, see scripts/metamon_h2h.sh) under a fixed username.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import time
 
@@ -54,7 +57,8 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--username", default=None)
-    ap.add_argument("--team-dir", default=None, help="directory of Showdown team exports to draw from (both sides)")
+    ap.add_argument("--team-dir", default=os.environ.get("METAMON_TEAM_DIR") or None,
+                    help="directory of Showdown team exports to draw from (both sides); default $METAMON_TEAM_DIR")
     ap.add_argument("--accept", default=None, help="accept challenges from this username instead of running baselines")
     args = ap.parse_args(argv)
     return asyncio.run(run(args))
