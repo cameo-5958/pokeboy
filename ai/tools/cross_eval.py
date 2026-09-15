@@ -3,9 +3,9 @@
     python -m tools.cross_eval --battles 600 --seed 7 --matchups mirror,balanced --workers 14 --out logs/cross.md
 
 Rows (trainer seat): random, native (the cartridge's own AI), maxdmg, teacher_d1, teacher_d2,
-pep_v0, pep_v1, pep_v1_int, pep_v3, pep_v3_int (staged PEP versions, *_int = the exported int8
+pep_v0, pep_v1, pep_v3, pep_v4, pep_v4_int (staged PEP versions, *_int = the exported int8
 weights through the C++ model). Columns (player seat): random, greedy (1-ply engine leaf value),
-teacher_d1 (search through the swapped view), pep_v1 / pep_v3 (the network in the player seat).
+teacher_d1 (search through the swapped view), pep_v1 / pep_v3 / pep_v4 (the network in the player seat).
 Every cell plays the same matchup list (same parties, seeds) so numbers are comparable.
 """
 from __future__ import annotations
@@ -16,11 +16,13 @@ import random
 import sys
 import time
 
-ROWS = ("random", "native", "maxdmg", "teacher_d1", "teacher_d2", "pep_v0", "pep_v1", "pep_v1_int", "pep_v3", "pep_v3_int")
-COLS = ("random", "greedy", "teacher_d1", "pep_v1", "pep_v3")
+ROWS = ("random", "native", "maxdmg", "teacher_d1", "teacher_d2", "pep_v0", "pep_v1", "pep_v3", "pep_v4", "pep_v4_int")
+COLS = ("random", "greedy", "teacher_d1", "pep_v1", "pep_v3", "pep_v4")
 # PEP versions: v0 = pre-league PPO baseline, v1 = first league round (ROM matchups),
-# v2 = v1 continued (tied, not staged), v3 = OU-mix league round = current shipping model.
-STAGED = {"pep_v0": "checkpoints/pep/v0", "pep_v1": "checkpoints/pep/current-v1", "pep_v3": "checkpoints/pep/current"}
+# v2 = v1 continued (tied, not staged), v3 = OU-mix league round, v4 = curated-OU league
+# round from v3 = current shipping model.
+STAGED = {"pep_v0": "checkpoints/pep/v0", "pep_v1": "checkpoints/pep/current-v1",
+          "pep_v3": "checkpoints/pep/current-v3", "pep_v4": "checkpoints/pep/current"}
 
 # token indices in pkai::Features: field 0, own 1-6, player 7-12, own moves 13-16
 _OWN, _MOVES = 1, 13
