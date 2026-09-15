@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cstdlib>
 #include <vector>
 #include "core.h"
 
@@ -41,7 +42,10 @@ int main(int argc, char** argv) {
     if (!gb.load_rom(rom.data(), rom.size())) { fprintf(stderr, "bad rom\n"); return 1; }
     gb.reset_post_boot();
     int frames = argc > 2 ? atoi(argv[2]) : 60 * 120;
-    for (int i = 0; i < frames; i++) gb.run_frame();
+    for (int i = 0; i < frames; i++) {
+        gb.run_frame();
+        gb.ai_step(pkai::monotonic_ns() + 4000000);
+    }
     if (argc > 3) write_bmp(argv[3], gb.framebuffer());
     return 0;
 }

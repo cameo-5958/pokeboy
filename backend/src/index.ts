@@ -12,6 +12,8 @@ import { modsRouter } from "./routes/mods.js";
 import { registryRouter } from "./routes/registry.js";
 import { telemetryRouter } from "./routes/telemetry.js";
 import { battleLinkRouter, initBattleLinkDiscord } from "./routes/battle-link.js";
+import { webRouter } from "./routes/web.js";
+import { hasWebSession } from "./websession.js";
 
 const app = express();
 
@@ -23,6 +25,27 @@ const app = express();
 app.set("trust proxy", "loopback");
 
 app.use(cors());
+
+// Browser player vhost: emulator.cameo.moe serves the web shell at its root.
+// API/labels/battle-link/health paths pass through untouched so the shell's
+// same-origin fetches keep working.
+app.use((req, _res, next) => {
+  if (
+    req.hostname === config.webHost &&
+    !req.path.startsWith("/api") &&
+    !req.path.startsWith("/labels") &&
+    !req.path.startsWith("/battle-link") &&
+    !req.path.startsWith("/health") &&
+    !req.path.startsWith("/web")
+  ) {
+    req.url = "/web" + req.url;
+  }
+  next();
+});
+
+// Mounted before the app-level express.json: save-state uploads exceed the
+// global 1mb body limit, so the web router parses its own bodies.
+app.use("/web", webRouter);
 // 1mb: dev-mode screenshot results carry a base64 PNG of the 160x144 LCD.
 app.use(express.json({ limit: "1mb" }));
 
@@ -43,6 +66,7 @@ app.use("/api", async (req, res, next) => {
   try {
     const authActive = config.apiKey || (await hasKeys());
     if (!authActive) return next();
+    if (hasWebSession(req)) return next(); // signed-in browser player
     if (await isValidKey(req.get("x-api-key"))) return next();
     return res.status(401).json({ error: "Invalid or missing API key" });
   } catch (e) {
