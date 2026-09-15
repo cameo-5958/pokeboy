@@ -1,36 +1,44 @@
 # Pokeboy
 
-A Game Boy handheld built around a custom emulator, with an on-device battle AI
-for Gen I Pokémon. ROMs are not included.
+Game Boy handheld with its own emulator and a battle AI for Gen 1 Pokemon that runs on the device.
+No ROMs in here, bring your own.
 
-## Layout
+## What's where
 
-| Path          | What it is                                                                 |
-| ------------- | -------------------------------------------------------------------------- |
-| `gameboy/`    | C++ Game Boy emulator core, tests and tools.                               |
-| `emulator/`   | Frontends: Linux device (fbdev/evdev/tinyalsa), headless, web, win32.      |
-| `pkai/`       | On-device battle AI runtime: Gen I damage math, featurizer, int8 inference, ROM opcode hook. |
-| `pred-patch/` | pokered with the `$DB`/`$EB`/`$EC` battle-AI opcode protocol.              |
-| `ai/`         | Simulator, training pipeline (imitation → league PPO → QAT), weight export, Showdown evaluation. |
-| `buildroot/`  | Buildroot external tree for the device image (PocketBeagle / OSD3358).     |
-| `hardware/`   | KiCad design, fabrication exports and PCBWay manufacturing files.          |
-| `app/`        | React Native (Expo) client for iOS and Android.                            |
-| `backend/`    | API that stores and serves ROMs, mods and cartridge metadata.              |
-| `web/`        | Browser player shell.                                                      |
+- `gameboy/` - the C++ emulator core, tests, tools
+- `emulator/` - frontends: linux (fbdev/evdev/tinyalsa), headless, web, win32
+- `pkai/` - the on-device battle AI. Gen 1 damage math, feature builder, int8 inference, the ROM opcode hook
+- `pred-patch/` - pokered with the $DB/$EB/$EC opcodes the AI hooks into
+- `ai/` - simulator, training (imitation, then league PPO, then QAT), weight export, Showdown eval
+- `buildroot/` - buildroot external tree for the device image (PocketBeagle / OSD3358)
+- `hardware/` - KiCad project, fab exports, PCBWay files
+- `app/` - React Native (Expo) app, iOS and Android
+- `backend/` - API that stores and serves ROMs, mods and cartridge metadata
+- `web/` - browser player shell
 
-## Getting started
+## Building
+
+Emulator core:
 
 ```sh
-# Emulator core
 cmake -S gameboy -B build && cmake --build build
-
-# Battle AI toolchain
-cd ai && uv sync && scripts/setup_external.sh && scripts/build_pkai.sh
-
-# Backend and app
-cd backend && npm install && npm run dev      # http://localhost:4000
-cd app && npm install && npm start            # Expo; i / a for iOS / Android
 ```
 
-The app reads the backend URL from `EXPO_PUBLIC_API_URL` (default
-`http://localhost:4000`); use your LAN IP on a physical device.
+AI toolchain (needs uv):
+
+```sh
+cd ai
+uv sync
+scripts/setup_external.sh
+scripts/build_pkai.sh
+```
+
+Backend and app:
+
+```sh
+cd backend && npm install && npm run dev   # localhost:4000
+cd app && npm install && npm start         # expo, press i or a
+```
+
+The app talks to the backend at `EXPO_PUBLIC_API_URL`, default `http://localhost:4000`.
+On a real phone set it to your LAN IP.
