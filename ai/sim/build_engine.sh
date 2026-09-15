@@ -4,10 +4,13 @@ cd "$(dirname "$0")/.."
 mkdir -p vendor
 cd vendor
 
+ENGINE_COMMIT=9b88fd6c5467f703c38951d5b2e8a660314d410b
 if [ ! -d engine ]; then
-  git clone --depth 50 https://github.com/pkmn/engine.git
+  git clone https://github.com/pkmn/engine.git
 fi
 cd engine
+git fetch -q origin "$ENGINE_COMMIT" 2>/dev/null || true
+git checkout -q "$ENGINE_COMMIT"
 
 # Pin zig to the version the engine demands.
 ZIG_VERSION=$(grep -oP 'minimum_zig_version\s*=\s*"\K[^"]+' build.zig.zon)

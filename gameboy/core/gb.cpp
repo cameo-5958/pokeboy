@@ -7,15 +7,17 @@ bool GameBoy::load_rom(const uint8_t* data, size_t len) {
     if (!cart) return false;
     bus.attach(cart.get(), &ppu, &timer, &joypad, &apu);
     cpu.bus = &bus;
-    cpu.mods = &mods;
-    mods.on_rom_loaded(cart.get());
+    cpu.ai = &ai; cpu.ai_memory = &ai_bus;
+    ai_bus = ai_memory();
+    ai.load_rom(cart->rom.data(), cart->rom.size());
     return true;
 }
 
 void GameBoy::reset_custom_boot() {
+    ai.reset();
     cpu = CPU{};
     cpu.bus = &bus;
-    cpu.mods = &mods;
+    cpu.ai = &ai; cpu.ai_memory = &ai_bus;
     cpu.sp = 0xFFFE;
     cpu.pc = 0x0000;
 
@@ -31,8 +33,9 @@ void GameBoy::reset_custom_boot() {
     frame_budget = 0;
 }
 
-void GameBoy::reset_post_boot() {                  // values: PDF §4.3
-    cpu = CPU{}; cpu.bus = &bus; cpu.mods = &mods;
+void GameBoy::reset_post_boot() {
+    ai.reset();                  // values: PDF §4.3
+    cpu = CPU{}; cpu.bus = &bus; cpu.ai = &ai; cpu.ai_memory = &ai_bus;
     cpu.af = 0x01B0; cpu.bc = 0x0013; cpu.de = 0x00D8; cpu.hl = 0x014D;
     cpu.sp = 0xFFFE; cpu.pc = 0x0100;
     static const struct { uint16_t a; uint8_t v; } io[] = {
@@ -50,6 +53,7 @@ void GameBoy::reset_post_boot() {                  // values: PDF §4.3
 }
 
 void GameBoy::run_frame() {
+    ++ai.frame;
     frame_budget += 70224;
     while (frame_budget > 0) {
         int t = cpu.execute_next();
@@ -89,6 +93,7 @@ void GameBoy::transfer_state(StateIO& s) {
     apu.serialize(s);
     cart->serialize(s);
     s.v(frame_budget);
+    ai.serialize(s);
 }
 
 bool GameBoy::save_state(std::vector<uint8_t>& out) {
@@ -138,10 +143,16 @@ bool GameBoy::load_state(const uint8_t* data, size_t len) {
     // Pass 2 replays the identical bytes into the live machine, which cannot
     // fail now that pass 1 accepted them. Applying in place is what keeps the
     // wiring intact: no serialize() touches a pointer, so bus/cpu back-pointers
-    // and the mod runtime's cartridge pointer all stay bound to this machine.
+    // and the AI memory interface all stay bound to this machine.
     // (Copying a scratch machine over this one would dangle both.)
     StateIO s(data, len);
     check_state_header(s);
     transfer_state(s);
     return s.ok();
+}
+
+pkai::Memory GameBoy::ai_memory() {
+    return {&bus, [](void* p,uint16_t a) {return static_cast<Bus*>(p)->read8(a);},
+        [](void* p,uint16_t a,uint8_t v) {static_cast<Bus*>(p)->write8(a,v);},
+        cart ? cart->rom.data():nullptr, cart ? cart->rom.size():0};
 }
