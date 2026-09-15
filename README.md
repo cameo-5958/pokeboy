@@ -1,38 +1,36 @@
 # Pokeboy
 
-A Game Boy emulator platform. The client is a React Native (Expo) app; a backend
-stores and serves ROMs, mods, and cartridge metadata. This replaces the old
-static `web/` app.
+A Game Boy handheld built around a custom emulator, with an on-device battle AI
+for Gen I Pokémon. ROMs are not included.
 
 ## Layout
 
-| Path       | What it is                                                              |
-| ---------- | ---------------------------------------------------------------------- |
-| `app/`     | The local React Native app (Expo). Builds for iOS and Android.         |
-| `backend/` | The backend that stores and serves ROMs, mods, and cartridge metadata. |
-| `gameboy/` | The native Game Boy emulator core and frontends.                       |
-| `web/`     | Legacy static web emulator (being replaced by `app/`).                 |
-
-The C++ core supports precompiled, dynamically linked ROM/ASM/TypeScript mods.
-See [`gameboy/MODS.md`](gameboy/MODS.md) for the package format, linker ABI, and
-performance contract.
+| Path          | What it is                                                                 |
+| ------------- | -------------------------------------------------------------------------- |
+| `gameboy/`    | C++ Game Boy emulator core, tests and tools.                               |
+| `emulator/`   | Frontends: Linux device (fbdev/evdev/tinyalsa), headless, web, win32.      |
+| `pkai/`       | On-device battle AI runtime: Gen I damage math, featurizer, int8 inference, ROM opcode hook. |
+| `pred-patch/` | pokered with the `$DB`/`$EB`/`$EC` battle-AI opcode protocol.              |
+| `ai/`         | Simulator, training pipeline (imitation → league PPO → QAT), weight export, Showdown evaluation. |
+| `buildroot/`  | Buildroot external tree for the device image (PocketBeagle / OSD3358).     |
+| `hardware/`   | KiCad design, fabrication exports and PCBWay manufacturing files.          |
+| `app/`        | React Native (Expo) client for iOS and Android.                            |
+| `backend/`    | API that stores and serves ROMs, mods and cartridge metadata.              |
+| `web/`        | Browser player shell.                                                      |
 
 ## Getting started
 
-`app/` and `backend/` are independent Node projects, each with its own `package.json`.
-
 ```sh
-# Backend
-cd backend
-npm install
-npm run dev            # starts the API on http://localhost:4000
+# Emulator core
+cmake -S gameboy -B build && cmake --build build
 
-# App (in a second terminal)
-cd app
-npm install
-npm start              # Expo dev server; press i / a for iOS / Android
+# Battle AI toolchain
+cd ai && uv sync && scripts/setup_external.sh && scripts/build_pkai.sh
+
+# Backend and app
+cd backend && npm install && npm run dev      # http://localhost:4000
+cd app && npm install && npm start            # Expo; i / a for iOS / Android
 ```
 
-The app reads the backend URL from the `EXPO_PUBLIC_API_URL` env var and falls
-back to `http://localhost:4000`. Point it at your machine's LAN IP when running
-on a physical device, e.g. `EXPO_PUBLIC_API_URL=http://192.168.1.20:4000 npm start`.
+The app reads the backend URL from `EXPO_PUBLIC_API_URL` (default
+`http://localhost:4000`); use your LAN IP on a physical device.
