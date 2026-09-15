@@ -47,12 +47,18 @@ SOURCES: dict[str, list[HFSource]] = {
 }
 
 
-def pull_hf(source: str, root: Path, dry_run: bool = False) -> list[Path]:
-    """Download all HF repos for a named source into root/raw/<source>/."""
+def pull_hf(source: str, root: Path, dry_run: bool = False, only: str | None = None) -> list[Path]:
+    """Download the HF repos for a named source into root/raw/<source>/.
+
+    `only` keeps just the repos whose id contains that substring, so a caller can take
+    the team corpora alone (`--source metamon --only teams`) without the replay dumps.
+    """
     dest_root = Path(root) / "raw" / source
     manifest = Manifest(dest_root)
     out: list[Path] = []
     for src in SOURCES[source]:
+        if only and only not in src.repo_id:
+            continue
         key = src.repo_id
         if manifest.has(key):
             continue

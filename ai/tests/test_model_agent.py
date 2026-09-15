@@ -80,14 +80,19 @@ def test_hist_checkpoint_roundtrip(tmp_path):
     assert all(agent.choose(s) in (0, 1, 9) for _ in range(5))
 
 
-def test_cli_model_seat_smoke(ckpt):
+def test_cli_model_seat_is_retired_with_a_pointer(ckpt):
+    """`sim battle --p1 model:` was the pre-PEP seat; it must fail loudly, not silently.
+
+    The loader it used cannot read any checkpoint written since the tiers were removed,
+    and PEP policies take a TrainerEnv rather than a raw engine state, so the CLI points
+    at tools.eval_trainer instead of pretending to work.
+    """
     env = {**os.environ, "CUDA_VISIBLE_DEVICES": ""}
     p = subprocess.run(
         [sys.executable, "-m", "sim", "battle",
          "--p1", f"model:{ckpt}", "--p2", "random", "--seed", "5", "--battles", "2"],
         capture_output=True, text=True, timeout=300, env=env,
     )
-    assert p.returncode == 0, p.stderr
-    out = json.loads(p.stdout.splitlines()[-1])
-    assert out["battles"] == 2
-    assert out["p1_wins"] + out["p2_wins"] + out["ties"] + out["unfinished"] == 2
+    assert p.returncode != 0
+    assert "not supported by `sim battle`" in p.stderr
+    assert "tools.eval_trainer" in p.stderr

@@ -21,6 +21,7 @@ TEAMS_ROOT = Path(__file__).resolve().parents[1] / "datasets" / "raw" / "metamon
 _POOL_TARS = {
     "competitive": "competitive/gen1ou.tar.gz",
     "variety": "paper_variety/gen1ou.tar.gz",
+    "replays": "modern_replays/gen1ou.tar.gz",
 }
 _SKIP_PREFIXES = ("Ability:", "EVs:", "IVs:", "Level:", "Shiny:", "Happiness:")
 

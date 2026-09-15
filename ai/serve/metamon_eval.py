@@ -9,13 +9,16 @@ rebinds the attention class per model — window size read from the model's
 own gin config, full-attention models fall back to VanillaAttention —
 then delegates to the standard `metamon.rl.evaluate` CLI.
 
-Run with the metamon venv interpreter, not the pokeboy one:
+Run with the metamon venv interpreter, not the pokeboy one (scripts/setup_external.sh
+creates it under ai/external and scripts/env.sh exports METAMON_VENV / METAMON_CACHE_DIR):
 
-  cd ai/vendor/metamon && METAMON_CACHE_DIR=... .venv/bin/python \
-      /path/to/ai/serve/metamon_eval.py --agent TaurosV0 \
-      --eval_type challenge --username MetamonTauros \
-      --opponent_username PokeboyRL --role acceptor \
-      --gens 1 --formats ou --total_battles 100
+  source scripts/env.sh
+  $METAMON_VENV/bin/python serve/metamon_eval.py --agent SmallRL \
+      --eval_type challenge --username MetamonSmall \
+      --opponent_username PokeboyRL --role challenger \
+      --gens 1 --formats ou --total_battles 100 --team_set competitive
+
+scripts/metamon_h2h.sh runs the full head-to-head series against the PEP acceptor.
 """
 
 import re

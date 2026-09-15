@@ -11,7 +11,7 @@
 #include "joypad/joypad.h"
 #include "apu/apu.h"
 #include "cart/cart.h"
-#include "mod/mod.h"
+#include "pkai/hook.h"
 
 class GameBoy {
 public:
@@ -39,11 +39,10 @@ public:
     //
     // The stream carries the ROM's size and hash, so load_state rejects a state
     // taken against different ROM bytes instead of resuming into corruption.
-    // Mods are NOT streamed: restore onto a handle with the same packages
-    // loaded, because a resumed trap site belongs to the host-linked ROM image.
+    // AI tracker, RNG, pending identity and READY result are transactional.
     bool  save_state(std::vector<uint8_t>& out);
     bool  load_state(const uint8_t* data, size_t len);
-    static constexpr uint32_t STATE_VERSION = 2;
+    static constexpr uint32_t STATE_VERSION = 4;   // 4: tracker carries the event-vector state
 
     Bus    bus;
     CPU    cpu;
@@ -51,7 +50,10 @@ public:
     Timer  timer;
     Joypad joypad;
     APU    apu;
-    gbmod::Runtime mods;
+    pkai::Hook ai;
+    pkai::Memory ai_bus;
+    pkai::Memory ai_memory();
+    void ai_step(int64_t deadline) { ai.step(ai_memory(), deadline); }
     std::unique_ptr<Cartridge> cart;
 private:
     void transfer_state(StateIO& s);               // shared save/load body
