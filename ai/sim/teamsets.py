@@ -87,6 +87,14 @@ def load_pool(tar_path: Path) -> list[list[PokemonSpec]]:
     return pool
 
 
+def pools_available(root: Path | str = TEAMS_ROOT) -> bool:
+    """True when every pool tarball is on disk. The corpus is downloaded, not
+    committed (`python -m data pull --source metamon --only teams`), so callers
+    and tests that need it check here instead of failing on the first open."""
+    root = Path(root)
+    return all((root / rel).exists() for rel in _POOL_TARS.values())
+
+
 class TeamSampler:
     """sample(rng): 20% built-in standard sets, 40% competitive, 40% variety.
     Deterministic given the rng; pool order is sorted at load."""

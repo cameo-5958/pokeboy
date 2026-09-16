@@ -1,4 +1,4 @@
-"""Decision-boundary integrity (workspace/AI-DATA.md remediation):
+"""Decision-boundary integrity:
 
 Normal-turn rows must be snapshotted at the turn boundary — neither player's
 input may contain same-turn effects or its own label. Forced replacements

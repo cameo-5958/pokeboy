@@ -2,6 +2,16 @@ import json
 import subprocess
 import sys
 
+import pytest
+
+from sim.teamsets import pools_available
+
+pytestmark = pytest.mark.skipif(
+    not pools_available(),
+    reason="needs the metamon team corpus: cd ai && "
+           "uv run python -m data pull --source metamon --only teams",
+)
+
 
 def run(*args):
     return subprocess.run(

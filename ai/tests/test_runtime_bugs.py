@@ -1,4 +1,4 @@
-"""Remediation tests for workspace/AI-BUGS.md must-fixes."""
+"""Regression tests for known runtime bugs in the data pipeline."""
 
 import json
 import random
