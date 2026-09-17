@@ -29,6 +29,9 @@ build/gbemu_headless game.gb 1800 out.bmp
 `-DBUILD_TESTING=ON` adds the tests, `ctest` runs them. Dropping
 `-DPKAI_BUILD_ROM=OFF` rebuilds the patched ROM too, which needs rgbds.
 
+`pred-patch/` is a copy of a separate repository. Find patched pokered ROM
+here: []
+
 ROM, web core, AI:
 
 ```sh
