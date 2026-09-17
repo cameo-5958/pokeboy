@@ -85,7 +85,6 @@ class TrainerEnv:
         self._refill_pp()
         self._observe_player()
 
-    # ---------------------------------------------------------------- buffer access
     @property
     def buf(self) -> bytes:
         return self.b.raw.bytes
@@ -125,7 +124,6 @@ class TrainerEnv:
             if self.buf[a + 24 + m * 2]:
                 self._write(a + 25 + m * 2, bytes([40]))
 
-    # ---------------------------------------------------------------- state
     # Bide, Thrashing, Charging, Binding, Recharging, Rage: the ROM never polls the AI in these states.
     _FORCED_BITS = (1 << 0) | (1 << 1) | (1 << 4) | (1 << 5) | (1 << 11) | (1 << 12)
 
@@ -250,7 +248,6 @@ class TrainerEnv:
         _, mask, _ = self.features()
         return [a for a in range(16) if mask >> a & 1]
 
-    # ---------------------------------------------------------------- acting
     def player_choices(self) -> list[int]:
         r = self.b.raw.requests()[self.opp]
         return self.b.raw.choices(self.opp, r) or [0]
@@ -373,7 +370,6 @@ class TrainerEnv:
         ev[15] = min(self.round, 50) / 50.0
         return ev
 
-    # ---------------------------------------------------------------- search support
     def clone(self, seed_bytes: bytes | None = None) -> "TrainerEnv":
         c = copy.copy(self)
         c.b = copy.copy(self.b)

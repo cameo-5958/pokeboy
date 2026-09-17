@@ -154,7 +154,6 @@ function playWeb(kind: Sfx) {
   }
 }
 
-// ---------------------------------------------------------------------
 
 export function playSfx(kind: Sfx) {
   // Sound is best-effort garnish: a broken audio stack must never throw into

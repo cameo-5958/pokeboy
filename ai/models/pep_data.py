@@ -119,9 +119,6 @@ def encode_features(
     return rec.tobytes()
 
 
-# --------------------------------------------------------------------------- parquet
-
-
 def _parquet_files(path: str | os.PathLike) -> list[str]:
     p = str(path)
     if os.path.isdir(p):

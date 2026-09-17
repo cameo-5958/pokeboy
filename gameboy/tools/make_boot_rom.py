@@ -98,7 +98,6 @@ class Assembler:
         return bytes(self.data)
 
 
-# ---------------------------------------------------------------------------
 # Frame model: an animation frame is a list of copies plus a display duration.
 
 class Frame:
@@ -115,7 +114,6 @@ class Frame:
             self.copy(address, bytes((value,)))
 
 
-# ---------------------------------------------------------------------------
 # Logo mode
 
 def load_logo(path: Path) -> list[str]:
@@ -223,7 +221,6 @@ def logo_frames(rows: list[str]) -> list[Frame]:
     return frames
 
 
-# ---------------------------------------------------------------------------
 # Legacy video mode
 
 def extract_frames(ffmpeg: Path, video: Path) -> list[bytes]:
@@ -284,7 +281,6 @@ def video_frames(gray_frames: list[bytes]) -> list[Frame]:
     return frames
 
 
-# ---------------------------------------------------------------------------
 # Playback engine
 #
 # Descriptor stream, one record per frame:

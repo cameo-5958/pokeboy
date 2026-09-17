@@ -27,7 +27,6 @@ const char* model_op_kind_name(ModelOpKind k) {
     return k < OpKindCount ? names[k] : "?";
 }
 
-// ----------------------------------------------------------------------------- binding
 
 bool PepModel::resolve_requant(const Weights& w, const char* name, unsigned n, Requant& rq) {
     char buf[64];
@@ -182,7 +181,6 @@ void PepModel::build_program() {
     pc_ = n_ops_;
 }
 
-// ----------------------------------------------------------------------------- execution
 
 void PepModel::begin(const Features& f, const int8_t* ev8, const int16_t* h_in) {
     feat_ = f;

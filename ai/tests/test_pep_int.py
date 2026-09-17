@@ -59,9 +59,6 @@ def _first_parquet() -> str:
     return os.path.join(DATA, files[-1])  # the small last shard
 
 
-# --------------------------------------------------------------------------- fixtures
-
-
 @pytest.fixture(scope="module")
 def battles():
     return load_calibration(_first_parquet(), rows=1200)
@@ -112,9 +109,6 @@ def _fp32(model, rows, h=None):
     with torch.no_grad():
         lg, va, hh = model(features_to_tensors(rows), torch.as_tensor(rows["event"]), h)
     return lg.numpy(), va.numpy(), hh.numpy()
-
-
-# --------------------------------------------------------------------------- primitives
 
 
 def test_fixed_point_primitives():
@@ -185,9 +179,6 @@ def test_softmax_int_against_float():
     assert np.array_equal(p2.astype(np.int64), (p * 256).round().astype(np.int64))
 
 
-# --------------------------------------------------------------------------- (a) determinism + round trip
-
-
 def test_int_forward_deterministic_and_roundtrip(qp, weights_path, rows):
     ip = IntPEP(qp)
     ev8 = ip.quantize_event(rows["event"])
@@ -207,9 +198,6 @@ def test_int_forward_deterministic_and_roundtrip(qp, weights_path, rows):
             assert np.array_equal(getattr(a, k), getattr(out, k)), k
     assert a.logits_q8.dtype == np.int16 and a.probs.dtype == np.uint8 and a.h.dtype == np.int16
     assert a.value_acc.dtype == np.int32
-
-
-# --------------------------------------------------------------------------- (b) agreement with fp32
 
 
 def test_int_matches_fp32_on_real_rows(model, qp, rows):
@@ -238,9 +226,6 @@ def test_int_matches_fp32_on_real_rows(model, qp, rows):
     assert np.abs(out.value - va).mean() < 0.1
 
 
-# --------------------------------------------------------------------------- (c) fake-quant == int path
-
-
 def test_fake_quant_matches_int(model, qp, rows):
     ip = IntPEP(qp)
     out = ip.forward(rows, ip.quantize_event(rows["event"]))
@@ -263,9 +248,6 @@ def test_fake_quant_matches_int(model, qp, rows):
     assert model.layers[0].ff1.weight.grad is not None and model.layers[0].ff1.weight.grad.abs().sum() > 0
     assert model.embed.species.weight.grad is not None
     model.zero_grad(set_to_none=True)
-
-
-# --------------------------------------------------------------------------- (d) recurrent path
 
 
 def test_recurrent_state_carries(model, qp, battles):
@@ -302,9 +284,6 @@ def test_recurrent_state_carries(model, qp, battles):
     # a fresh zero state differs from the carried one on the last step
     o0 = ip.forward({k: v[T - 1 : T] for k, v in step.items()}, ip.quantize_event(bt.event[T - 1 : T]), None)
     assert not np.array_equal(o0.h, outs[T - 1].h)
-
-
-# --------------------------------------------------------------------------- (e) container
 
 
 def test_weights_header_and_toc(qp, weights_path):

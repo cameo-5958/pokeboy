@@ -69,9 +69,6 @@ TOKEN_LINEARS = {
 }
 
 
-# --------------------------------------------------------------------------- STE helpers
-
-
 def ste_round(x: torch.Tensor) -> torch.Tensor:
     return x + (torch.round(x) - x).detach()
 
@@ -86,9 +83,6 @@ def weight_scales(w: torch.Tensor) -> torch.Tensor:
     """Per-output-channel max-abs int8 scales, shape (C, 1)."""
     s = w.detach().abs().amax(dim=1, keepdim=True) / I8_MAX
     return torch.where(s > 0, s, torch.ones_like(s))
-
-
-# --------------------------------------------------------------------------- observer
 
 
 class Observer:
@@ -111,9 +105,6 @@ class Observer:
 
     def finalize(self) -> dict[str, tuple[float, float]]:
         return {k: (v[0], v[1]) for k, v in self.stats.items()}
-
-
-# --------------------------------------------------------------------------- fake-quant module
 
 
 class FakeQuantPEP(nn.Module):
@@ -376,9 +367,6 @@ class FakeQuantPEP(nn.Module):
         return logits, value, h_new
 
 
-# --------------------------------------------------------------------------- calibration
-
-
 def _iter_calibration(calib, batch_battles: int):
     """Yield (features dict of torch tensors (N,...), ev (N,64), row_mask (N,), carry_id) per time step."""
     from models.pep import features_to_tensors
@@ -429,9 +417,6 @@ def load_calibration(path, rows: int = 4096, seed: int = 0):
             if n >= rows:
                 return battles
     return battles
-
-
-# --------------------------------------------------------------------------- PTQ builder
 
 
 def _np(t: torch.Tensor) -> np.ndarray:

@@ -35,9 +35,6 @@ from models.pep_data import Battle, FeaturesDataset, collate_battles
 DEFAULT_CKPT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "checkpoints", "pep")
 
 
-# --------------------------------------------------------------------------- loss
-
-
 def policy_value_loss(
     logits: torch.Tensor,
     value: torch.Tensor,
@@ -90,9 +87,6 @@ def policy_value_loss(
         "n": int(n_pol),
     }
     return loss, metrics
-
-
-# --------------------------------------------------------------------------- batching
 
 
 def batch_to_device(arrays: dict[str, np.ndarray], device) -> dict[str, torch.Tensor]:
@@ -235,9 +229,6 @@ def evaluate(
         "top1": tot["top1"] / n,
         "n": tot["n"],
     }
-
-
-# --------------------------------------------------------------------------- driver
 
 
 def make_scheduler(opt, total_steps: int, warmup: int, floor: float = 0.05):
