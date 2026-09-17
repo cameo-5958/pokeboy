@@ -1,4 +1,4 @@
-// frontend/headless.cpp — test harness: runs a ROM for N frames, prints serial
+// frontend/headless.cpp - test harness: runs a ROM for N frames, prints serial
 // output (Blargg tests), and can dump the final framebuffer as a BMP.
 //   usage: gbemu_headless rom.gb [frames] [out.bmp]
 #define _CRT_SECURE_NO_WARNINGS
@@ -37,7 +37,9 @@ int main(int argc, char** argv) {
     FILE* f = fopen(argv[1], "rb");
     if (!f) { fprintf(stderr, "cannot open %s\n", argv[1]); return 1; }
     fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
-    std::vector<uint8_t> rom(n); fread(rom.data(), 1, n, f); fclose(f);
+    std::vector<uint8_t> rom(n);
+    size_t got = fread(rom.data(), 1, rom.size(), f); fclose(f);
+    if (got != rom.size()) { fprintf(stderr, "short read on %s\n", argv[1]); return 1; }
     GameBoy gb;
     if (!gb.load_rom(rom.data(), rom.size())) { fprintf(stderr, "bad rom\n"); return 1; }
     gb.reset_post_boot();
