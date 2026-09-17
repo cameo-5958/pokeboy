@@ -1,5 +1,5 @@
 /**
- * Local key management CLI (no admin token needed — you already own the box).
+ * Local key management CLI (no admin token needed - you already own the box).
  *
  *   npm run key:new -- "iphone"     mint a key labelled "iphone"
  *   npm run key:list                list issued keys (masked)
@@ -14,7 +14,7 @@ async function main() {
   switch (cmd) {
     case "new": {
       const record = await generateKey(arg || "device");
-      console.log("\nNew API key — copy it into the app's Settings on your phone.");
+      console.log("\nNew API key - copy it into the app's Settings on your phone.");
       console.log("(Store it now; the full value is not shown again.)\n");
       console.log(`  ${record.key}\n`);
       console.log(`  label:   ${record.label}`);

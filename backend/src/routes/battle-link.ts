@@ -190,7 +190,7 @@ battleLinkRouter.get("/decision", (req, res) => {
     requests.set(key, request);
     // A brand-new pending decision: hand the snapshot to the Discord bot so
     // it can render (or refresh) the widget. Long-poll re-entries of the same
-    // key don't re-notify — the state within one attempt never changes.
+    // key don't re-notify - the state within one attempt never changes.
     if (isFullSnapshot(state)) discordBot()?.handleRequest(state);
   } else {
     request.state = state;
@@ -234,8 +234,8 @@ battleLinkRouter.post("/command", (req, res) => {
 });
 
 // Emulator-side lifecycle events (posted fire-and-forget by the mod core).
-// They keep the Discord widget honest — cancelled turns lose their buttons,
-// resolved turns show what actually happened — and clean up the pending map
+// They keep the Discord widget honest - cancelled turns lose their buttons,
+// resolved turns show what actually happened - and clean up the pending map
 // so the web console never shows a decision the emulator already abandoned.
 battleLinkRouter.post("/event", (req, res) => {
   cleanup();

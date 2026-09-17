@@ -31,7 +31,7 @@ keysRouter.post("/", async (req, res, next) => {
   }
 });
 
-// List issued keys (masked — the full secret is never re-shown).
+// List issued keys (masked - the full secret is never re-shown).
 keysRouter.get("/", async (_req, res, next) => {
   try {
     const keys = await listKeys();

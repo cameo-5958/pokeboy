@@ -1,4 +1,4 @@
-// tests/state_tests.cpp — save/load state round-trips and rejection paths.
+// tests/state_tests.cpp - save/load state round-trips and rejection paths.
 //
 // The property that matters: a state loaded back must make the machine run
 // IDENTICALLY from that point. Comparing only the bytes we wrote would pass

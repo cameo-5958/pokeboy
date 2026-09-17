@@ -3,7 +3,7 @@
 export const SCREEN_RATIO = 160 / 144;
 
 // The console keeps the same formation. Ejecting pops the cartridge out of the
-// top slot, then the whole console slides down from under it — the cartridge
+// top slot, then the whole console slides down from under it - the cartridge
 // always renders BEHIND the console body, never over it.
 export const PAD_TOP = 28;
 export const PAD_BOTTOM = 28;

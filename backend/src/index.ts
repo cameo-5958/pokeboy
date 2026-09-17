@@ -20,7 +20,7 @@ const app = express();
 // nginx terminates TLS on this host and proxies over loopback. Trusting the
 // loopback proxy makes req.protocol honor X-Forwarded-Proto, so absolute URLs
 // built from requests (label images, ROM links) come out https:// instead of
-// http:// — which iOS ATS refuses to fetch. Direct (non-proxied) requests,
+// http:// - which iOS ATS refuses to fetch. Direct (non-proxied) requests,
 // e.g. via the tailnet IP, are unaffected.
 app.set("trust proxy", "loopback");
 

@@ -1,6 +1,6 @@
 """Decision-boundary integrity:
 
-Normal-turn rows must be snapshotted at the turn boundary — neither player's
+Normal-turn rows must be snapshotted at the turn boundary - neither player's
 input may contain same-turn effects or its own label. Forced replacements
 legitimately decide mid-turn and keep execution-time state.
 """
@@ -55,7 +55,7 @@ def test_no_row_is_a_same_turn_first_use():
         me = s["my_side"]["pokemon"][s["my_side"]["active_ix"]]
         assert r["action"] < len(me["moves"])
         assert me["moves"][r["action"]] == r["action_detail"]
-        # every listed move must also predate this turn — boundary purity
+        # every listed move must also predate this turn - boundary purity
         for mv in me["moves"]:
             assert first.get((r["player"], mv), 0) < r["turn"]
 

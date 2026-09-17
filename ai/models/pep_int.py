@@ -1,4 +1,4 @@
-"""Integer reference forward pass of PEP (numpy only) — the executable §8.3 specification.
+"""Integer reference forward pass of PEP (numpy only) - the executable §8.3 specification.
 
 Everything here is defined in terms of int8/int16/int32 arithmetic (int64 numpy
 intermediates stand in for the 64-bit products of the scalar C++ path).  No torch.

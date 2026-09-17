@@ -2,7 +2,7 @@
 
 Runs a teacher checkpoint over existing schema_v1 corpus parts and writes
 sidecar parquets under <out>/<src>/<same relative path>: one row per input
-row IN THE SAME ORDER — battle_id (echoed for alignment checks), kd_probs
+row IN THE SAME ORDER - battle_id (echoed for alignment checks), kd_probs
 (legality-masked temp-1 teacher policy, 10 float32), kd_v (value-head win
 prob, -1.0 when the teacher has no value head). Existing sidecars are
 skipped so the pass is resumable; the trainer (`--distill-labels`)

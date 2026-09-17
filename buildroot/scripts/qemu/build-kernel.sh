@@ -1,13 +1,9 @@
 #!/bin/bash
-# Build an ARMv7 kernel that qemu-system-arm can boot.
+# Build a kernel qemu-system-arm can boot, into $WORK/emu/zImage.
 #
-# The device kernel is am335x (bb.org tree) and QEMU models no AM335x machine,
-# so it cannot be booted in emulation. This builds the same 6.1.46 source with
-# multi_v7_defconfig plus virtio, DRM and evdev, using the cross toolchain
-# Buildroot already produced. Userspace under test is unchanged: only the
-# kernel and the machine differ from the real device.
-#
-# Result: $WORK/emu/zImage
+# QEMU models no AM335x machine, so the device kernel will not boot in
+# emulation. Same 6.1.46 source, multi_v7_defconfig plus virtio, DRM and evdev.
+# Only the kernel and machine differ from the device; userspace is unchanged.
 set -euo pipefail
 WORK=${WORK:-$HOME/buildroot-pokeboy}
 BR=$WORK/buildroot/output

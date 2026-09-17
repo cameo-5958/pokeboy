@@ -177,7 +177,7 @@ export default function EmulatorScreen({ appBuildVersion }: { appBuildVersion: s
   );
 
   // The list is local-first, so a launch while the backend is unreachable
-  // (e.g. VPN not up yet) resolves from the offline cache — which can include
+  // (e.g. VPN not up yet) resolves from the offline cache - which can include
   // cartridges since removed server-side. Keep retrying, and re-check when the
   // app foregrounds, until a fresh response replaces any stale entries.
   useCatalogEffects({
@@ -376,7 +376,7 @@ export default function EmulatorScreen({ appBuildVersion }: { appBuildVersion: s
         </View>
       ) : null}
       <Animated.View onLayout={onBodyLayout} style={{ transform: [{ translateY: bodyTranslate }] }}>
-        {/* Cartridge layer — kept UNDER the console body (zIndex 0 vs 1) so it
+        {/* Cartridge layer - kept UNDER the console body (zIndex 0 vs 1) so it
             emerges from behind the top edge and slides back under on insert. */}
         <Animated.View
           style={{

@@ -835,7 +835,7 @@
     boot().catch(error=>{const detail=reportError(error);status.textContent=detail.message});
   })().catch(error=>{
     // Bootstrap failures (missing PokeboyRuntime, core script load) happen
-    // before reportError/status exist in scope — report them by hand so they
+    // before reportError/status exist in scope - report them by hand so they
     // can never fail silently.
     const message=error instanceof Error?error.message:String(error);
     const statusEl=document.getElementById('status');

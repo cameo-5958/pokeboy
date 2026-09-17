@@ -40,7 +40,7 @@ def cmd_pull(args) -> None:
 
 def _clear_parts(processed: "Path") -> None:
     """Stale higher-numbered parts from a previous, larger run would silently
-    join the training set — clear before rewriting."""
+    join the training set - clear before rewriting."""
     if processed.is_dir():
         for part in processed.glob("part-*.parquet"):
             part.unlink()

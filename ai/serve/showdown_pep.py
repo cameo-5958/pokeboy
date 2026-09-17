@@ -2,9 +2,9 @@
 
 The network only knows the trainer-seat observation (`pkai.Observation`): own party in
 full, the other side as public information. This adapter builds that observation from a
-poke-env `Battle` — our side from the request data (exact stats, DVs from IVs), the
+poke-env `Battle` - our side from the request data (exact stats, DVs from IVs), the
 opponent from what Showdown reveals (species, level, HP %, status, boosts, revealed
-moves; stats estimated by the featurizer's public-info prior) — then runs the same C++
+moves; stats estimated by the featurizer's public-info prior) - then runs the same C++
 featurizer, mask and network as the simulator path. No item candidates (trainer class 0,
 count 0). The GRU state and the event vector are kept per battle.
 

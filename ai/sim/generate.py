@@ -7,7 +7,7 @@ the trainer consumes them with just `--sources teacher`.
 Seat mix per battle (seeded, deterministic): mostly teacher-vs-teacher (both
 sides recorded), a slice vs the scripted bots for opponent diversity (teacher
 side recorded only). Battles hitting the turn cap (stall wars, ~5%) are
-dropped. The recorded state is the PUBLIC view (b.state(player)) — the
+dropped. The recorded state is the PUBLIC view (b.state(player)) - the
 teacher's full-information advantage never leaks into training rows.
 """
 

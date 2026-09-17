@@ -85,7 +85,7 @@ def test_hyper_beam_recharge_not_reported_as_fresh_move():
             b.step(a1, rng.choice(s2.legal_actions))
             s1b = b.state(1)
             # only judge steps that completed exactly one turn with the same
-            # active mon — otherwise tail[0] describes a different turn/mon
+            # active mon - otherwise tail[0] describes a different turn/mon
             if s1b.turn != s1.turn + 1 or s1b.my_side["active_ix"] != active_ix:
                 continue
             act = s1b.my_side["pokemon"][active_ix]["moves"]

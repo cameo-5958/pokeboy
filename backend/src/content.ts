@@ -33,7 +33,7 @@ async function readLocal(ref: ContentRef): Promise<Buffer | null> {
 }
 
 /**
- * Fetches one file from the raw base URL. Throws on any non-2xx — including
+ * Fetches one file from the raw base URL. Throws on any non-2xx - including
  * 404, which a private repo returns for every path. Absence is decided by the
  * local fallback instead, so pointing at a private (or misspelled) base URL
  * degrades to serving the local copy rather than to an empty catalog.

@@ -2,7 +2,7 @@
 engine (SPECS §5.1 synthetic teacher).
 
 Full information by design: the teacher exists to generate demonstrations,
-where seeing both sides is legal (SPECS §4.3 asymmetric-information trick) —
+where seeing both sides is legal (SPECS §4.3 asymmetric-information trick) -
 the distilled student only ever consumes public tokens. Every candidate
 action pair is stepped on cloned battle buffers; the in-buffer RNG seed
 (bytes 376-384) is re-rolled per sample so pair values are expectations over
@@ -64,7 +64,7 @@ class SearchTeacher:
     """Seat with full-info `choose_full(battle, player)`.
 
     Simultaneous-move handling: pure maximin assumes the opponent counters
-    my exact move — over-pessimistic (measured: depth-2 maximin only ties
+    my exact move - over-pessimistic (measured: depth-2 maximin only ties
     MaxDamage). Instead the opponent's reply is *predicted* with their own
     1-ply greedy calculation, and each root action is scored as a blend of
     worst-case and predicted-case: alpha*min_reply + (1-alpha)*predicted.
@@ -127,7 +127,7 @@ class SearchTeacher:
 
     def _predict_reply(self, raw: RawBattle, me: int, probe: int) -> int:
         """The opponent's own 1-ply greedy choice (their damage calc), probed
-        against an arbitrary fixed action of mine — a simultaneous-move reply
+        against an arbitrary fixed action of mine - a simultaneous-move reply
         depends only weakly on my concurrent choice."""
         opp = 1 - me
         opp_choices = raw.choices(opp, raw.requests()[opp]) or [0]
@@ -167,7 +167,7 @@ class SearchTeacher:
         if depth <= 0:
             return leaf_value(raw.bytes, me)
         # follow the predicted opponent line; single roll per node keeps the
-        # tree tractable — root-level rolls average over the stochasticity
+        # tree tractable - root-level rolls average over the stochasticity
         my_choices = raw.choices(me, raw.requests()[me]) or [0]
         predicted = self._predict_reply(raw, me, probe=my_choices[0])
         return max(

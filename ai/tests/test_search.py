@@ -1,5 +1,5 @@
 """SearchTeacher (SPECS §5.1 synthetic teacher): depth-limited expectation-
-aware maximin search over cloned engine buffers. Full-information by design —
+aware maximin search over cloned engine buffers. Full-information by design -
 legal for data generation (§4.3 asymmetry); the distilled student only ever
 sees public tokens."""
 

@@ -1,20 +1,11 @@
 #!/bin/bash
-# Build the Pokeboy SD-card image.
+# Build the SD-card image: Buildroot 2024.02.13 plus the external tree here,
+# cross-compiled for the OSD3358. Writes to $WORK, reads the repo. First run
+# builds a toolchain and takes 1-2 hours.
 #
-# Buildroot 2024.02.13 plus the external tree in buildroot/, cross-compiling the
-# emulator and the on-device battle AI for the OSD3358 (Cortex-A8, NEON).
-# Everything is written under $WORK; the repository is only ever read.
-#
-#   build-image.sh              build (first run clones Buildroot and the toolchain: ~1-2 h)
-#   WORK=/scratch/br ./build-image.sh
-#
-# Result: $WORK/buildroot/output/images/sdcard.img
-#   partition 1  32 MiB FAT32, bootable: MLO, u-boot.img, zImage, dtb, extlinux
-#   partition 2 128 MiB ext4:  root filesystem with /usr/bin/pokeboy
-#
-# The ROM, the weights and the save file are NOT in the image. Copy them onto
-# partition 1 as pokered-ai.gbc and pkai.weights; /etc/init.d/S99pokeboy mounts
-# that partition at /boot and launches the emulator from it.
+# Result: $WORK/buildroot/output/images/sdcard.img, 32 MiB FAT32 boot partition
+# plus a 128 MiB ext4 root. The ROM and weights are not in it: copy them onto
+# partition 1 as pokered-ai.gbc and pkai.weights, where S99pokeboy expects them.
 set -euo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)

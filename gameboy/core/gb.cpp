@@ -73,7 +73,7 @@ bool GameBoy::load_save_ram(const uint8_t* data, size_t len) {
     return cart && !cart->ram.empty() && cart->load_battery_data(data, len);
 }
 
-// FNV-1a over the ROM image. Identity only — cheap enough to run on every
+// FNV-1a over the ROM image. Identity only - cheap enough to run on every
 // save/load and strong enough to catch "wrong ROM" and "patched ROM", which
 // are the mistakes that produce states that load but then desync.
 static uint32_t rom_fingerprint(const std::vector<uint8_t>& rom) {

@@ -1,7 +1,7 @@
 /**
  * Minimal Discord REST v10 client for the backend-hosted Battle Link bot.
  *
- * Only the handful of endpoints the bot needs; no external dependencies — it
+ * Only the handful of endpoints the bot needs; no external dependencies - it
  * runs on Node's built-in fetch. Every helper throws a DiscordRestError with
  * the response body on non-2xx so callers can fall back (e.g. channel
  * message -> interaction webhook followup).

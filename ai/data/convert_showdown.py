@@ -12,7 +12,7 @@ Action semantics for replay data (reveal-order, deterministic given state_json):
             order, minus the active mon).
 
 Decision boundaries: normal-turn decisions
-are snapshotted at the START of the turn — both players' rows come from one
+are snapshotted at the START of the turn - both players' rows come from one
 boundary state, so neither sees same-turn effects, reveals, or its own label.
 Forced replacements decide mid-turn and keep execution-time state. A player's
 decision is only emitted when it is observable AND its label is derivable from

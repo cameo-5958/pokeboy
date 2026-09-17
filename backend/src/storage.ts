@@ -42,7 +42,7 @@ type Registry = {
 
 /**
  * Where each piece of tracked content lives, on disk and in the repo. ROMs are
- * absent by design — `*.gb` is git-ignored, so `romPath` is their only source.
+ * absent by design - `*.gb` is git-ignored, so `romPath` is their only source.
  */
 export const refs = {
   registry: (): ContentRef => ({

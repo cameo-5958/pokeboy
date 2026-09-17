@@ -15,7 +15,7 @@
  *    window is the whole budget on a phone network, and each ack also chains
  *    the widget onto the click's fresh webhook token, so a user-installed app
  *    with no channel access can keep editing the widget indefinitely.
- *  - /disconnect — or the battle ending — tears the session down.
+ *  - /disconnect - or the battle ending - tears the session down.
  *
  * Opponent knowledge is accumulated per battle: a player mon appears in the
  * embed only once the mod has revealed it (it took the field), and its last
@@ -300,7 +300,7 @@ export class DiscordBattleLinkBot {
       await interactionCallback(interaction.id, interaction.token, { type: 6 }); // DEFERRED_UPDATE_MESSAGE
     } catch (error) {
       // Stale replay after a gateway resume, or network flake: the click is
-      // still a decision — only this token is unusable for edits.
+      // still a decision - only this token is unusable for edits.
       acked = false;
       this.emit("interaction-ack-failed", { message: String(error) });
     }

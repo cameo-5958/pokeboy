@@ -212,7 +212,7 @@ async function run() {
   await drain();
   assert.equal(calls.length, 0, "a clicked-and-consumed resolution does not edit again");
 
-  // Next turn: the SAME widget is edited in place — no new message.
+  // Next turn: the SAME widget is edited in place - no new message.
   calls.length = 0;
   bot.handleRequest(snapshot(1));
   await drain();
@@ -241,7 +241,7 @@ async function run() {
   await drain();
 
   // Widget edit fails (token aged out server-side): fall back to creating a
-  // message — channel first, and a 403 there disables channel mode for good.
+  // message - channel first, and a 403 there disables channel mode for good.
   calls.length = 0;
   behavior.webhookEditError = new DiscordRestError(404, '{"code": 10015}', "/webhooks");
   behavior.channelPostError = new DiscordRestError(403, '{"code": 50001}', "/channels");

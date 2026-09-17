@@ -53,7 +53,7 @@ const uint8_t* gb_save_ram(const gb_handle* gb, size_t* len);
 int            gb_load_save_ram(gb_handle* gb, const uint8_t* data, size_t len);
 
 // Whole-machine snapshot (CPU, memories, PPU, timer, joypad, APU, cart RAM +
-// MBC banks) — distinct from gb_save_ram, which is only battery-backed cart
+// MBC banks) - distinct from gb_save_ram, which is only battery-backed cart
 // data. gb_save_state returns NULL on failure; otherwise the buffer is owned by
 // the handle and stays valid until the next gb_save_state or gb_destroy on it,
 // so copy it out before saving again.

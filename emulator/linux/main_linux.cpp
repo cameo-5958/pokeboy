@@ -1,4 +1,4 @@
-// emulator/linux/main_linux.cpp — Pokeboy device frontend for Linux (Buildroot on the OSD3358).
+// emulator/linux/main_linux.cpp - Pokeboy device frontend for Linux (Buildroot on the OSD3358).
 //
 //   gbemu_linux rom.gbc [--fb /dev/fb0] [--input /dev/input/eventN] [--audio card,device|none]
 //                       [--save path.sav] [--weights pkai.weights] [--bench N] [--bench-ai N] [--margin-us N]

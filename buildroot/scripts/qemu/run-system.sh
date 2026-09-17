@@ -1,21 +1,14 @@
 #!/bin/bash
-# Boot the real root filesystem under qemu-system-arm and drop to a root shell.
+# Boot the real root filesystem under qemu-system-arm, root shell on serial.
+# --vnc also serves the framebuffer on localhost:5900. Quit with Ctrl-A X.
 #
-#   run-system.sh            serial console on this terminal
-#   run-system.sh --vnc      also serve the framebuffer on localhost:5900
-#
-# Once at the prompt:
+# At the prompt:
 #   mkdir -p /boot && mount -t vfat /dev/vdb /boot
 #   /usr/bin/pokeboy /boot/pokered-ai.gbc --weights /boot/pkai.weights \
 #       --fb /dev/fb0 --input /dev/input/event0 --audio none
 #
-# Quit with Ctrl-A X. Notes on the differences from the device:
-#   * the kernel is the multi_v7 one from build-kernel.sh, not the am335x one
-#   * the SD card appears as virtio disks, so /dev/mmcblk0p1 does not exist and
-#     /etc/init.d/S99pokeboy cannot autostart; launch the emulator by hand
-#   * the panel is virtio-gpu at 1280x800, not the 320x240 SPI panel
-#   * there is no audio codec, so pass --audio none
-# Userspace, busybox, the init scripts and /usr/bin/pokeboy are the image's own.
+# Differs from the device: multi_v7 kernel, virtio disks (no /dev/mmcblk0p1, so
+# S99pokeboy cannot autostart), virtio-gpu at 1280x800, no audio codec.
 set -euo pipefail
 WORK=${WORK:-$HOME/buildroot-pokeboy}
 EMU=$WORK/emu
@@ -30,7 +23,7 @@ if [ "${1:-}" = "--vnc" ]; then
     echo "=== framebuffer on vnc://localhost:5900"
 fi
 
-[ -f "$EMU/zImage" ] || { echo "no $EMU/zImage — run build-kernel.sh"; exit 1; }
+[ -f "$EMU/zImage" ] || { echo "no $EMU/zImage - run build-kernel.sh"; exit 1; }
 [ -f "$EMU/data.vfat" ] || "$HERE/make-data-disk.sh"
 
 # Scratch copy, so a test run never writes to the build output.

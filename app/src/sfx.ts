@@ -92,7 +92,7 @@ function tone(
   const gain = ac.createGain();
   osc.type = type;
   osc.frequency.setValueAtTime(freq, start);
-  // Quick attack, exponential decay — a short, punchy 8-bit blip.
+  // Quick attack, exponential decay - a short, punchy 8-bit blip.
   gain.gain.setValueAtTime(0.0001, start);
   gain.gain.exponentialRampToValueAtTime(peak, start + 0.006);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);

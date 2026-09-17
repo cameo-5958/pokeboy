@@ -5,8 +5,8 @@ sliding-window attention, but flash-attn ships no prebuilt wheel for
 torch 2.13 + cu13 and a source build takes the better part of an hour.
 amago's SlidingWindowFlexAttention implements the identical mask
 (keys in [q - window, q]) on torch-native flex_attention, so this wrapper
-rebinds the attention class per model — window size read from the model's
-own gin config, full-attention models fall back to VanillaAttention —
+rebinds the attention class per model - window size read from the model's
+own gin config, full-attention models fall back to VanillaAttention -
 then delegates to the standard `metamon.rl.evaluate` CLI.
 
 Run with the metamon venv interpreter, not the pokeboy one (scripts/setup_external.sh

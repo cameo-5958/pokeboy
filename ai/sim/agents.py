@@ -30,7 +30,7 @@ def _types(species: str | None) -> tuple[str, str] | None:
 
 
 def _dmg_score(move: str, attacker_types, defender_types) -> float:
-    """bp * type-effectiveness * STAB — the family damage heuristic."""
+    """bp * type-effectiveness * STAB - the family damage heuristic."""
     _, _, bp, _, mtype, _ = MOVES[move]
     score = float(bp)
     if score and defender_types:

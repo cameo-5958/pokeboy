@@ -1,4 +1,4 @@
-"""Phase 3 — PPO league self-play (SPECS §5.3).
+"""Phase 3 - PPO league self-play (SPECS §5.3).
 
 Fine-tunes a distilled checkpoint (policy + two-hot value head) by playing
 league battles on the in-process sim and applying legality-masked PPO.
@@ -154,7 +154,7 @@ def collect_rollouts(model, tok, league: League, n_battles: int, device: str,
     """Play n_battles league games; return flat tensors of learner transitions.
 
     Battles run in a refilling pool of `concurrent` games so every learner
-    seat across the pool shares one batched forward per tick — the GPU call,
+    seat across the pool shares one batched forward per tick - the GPU call,
     not the engine, is the rollout bottleneck.
     """
     from sim.battle import Battle
@@ -338,7 +338,7 @@ def ppo_update(model, opt, buf, device, clip=0.2, vf_coef=0.5, ent_coef=0.005,
 def update_snapshot(frozen: list, model, tok, tier: str, value_bins: int,
                     device: str, seed: int) -> None:
     """Maintain ONE reusable frozen league snapshot. The snapshot model is
-    allocated once and refreshed in place — appending a new GPU-resident
+    allocated once and refreshed in place - appending a new GPU-resident
     copy per snapshot OOMed the first real run at the third copy."""
     from models.agent import ModelAgent
 

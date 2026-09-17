@@ -11,7 +11,7 @@ export function blobToDataUri(blob: Blob): Promise<string> {
   });
 }
 
-/** Short opaque id — good enough to distinguish devices/sessions, not a real UUID. */
+/** Short opaque id - good enough to distinguish devices/sessions, not a real UUID. */
 export function genId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }

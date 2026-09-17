@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Boot the image, run the emulator on /dev/fb0, and capture the screen.
+"""Boot the image, run the emulator on /dev/fb0, capture the screen.
 
-An unattended end-to-end check of the built image: the root filesystem mounts,
-the ARM binary starts, the AI weights load, and frames reach the framebuffer.
-The guest is driven over the serial console and the capture is taken through
-QEMU's monitor, so nothing needs a display or a QEMU install on the host.
+Unattended end-to-end check: root mounts, the ARM binary starts, the weights
+load, frames reach the framebuffer. Drives the guest over serial and captures
+through QEMU's monitor, so it needs no display.
 
-    python3 buildroot/scripts/qemu/screenshot.py
-
-Writes $WORK/emu/screen.ppm and leaves the console transcript in
-$WORK/emu/screenshot.log.
+Writes $WORK/emu/screen.ppm, transcript in $WORK/emu/screenshot.log.
 """
 import os
 import shutil
@@ -27,7 +23,7 @@ RENDER_SECONDS = 45
 
 for needed in (os.path.join(EMU, "zImage"), os.path.join(EMU, "data.vfat")):
     if not os.path.exists(needed):
-        sys.exit(f"missing {needed} — run build-kernel.sh and make-data-disk.sh")
+        sys.exit(f"missing {needed} - run build-kernel.sh and make-data-disk.sh")
 
 shutil.copyfile(os.path.join(IMAGES, "rootfs.ext4"), os.path.join(EMU, "rootfs-run.ext4"))
 shot_host = os.path.join(EMU, "screen.ppm")
@@ -87,4 +83,4 @@ for marker in ("BOOT-MOUNT-OK", "ai: model", "cannot"):
 if os.path.exists(shot_host):
     print(f"screenshot: {shot_host} ({os.path.getsize(shot_host)} bytes)")
 else:
-    sys.exit("no screenshot captured — see screenshot.log")
+    sys.exit("no screenshot captured - see screenshot.log")

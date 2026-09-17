@@ -1,7 +1,6 @@
 #!/bin/bash
-# Re-sync the emulator/AI sources into an existing Buildroot tree and rebuild
-# just the pokeboy package, then regenerate the images. Minutes, not hours.
-# Use after editing gameboy/, pkai/ or emulator/. Needs a completed build-image.sh.
+# Rebuild just the pokeboy package in an existing tree and regenerate the
+# images. Use after editing gameboy/, pkai/ or emulator/.
 set -euo pipefail
 WORK=${WORK:-$HOME/buildroot-pokeboy}
 cd "$WORK/buildroot"

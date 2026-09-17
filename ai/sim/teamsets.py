@@ -3,7 +3,7 @@
 Parses Showdown-export team files from the metamon-teams corpus and mixes
 three sources per sampled team: the 10 built-in standard sets (continuity
 with historical evals), curated competitive teams, and the paper_variety
-pool (off-meta species/movesets — the corpus's stand-in for "random legal
+pool (off-meta species/movesets - the corpus's stand-in for "random legal
 teams"). Teams failing canon species/move validation are skipped at load.
 """
 
@@ -38,7 +38,7 @@ def _species_from_header(line: str) -> str:
 
 def parse_team_export(text: str) -> list[tuple[str, list[str]]]:
     """One Showdown-export team file -> raw (species, moves) pairs.
-    PokemonSpec construction happens after canon validation — PokemonSpec
+    PokemonSpec construction happens after canon validation - PokemonSpec
     rejects unknown species eagerly."""
     team: list[tuple[str, list[str]]] = []
     for block in text.split("\n\n"):

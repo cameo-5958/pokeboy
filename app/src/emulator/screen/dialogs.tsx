@@ -72,7 +72,7 @@ export function SettingsModal({
 
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      {/* Backdrop — tapping outside the card closes the dialog. */}
+      {/* Backdrop - tapping outside the card closes the dialog. */}
       <Pressable style={styles.settingsBackdrop} onPress={onClose}>
         {/* Stop taps on the card itself from bubbling to the backdrop. */}
         <Pressable style={[styles.settingsCard, { width: cardWidth }]} onPress={() => {}}>
@@ -292,7 +292,7 @@ export function ModConfigModal({
   };
   return (
     <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      {/* Backdrop — tapping outside the card closes the dialog. */}
+      {/* Backdrop - tapping outside the card closes the dialog. */}
       <Pressable style={styles.settingsBackdrop} onPress={onClose}>
         {/* Stop taps on the card itself from bubbling to the backdrop. */}
         <Pressable style={[styles.settingsCard, { width: cardWidth }]} onPress={() => {}}>

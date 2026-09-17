@@ -35,7 +35,7 @@ export const config = {
   registryFile: path.resolve(
     process.env.REGISTRY_FILE ?? path.join(root, "data", "registry.json"),
   ),
-  /** Issued device API keys (git-ignored — secrets). */
+  /** Issued device API keys (git-ignored - secrets). */
   keysFile: path.resolve(
     process.env.KEYS_FILE ?? path.join(root, "data", "keys.json"),
   ),
@@ -51,8 +51,8 @@ export const config = {
   ),
 
   /**
-   * Where catalog content — the registry, `.sym` symbols, `.gbmod` packages and
-   * the host core — is read from. See `content.ts`.
+   * Where catalog content - the registry, `.sym` symbols, `.gbmod` packages and
+   * the host core - is read from. See `content.ts`.
    * - `local` (default): read the paths above straight off disk.
    * - `github`: fetch the tracked copies from `contentBaseUrl`, TTL-cached,
    *   falling back to the local path whenever the fetch fails.
@@ -65,7 +65,7 @@ export const config = {
    * Raw base URL for `contentSource: "github"`, with repo-relative paths
    * appended. Consulted only in `github` mode. NOTE: `cameo-5958/pokeboy` is
    * currently private, and raw.githubusercontent 404s every path on a private
-   * repo unless `githubToken` is set — which is why the default is `local`.
+   * repo unless `githubToken` is set - which is why the default is `local`.
    */
   contentBaseUrl: (
     process.env.CONTENT_BASE_URL ??
@@ -78,7 +78,7 @@ export const config = {
   contentTimeoutMs: Number(process.env.CONTENT_TIMEOUT_MS ?? 5_000),
 
   /**
-   * Optional PAT for fetching content from a private repo. Environment only —
+   * Optional PAT for fetching content from a private repo. Environment only -
    * never committed, and never sent to a client: devices talk to this backend,
    * which is the whole reason the app cannot leak it.
    */
@@ -98,7 +98,7 @@ export const config = {
 
   /**
    * Admin secret that guards key management over HTTP (`/api/keys`). Unset
-   * (default) disables the HTTP mint endpoint — keys can still be minted
+   * (default) disables the HTTP mint endpoint - keys can still be minted
    * locally with `npm run key:new`.
    */
   adminToken: process.env.ADMIN_TOKEN ?? "",
@@ -114,7 +114,7 @@ export const config = {
   webSessionSecret: process.env.WEB_SESSION_SECRET ?? "",
   /** Static shell (login/player pages). */
   webDir: path.resolve(process.env.WEB_DIR ?? path.join(root, "..", "web")),
-  /** Bundled emulator runtime served to the browser — the same files the app ships. */
+  /** Bundled emulator runtime served to the browser - the same files the app ships. */
   emulatorAssetsDir: path.resolve(
     process.env.EMULATOR_ASSETS_DIR ?? path.join(root, "..", "app", "assets", "emulator"),
   ),

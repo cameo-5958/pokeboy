@@ -48,7 +48,7 @@ export type FetchResult<T> = { data: T; fresh: boolean };
 
 export type Api = ReturnType<typeof createApi>;
 
-/** Opt-in telemetry payload — a batch of buffered snapshots/events for one device+session. */
+/** Opt-in telemetry payload - a batch of buffered snapshots/events for one device+session. */
 export interface TelemetryPayload {
   device: { id: string; os: string };
   session: string;

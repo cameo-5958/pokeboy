@@ -152,7 +152,7 @@ export function useRuntimeEffects(options: {
       try {
         commands = await api.pollDevCommands(deviceId);
       } catch {
-        return; // backend unreachable — try again next tick
+        return; // backend unreachable - try again next tick
       }
       if (!alive) return;
       for (const cmd of commands) {
