@@ -51,7 +51,6 @@ void sleep_until(int64_t t) {
     while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, nullptr) == EINTR && !g_stop) {}
 }
 
-// ---------------------------------------------------------------- framebuffer
 struct Framebuffer {
     int fd = -1; uint8_t* mem = nullptr; size_t size = 0;
     fb_var_screeninfo v{}; fb_fix_screeninfo f{};
@@ -99,7 +98,6 @@ struct Framebuffer {
     ~Framebuffer() { if (mem) munmap(mem, size); if (fd >= 0) close(fd); }
 };
 
-// ---------------------------------------------------------------- input (evdev)
 struct Input {
     int fd = -1; uint8_t buttons = 0, dpad = 0;
     bool open(const char* path) {
@@ -141,7 +139,6 @@ struct Input {
     ~Input() { if (fd >= 0) close(fd); }
 };
 
-// ---------------------------------------------------------------- audio
 struct Audio {
     virtual ~Audio() = default;
     virtual void push(const float* stereo, int frames) = 0;
@@ -149,7 +146,7 @@ struct Audio {
 struct NullAudio : Audio { void push(const float*, int) override {} };
 #ifdef POKEBOY_TINYALSA
 struct TinyAlsaAudio : Audio {
-    pcm* p = nullptr; std::vector<int16_t> buf;
+    pcm* p = nullptr; std::vector<int16_t> buf; bool complained = false;
     bool open(unsigned card, unsigned device) {
         pcm_config cfg{}; cfg.channels = 2; cfg.rate = AUDIO_RATE; cfg.format = PCM_FORMAT_S16_LE;
         cfg.period_size = 736; cfg.period_count = 4;   // ~1 frame per period, ~3 frames queued
@@ -161,13 +158,17 @@ struct TinyAlsaAudio : Audio {
         if (!p || frames <= 0) return;
         buf.resize(size_t(frames) * 2);
         for (size_t i = 0; i < buf.size(); ++i) { float v = stereo[i]; v = v < -1 ? -1 : v > 1 ? 1 : v; buf[i] = int16_t(v * 32767); }
-        pcm_writei(p, buf.data(), unsigned(frames));   // blocking: the codec clock paces us
+        // Blocking: the codec clock paces us. A failure here is an underrun or a
+        // closed device; say so once and keep playing silence rather than spam.
+        if (pcm_writei(p, buf.data(), unsigned(frames)) < 0 && !complained) {
+            fprintf(stderr, "audio: %s\n", pcm_get_error(p));
+            complained = true;
+        }
     }
     ~TinyAlsaAudio() override { if (p) pcm_close(p); }
 };
 #endif
 
-// ---------------------------------------------------------------- battery save
 bool read_file(const std::string& path, std::vector<uint8_t>& out) {
     FILE* f = fopen(path.c_str(), "rb"); if (!f) return false;
     fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
