@@ -191,7 +191,12 @@ std::cout<<"decision "<<prev<<" round "<<g.ai.tracker.round<<" action "<<int(g.a
   else {CHECK(prev==0);CHECK(g.ai.tracker.event_count==0);CHECK(g.bus.read8(wAIDisarmed)==1);}
  }
 };
-int main(){auto fixture=std::make_unique<Fixture>();fixture->prepare();fixture->scenarios();fixture->battle();
+int main(){
+  if (!std::ifstream(AI_ROM).good()) {       // 77: ctest SKIP_RETURN_CODE
+    std::cerr << "no ROM at " << AI_ROM << ", build it with pred-patch/build_ai.sh\n";
+    return 77;
+  }
+  auto fixture=std::make_unique<Fixture>();fixture->prepare();fixture->scenarios();fixture->battle();
  auto unknown=std::make_unique<Fixture>(false);unknown->prepare();unknown->battle();
  // Model backend: same battle with pkai.weights loaded (skipped when the gitignored checkpoint is absent).
  if(std::ifstream(AI_WEIGHTS).good()){auto model=std::make_unique<Fixture>();model->model_battle();}

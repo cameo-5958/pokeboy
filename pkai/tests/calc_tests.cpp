@@ -36,6 +36,11 @@ struct Rom {
 };
 
 int main() {
+  if (!std::ifstream(AI_ROM).good()) {       // 77: ctest SKIP_RETURN_CODE
+    std::cerr << "no ROM at " << AI_ROM << ", build it with pred-patch/build_ai.sh\n";
+    return 77;
+  }
+
     Rom rom; Memory m = rom.g.ai_memory();
     std::mt19937 rng(20260910);
     auto pick = [&](unsigned lo, unsigned hi) { return lo + rng() % (hi - lo + 1); };

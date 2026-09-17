@@ -25,6 +25,11 @@ void op(GameBoy& g,uint8_t opcode,uint8_t a){
  CHECK(g.cpu.execute_next()==4);CHECK(g.cpu.pc==0xc001);CHECK(g.cpu.f==0xb0);CHECK(g.cpu.bc==0x1234);CHECK(g.cpu.de==0x5678);CHECK(g.cpu.hl==0x9abc);
 }
 int main(){
+  if (!std::ifstream(AI_ROM).good()) {       // 77: ctest SKIP_RETURN_CODE
+    std::cerr << "no ROM at " << AI_ROM << ", build it with pred-patch/build_ai.sh\n";
+    return 77;
+  }
+
  auto r=rom();CHECK(r.size()>0);CHECK(crc32(r.data(),r.size())==tables::rom_crc32);
  auto g=std::make_unique<GameBoy>();setup(*g,r);CHECK(g->ai.recognised);
  for(bool custom:{true,false}){if(custom)g->reset_custom_boot();else g->reset_post_boot();CHECK(g->cpu.ai==&g->ai);CHECK(g->cpu.ai_memory==&g->ai_bus);}
