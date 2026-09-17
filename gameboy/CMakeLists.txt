@@ -41,13 +41,31 @@ option(POKEBOY_LINUX_FRONTEND "Build the Linux fbdev/evdev/tinyalsa device front
 if(POKEBOY_LINUX_FRONTEND AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT EMSCRIPTEN)
     add_executable(gbemu_linux ../emulator/linux/main_linux.cpp)
     target_link_libraries(gbemu_linux PRIVATE gbcore)
+    # tinyalsa: the system copy when there is one (Buildroot's staging tree on the
+    # device build), otherwise fetched and built in-tree so a plain Linux host
+    # gets the audio backend too.
     find_library(TINYALSA_LIB tinyalsa)
     find_path(TINYALSA_INC tinyalsa/pcm.h)
     if(TINYALSA_LIB AND TINYALSA_INC)
-        target_compile_definitions(gbemu_linux PRIVATE POKEBOY_TINYALSA=1)
         target_include_directories(gbemu_linux PRIVATE ${TINYALSA_INC})
         target_link_libraries(gbemu_linux PRIVATE ${TINYALSA_LIB})
+    else()
+        include(FetchContent)
+        FetchContent_Declare(tinyalsa
+            GIT_REPOSITORY https://github.com/tinyalsa/tinyalsa.git
+            GIT_TAG v2.0.0
+            GIT_SHALLOW TRUE)
+        set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+        set(CMAKE_POLICY_VERSION_MINIMUM 3.5)   # tinyalsa still says 3.1, which CMake 4 rejects
+        set(BUILD_SHARED_LIBS OFF)
+        set(TINYALSA_BUILD_EXAMPLES OFF)
+        set(TINYALSA_BUILD_UTILS OFF)
+        FetchContent_MakeAvailable(tinyalsa)
+        # Upstream builds with -Werror; newer GCCs flag its strncpy use.
+        target_compile_options(tinyalsa PRIVATE -Wno-error)
+        target_link_libraries(gbemu_linux PRIVATE tinyalsa)
     endif()
+    target_compile_definitions(gbemu_linux PRIVATE POKEBOY_TINYALSA=1)
     install(TARGETS gbemu_linux RUNTIME DESTINATION bin)
 endif()
 
