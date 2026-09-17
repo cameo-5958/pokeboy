@@ -141,6 +141,12 @@ def _mon(d: dict) -> TrainerMon:
     )
 
 
+def available(path: Path | str = DEFAULT_PATH) -> bool:
+    """True when the dump exists. It is generated, not committed:
+    `cd ai && uv run python tools/dump_trainers.py` (needs the patched ROM)."""
+    return Path(path).exists()
+
+
 def load(path: Path | str = DEFAULT_PATH) -> TrainerData:
     raw = json.loads(Path(path).read_text())
     parties: list[TrainerParty] = []

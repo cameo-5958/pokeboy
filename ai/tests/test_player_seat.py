@@ -10,6 +10,12 @@ from sim.player_seat import NetPlayer, player_view, swap_event  # noqa: E402
 from sim.trainer_env import TrainerEnv  # noqa: E402
 from tools.eval_trainer import play  # noqa: E402
 
+pytestmark = pytest.mark.skipif(
+    not trainers.available(),
+    reason="needs datasets/trainers.json: cd ai && "
+           "uv run python tools/dump_trainers.py",
+)
+
 
 def test_player_view_swaps_sides():
     parties = trainers.load().parties
@@ -21,7 +27,6 @@ def test_player_view_swaps_sides():
     assert ov.active.species == oe.player[oe.player_slot].species
     assert ov.player[ov.player_slot].species == oe.active.species
     assert v.count == 0 and all(not (v.features()[1] >> a & 1) for a in range(10, 16))  # no items for the player
-
 
 def test_swap_event_mirrors_sides():
     ev = np.arange(64, dtype=np.float32)

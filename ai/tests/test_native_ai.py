@@ -1,9 +1,17 @@
 import random
 
+import pytest
+
 from sim import trainers
 from sim.native_ai import CLASS_MODS, NativeTrainerAI, tables
 from sim.trainer_env import TrainerEnv
 from tools.eval_trainer import play
+
+pytestmark = pytest.mark.skipif(
+    not trainers.available(),
+    reason="needs datasets/trainers.json: cd ai && "
+           "uv run python tools/dump_trainers.py",
+)
 
 
 def test_rom_tables_parse():
@@ -14,7 +22,6 @@ def test_rom_tables_parse():
     assert t.ai_type_effectiveness(0x04, 0x02, 0x00) == 0    # Ground vs Flying: no effect
     assert t.ai_type_effectiveness(0x00, 0x00, 0x00) == 0x10  # neutral default
     assert len(CLASS_MODS) == 47
-
 
 def test_native_ai_completes_battles():
     parties = trainers.load().parties

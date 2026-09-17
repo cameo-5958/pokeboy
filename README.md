@@ -37,7 +37,9 @@ ROM, web core, AI:
 ```sh
 pred-patch/build_ai.sh
 emulator/web/build.sh                    # emscripten
-cd ai && uv sync --group dev && sim/build_engine.sh && scripts/build_pkai.sh
+cd ai
+uv sync --group dev && sim/build_engine.sh && scripts/build_pkai.sh
+uv run python tools/dump_trainers.py     # trainer parties, needs the ROM
 ```
 
 `ai/scripts/setup_external.sh` is for the Showdown and metamon eval rig only.
