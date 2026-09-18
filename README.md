@@ -6,59 +6,35 @@ on the device. No ROMs in here, bring your own.
 ## Layout
 
 - `gameboy/` emulator core, tests, tools
-- `emulator/` frontends: linux (fbdev/evdev/tinyalsa), headless, win32
-- `pkai/` battle AI: damage math, features, int8 inference, ROM hook
-- `pred-patch/` pokered with the $DB/$EB/$EC opcodes the AI hooks into
-- `ai/` simulator, training, weight export, Showdown eval
-- `buildroot/` external tree for the device image (PocketBeagle / OSD3358)
-- `hardware/` KiCad project, fab exports
-- `app/` React Native (Expo) app
+- `emulator/` frontends: linux, headless, win32
+- `pkai/` battle AI
+- `pred-patch/` pokered with the opcodes the AI hooks into
+- `ai/` simulator, training, weight export
+- `buildroot/` device image (PocketBeagle / OSD3358)
+- `hardware/` KiCad project
+- `app/` Expo app
 - `backend/` API for ROMs, mods and cartridge metadata
 
 ## Build
 
-Core (cmake, C++17):
-
 ```sh
+# core, C++17
 cmake -S gameboy -B build -DCMAKE_BUILD_TYPE=Release -DPKAI_BUILD_ROM=OFF
 cmake --build build -j
 build/gbemu_headless game.gb 1800 out.bmp
-```
 
-`-DBUILD_TESTING=ON` adds the tests, `ctest` runs them. Dropping
-`-DPKAI_BUILD_ROM=OFF` rebuilds the patched ROM too, which needs rgbds.
-
-`pred-patch/` is a copy of a separate repository. Find patched pokered ROM
-here: []
-
-ROM, AI:
-
-```sh
+# patched ROM (needs rgbds) and AI
 pred-patch/build_ai.sh
-cd ai
-uv sync --group dev && sim/build_engine.sh && scripts/build_pkai.sh
-uv run python tools/dump_trainers.py     # trainer parties, needs the ROM
-```
+cd ai && uv sync --group dev && sim/build_engine.sh && scripts/build_pkai.sh
 
-`ai/scripts/setup_external.sh` is for the Showdown and metamon eval rig only.
+# device image
+buildroot/scripts/build-image.sh
+buildroot/scripts/qemu/run-system.sh
 
-Device image:
-
-```sh
-buildroot/scripts/build-image.sh         # first run, 1-2 hours
-buildroot/scripts/rebuild-app.sh         # after source changes
-buildroot/scripts/qemu/run-system.sh     # boot it under QEMU
-```
-
-Backend and app:
-
-```sh
-cd backend && npm install && npm run dev   # :4000
+# backend (:4000) and app
+cd backend && npm install && npm run dev
 cd app && npm install && npm start
 ```
-
-`EXPO_PUBLIC_API_URL` points the app at the backend, default
-`http://localhost:4000`. Use your LAN IP from a phone.
 
 ## License
 
