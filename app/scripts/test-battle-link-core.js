@@ -199,7 +199,7 @@ function runLegalityTests() {
 
     // Trainer battles never write wEnemyMonNicks (only _AddPartyMon's player
     // branch fills nick arrays), so trainer-side names must be derived from
-    // the species id — the unwritten RAM here would decode as "???????????".
+    // the species id - the unwritten RAM here would decode as "???????????".
     assert.equal(lastState.trainer.active.nickname, "RHYDON", "trainer active is named by its species");
     assert.deepEqual(
       lastState.trainer.party.map((mon) => mon.nickname),
@@ -243,7 +243,7 @@ function runLegalityTests() {
 // 204 re-polling.
 function runResponseTests() {
     // An endpoint response that is not a legal decision rejects the turn
-    // immediately with a random action — no retries.
+    // immediately with a random action - no retries.
     ram[0xd072] = 0;
     const before = requests;
     context.fetch = async () => {

@@ -5,7 +5,7 @@
  * DISCORD_BOT_TOKEN env var or from the git-ignored token file
  * (data/discord.json, `{"token": "..."}`). The file is watched, so dropping a
  * token in (or rotating it) takes effect without a server restart. No token
- * means no bot — every Battle Link route keeps working without one.
+ * means no bot - every Battle Link route keeps working without one.
  */
 
 import fsSync from "node:fs";

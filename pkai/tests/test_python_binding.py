@@ -16,6 +16,9 @@ import pkai  # noqa: E402
 
 def main(build_dir: str, rom_path: str) -> int:
     build = pathlib.Path(build_dir)
+    if not pathlib.Path(rom_path).exists() or not (build / "pkai_fixture_hash.txt").exists():
+        print(f"no ROM at {rom_path}, build it with pred-patch/build_ai.sh")
+        return 77                             # ctest SKIP_RETURN_CODE
     lib = pkai.load(next(build.rglob("libpkai_c.*")))
     pkai.check_layout(lib)
     rom = pathlib.Path(rom_path).read_bytes()

@@ -1,4 +1,4 @@
-"""Integer reference forward pass of PEP (numpy only) — the executable §8.3 specification.
+"""Integer reference forward pass of PEP (numpy only) - the executable §8.3 specification.
 
 Everything here is defined in terms of int8/int16/int32 arithmetic (int64 numpy
 intermediates stand in for the 64-bit products of the scalar C++ path).  No torch.
@@ -35,7 +35,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-# --------------------------------------------------------------------------- constants
 
 FEAT = 48
 N_TOKENS = 27
@@ -75,9 +74,6 @@ TOKEN_EMBEDS = {
 }
 
 
-# --------------------------------------------------------------------------- parameters
-
-
 @dataclass
 class QuantParams:
     """Everything the integer model needs; `tensors` is exactly what pkai.weights stores."""
@@ -90,9 +86,6 @@ class QuantParams:
 
     def nbytes(self) -> int:
         return sum(int(t.nbytes) for t in self.tensors.values())
-
-
-# --------------------------------------------------------------------------- fixed-point primitives
 
 
 def sat(x, lo: int, hi: int) -> np.ndarray:
@@ -149,9 +142,6 @@ def requant_params(real: float) -> tuple[int, int]:
 def gemm(x: np.ndarray, w: np.ndarray) -> np.ndarray:
     """int8 (..., K) x int8 (C, K) -> exact int64 (..., C) (float64 matmul is exact below 2^53)."""
     return (x.astype(np.float64) @ w.astype(np.float64).T).astype(np.int64)
-
-
-# --------------------------------------------------------------------------- LUTs
 
 
 def make_luts() -> "OrderedDict[str, np.ndarray]":
@@ -236,9 +226,6 @@ def softmax_int(x, mask, shift: int, lut_exp: np.ndarray, lut_recip: np.ndarray,
         trace[prefix + "recip_q15"] = r1[..., 0].astype(np.int32)
         trace[prefix + "probs_u8"] = probs
     return probs
-
-
-# --------------------------------------------------------------------------- model
 
 
 @dataclass

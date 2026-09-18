@@ -10,6 +10,13 @@ torch = pytest.importorskip("torch")
 
 from models.pep import PEP, PEPConfig, load_checkpoint, save_checkpoint  # noqa: E402
 from models.train_ppo import build_parser, gae, train  # noqa: E402
+from sim import trainers  # noqa: E402
+
+needs_trainers = pytest.mark.skipif(
+    not trainers.available(),
+    reason="needs datasets/trainers.json: cd ai && "
+           "uv run python tools/dump_trainers.py",
+)
 
 torch.set_num_threads(2)
 
@@ -35,6 +42,7 @@ def test_gae_reward_array_matches_terminal_form():
     assert a3[0] == pytest.approx(a1[0] + 0.5)
 
 
+@needs_trainers
 def test_train_ppo_league_tiny(tmp_path):
     cfg = PEPConfig(d=32, layers=1, ffn=64, gru=32)
     init = tmp_path / "init.pt"
@@ -53,6 +61,7 @@ def test_train_ppo_league_tiny(tmp_path):
     assert os.path.exists(os.path.join(tmp_path, "ppo-league", "league", "iter-00001.pt"))
 
 
+@needs_trainers
 def test_train_ppo_tiny(tmp_path):
     cfg = PEPConfig(d=32, layers=1, ffn=64, gru=32)
     init = tmp_path / "init.pt"

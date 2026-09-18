@@ -240,7 +240,7 @@ export function Cartridge({
           />
         ))}
       </View>
-      {/* Label sticker — the game image mounts inside the reserve */}
+      {/* Label sticker - the game image mounts inside the reserve */}
       <View
         style={[
           styles.cartLabel,

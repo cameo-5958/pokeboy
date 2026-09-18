@@ -2,16 +2,14 @@ node_modules/
 dist/
 .env
 
-# Issued device API keys — secrets, never commit.
+# Issued device API keys - secrets, never commit.
 data/keys.json
 
-# Battle Link Discord bot token — secret, never commit.
+# Battle Link Discord bot token - secret, never commit.
 data/discord.json
-# Web player persistence (battery saves, save states).
-data/web/
 
 # ROM binaries and user-supplied mod payloads are never committed.
-# ROM symbol documents (.sym) are fine to track — they contain no ROM data.
+# ROM symbol documents (.sym) are fine to track - they contain no ROM data.
 roms/*.gb
 roms/*.gbc
 roms/*.rom

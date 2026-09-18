@@ -3,7 +3,7 @@
 export const SCREEN_RATIO = 160 / 144;
 
 // The console keeps the same formation. Ejecting pops the cartridge out of the
-// top slot, then the whole console slides down from under it — the cartridge
+// top slot, then the whole console slides down from under it - the cartridge
 // always renders BEHIND the console body, never over it.
 export const PAD_TOP = 28;
 export const PAD_BOTTOM = 28;
@@ -18,7 +18,7 @@ export const CARTRIDGE_RETRY_MS = 15000;
 export const MOD_REGISTRY_RETRY_MS = 15000;
 export const DEV_POLL_MS = 750;
 export const BATTLE_LINK_ENDPOINT_KEY = "pokeboy.mod.battle-link.endpoint.v1";
-export const DEFAULT_BATTLE_LINK_ENDPOINT = "https://pokeboy.cameo.moe/battle-link/decision";
+export const DEFAULT_BATTLE_LINK_ENDPOINT = process.env.EXPO_PUBLIC_BATTLE_LINK_URL ?? "";
 export const BATTLE_LINK_MAX_WAIT_KEY = "pokeboy.mod.battle-link.maxTimeTillRandom.v1";
 export const DEFAULT_BATTLE_LINK_MAX_WAIT_S = 30;
 export const BATTLE_LINK_MODE_KEY = "pokeboy.mod.battle-link.mode.v1";

@@ -47,9 +47,6 @@ from sim.trainer_env import _u16
 OPPONENTS = ("greedy", "random", "search", "self", "past")
 
 
-# --------------------------------------------------------------------------- opponents
-
-
 def parse_opponents(spec: str) -> list[tuple[str, float]]:
     """"greedy,random" or "self:0.4,past:0.3,greedy:0.3" -> [(name, weight)] normalised."""
     out: list[tuple[str, float]] = []
@@ -92,9 +89,6 @@ def make_opponent(name: str, seed: int, models: dict | None = None, temperature:
         depth = int(name.partition(":")[2] or 2)
         return SearchPlayer(depth=depth, seed=seed).choose
     raise ValueError(f"unknown opponent {name!r}; choose from {OPPONENTS}")
-
-
-# --------------------------------------------------------------------------- rollouts
 
 
 @dataclass
@@ -319,9 +313,6 @@ def opponent_kind(name: str) -> str:
     return "past" if name.startswith("past:") else name
 
 
-# --------------------------------------------------------------------------- batching / GAE
-
-
 def gae(values: np.ndarray, rewards: np.ndarray | float, gamma: float, lam: float) -> tuple[np.ndarray, np.ndarray]:
     """Advantages and returns for one episode (V_T = 0); a scalar `rewards` is the terminal-only reward."""
     T = values.shape[0]
@@ -389,9 +380,6 @@ def batch_to_device(arrays: dict[str, np.ndarray], device) -> dict[str, torch.Te
 
 def _index(batch: dict[str, torch.Tensor], idx: torch.Tensor) -> dict[str, torch.Tensor]:
     return {k: v[idx] for k, v in batch.items()}
-
-
-# --------------------------------------------------------------------------- PPO update
 
 
 def _legal_logp(logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -526,9 +514,6 @@ def ppo_update(
     return out
 
 
-# --------------------------------------------------------------------------- evaluation
-
-
 def evaluate(model: PEP, parties, battles: int, seed: int, temperature: float = 0.5,
              opponent_kind: str = "greedy", matchups_mode: str = "random") -> dict:
     """Win-rate of the current policy (fp32, CPU) over a fixed matchup sequence via tools.eval_trainer.run."""
@@ -569,9 +554,6 @@ def reset_feature_columns(model: PEP, spec: str) -> None:
                 if not 0 <= c < FEAT:
                     raise ValueError(f"feature column {c} out of range")
                 lin[tok].weight[:, c].zero_()
-
-
-# --------------------------------------------------------------------------- driver
 
 
 def train(args: argparse.Namespace) -> dict:

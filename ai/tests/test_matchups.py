@@ -1,7 +1,15 @@
 import random
 
+import pytest
+
 from sim import trainers
 from sim.matchups import max_level, parse_mix, sample_matchup, sample_pair
+
+pytestmark = pytest.mark.skipif(
+    not trainers.available(),
+    reason="needs datasets/trainers.json: cd ai && "
+           "uv run python tools/dump_trainers.py",
+)
 
 
 def test_parse_mix_normalises():
@@ -9,7 +17,6 @@ def test_parse_mix_normalises():
     assert [m for m, _ in mix] == ["mirror", "balanced"]
     assert abs(sum(w for _, w in mix) - 1.0) < 1e-9 and abs(mix[1][1] - 0.75) < 1e-9
     assert parse_mix("random") == [("random", 1.0)]
-
 
 def test_modes_respect_their_constraints():
     parties = trainers.load().parties

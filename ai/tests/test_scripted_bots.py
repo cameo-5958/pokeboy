@@ -1,4 +1,4 @@
-"""UniversalMaxDamageBot: best damage across the WHOLE team — switches to the
+"""UniversalMaxDamageBot: best damage across the WHOLE team - switches to the
 bench mon with the strongest move vs the opponent's active if it beats the
 active's best. LessEffectiveMaxDamageBot: pivots to the team member taking
 the least damage from the opponent's best (revealed or type-inferred) attack,
@@ -52,7 +52,7 @@ def test_umd_attacks_when_active_is_best():
 
 def test_umd_switches_to_stronger_bench_attacker():
     # Active Rhydon has only Body Slam into Gengar (immune, score 0);
-    # bench Starmie's Surf hits — universal max damage means switching.
+    # bench Starmie's Surf hits - universal max damage means switching.
     s = _state(
         [_mon("Rhydon", ["Body Slam"]),
          _mon("Starmie", ["Surf", "Recover"])],

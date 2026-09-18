@@ -39,7 +39,7 @@ export function Bezel({
         },
       ]}
     >
-      {/* Twin pinstripes — the signature DMG mark */}
+      {/* Twin pinstripes - the signature DMG mark */}
       <View style={[styles.stripes, { top: u(9), height: u(5), left: u(16), right: u(16) }]}>
         <View style={[styles.stripe, { backgroundColor: "#1c2a86", marginBottom: u(2) }]} />
         <View style={[styles.stripe, { backgroundColor: "#8a1f45" }]} />
@@ -80,7 +80,7 @@ function Lcd({ u, width, height }: { u: Unit; width: number; height: number }) {
           ref={webViewRef}
           source={{ uri: emulator.uri }}
           // The bundled emulator loads from a file:// URI, which the default
-          // whitelist (http/https) silently blocks — leaving a blank WebView.
+          // whitelist (http/https) silently blocks - leaving a blank WebView.
           originWhitelist={["file://*", "http://*", "https://*"]}
           injectedJavaScriptBeforeContentLoaded={emulator.injected}
           allowingReadAccessToURL={emulator.readAccessUri}

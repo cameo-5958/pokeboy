@@ -14,13 +14,13 @@ Layout (stateless snapshot; history segment is added in a later phase):
   = 85 tokens, padded to SEQ_LEN.
 
 Engineered continuous features on MY_ACTIVE move tokens: gen1 type-effect
-multiplier vs opp active (scaled /4) and STAB flag — public info only.
+multiplier vs opp active (scaled /4) and STAB flag - public info only.
 
 With dmg_feats=True (skill-probe remediation), four more channels on
 MY_ACTIVE move tokens: dmg_frac (approx. L100 standard-stat damage as a
 fraction of the defender's max HP), kills (min roll KOs at current HP),
-acc (accuracy/100), wasted (pure status move that must fail — target
-already statused or type-immune — or heal at full HP). All computable
+acc (accuracy/100), wasted (pure status move that must fail - target
+already statused or type-immune - or heal at full HP). All computable
 from public info; the model previously had to memorize these per move id.
 """
 
@@ -68,7 +68,7 @@ def _l100_stat(base: int) -> int:
 def _l100_hp(base: int) -> int:
     return 2 * base + 203
 
-# history event flags, highest-priority first — one EV_* token per turn
+# history event flags, highest-priority first - one EV_* token per turn
 EV_PRIORITY = ["ft", "crit", "se", "st", "sc", "miss", "re", "im"]
 
 
@@ -267,7 +267,7 @@ class Tokenizer:
 
     def _dmg_channels(self, move: str, attacker: dict[str, Any], defender: dict[str, Any]) -> dict[str, float]:
         """dmg_frac / kills / acc / wasted for one of my active's moves vs the
-        opp active — approximate L100 standard-stat gen1 damage, public info only."""
+        opp active - approximate L100 standard-stat gen1 damage, public info only."""
         if move not in MOVES:
             return {}
         _, _, bp, acc, mtype, effect = MOVES[move]

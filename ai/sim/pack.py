@@ -27,7 +27,7 @@ class PokemonSpec:
     species: str
     moves: list[str]
     level: int = 100
-    # (hp, atk, def, spe, spc) — hp DV is normally derived from the others in
+    # (hp, atk, def, spe, spc) - hp DV is normally derived from the others in
     # real games; 15s across the board is the standard competitive assumption.
     dvs: tuple[int, int, int, int, int] = (15, 15, 15, 15, 15)
     statexp: tuple[int, int, int, int, int] = field(

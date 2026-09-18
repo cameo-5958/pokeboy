@@ -3,9 +3,9 @@
  * through a React context so every screen reads the same runtime backend
  * connection.
  *
- * - `Settings` — the backend connection (URL + API key) the user enters in the
+ * - `Settings` - the backend connection (URL + API key) the user enters in the
  *   settings dialog.
- * - `InstalledManifest` — what this device has pulled from the backend, keyed
+ * - `InstalledManifest` - what this device has pulled from the backend, keyed
  *   by id → version. "Pull latest" diffs this against the live registry.
  */
 
@@ -51,7 +51,7 @@ export const EMPTY_MANIFEST: InstalledManifest = { roms: {}, mods: {} };
 type SettingsContextValue = {
   settings: Settings;
   updateSettings: (patch: Partial<Settings>) => void;
-  /** False until the persisted read resolves — gate network calls on this. */
+  /** False until the persisted read resolves - gate network calls on this. */
   settingsLoaded: boolean;
 };
 
@@ -74,7 +74,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           try {
             setSettings({ ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<Settings>) });
           } catch {
-            // Corrupt payload — fall back to defaults.
+            // Corrupt payload - fall back to defaults.
           }
         }
         setLoaded(true);

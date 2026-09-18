@@ -1,5 +1,6 @@
 # Build output
 build/
+build-ai/
 *.exe
 *.obj
 *.ilk
@@ -23,6 +24,7 @@ __pycache__/
 
 # Documentation is maintained outside the repository
 docs/
+notes/
 *.md
 !/README.md
 !**/THIRD_PARTY_NOTICES.md
@@ -40,3 +42,6 @@ pred-patch/tools/gfx
 pred-patch/tools/make_patch
 pred-patch/tools/pkmncompress
 pred-patch/tools/scan_includes
+
+# KiCad per-user project state
+*.kicad_prl

@@ -10,7 +10,7 @@ export const modsRouter = Router();
 
 // Lists installed mod packages (`.gbmod` files) under the mods dir. The registry
 // (`/api/registry`) carries the mod *catalog* with versions; this endpoint
-// reports which package payloads are actually present on disk — this listing is
+// reports which package payloads are actually present on disk - this listing is
 // deliberately local-only, unlike the payload routes below.
 modsRouter.get("/", async (_req, res, next) => {
   try {
@@ -33,7 +33,7 @@ modsRouter.get("/", async (_req, res, next) => {
 
 // Emulator host core (mod-core JS) named by the registry's host entry. Tracked
 // in git as an app asset, so updating the source (a checkout, or the configured
-// content source) updates what every device runs — no app build involved.
+// content source) updates what every device runs - no app build involved.
 modsRouter.get("/host/:id", async (req, res, next) => {
   try {
     const host = (await readRegistry()).host;

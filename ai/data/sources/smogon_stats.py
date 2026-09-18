@@ -2,7 +2,7 @@
 
 Crawls https://www.smogon.com/stats/ month index and fetches, per month and
 per format: the usage tables (0 and 1500+ cutoffs), moveset text, and chaos
-JSON, when present. Old months predate gen1 stats — 404s are skipped quietly.
+JSON, when present. Old months predate gen1 stats - 404s are skipped quietly.
 """
 
 from __future__ import annotations

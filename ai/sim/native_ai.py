@@ -92,7 +92,6 @@ class NativeTrainerAI:
     def reset(self) -> None:
         self._battle_key = None
 
-    # ---------------------------------------------------------------- move scores
     def move_scores(self, obs, t: RomTables) -> list[int]:
         scores = [10] * 4
         if obs.disabled:
@@ -150,7 +149,6 @@ class NativeTrainerAI:
             cands = [i for i in range(4) if legal >> i & 1] or [0]
         return self.rng.choice(cands)
 
-    # ---------------------------------------------------------------- items / switches
     def trainer_ai(self, obs, legal: int) -> int | None:
         """The class routine: an item action (10..15), a switch action (4..9) or None."""
         if obs.count == 0:
@@ -196,7 +194,6 @@ class NativeTrainerAI:
                 return 4 + i
         return None
 
-    # ---------------------------------------------------------------- policy
     def choose(self, env) -> int:
         key = env.b.battle_id
         if key != self._battle_key:

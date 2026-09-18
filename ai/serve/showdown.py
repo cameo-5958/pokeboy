@@ -2,7 +2,7 @@
 
 Translates a poke-env Battle into a schema_v1 state + an action-int ->
 poke-env order mapping, so any of our checkpoint agents can play on the
-Showdown protocol — against metamon's pretrained agents, foul-play, or the
+Showdown protocol - against metamon's pretrained agents, foul-play, or the
 human ladder. Translation is duck-typed (attribute access only) and
 poke-env itself is imported lazily inside PokeboyPlayer, so this module and
 its tests work without the dependency installed.
@@ -231,7 +231,7 @@ def make_team_builder(seed: int = 0, pool: str = "mixed",
     """Teambuilder sampling a fresh team every battle (lazy import).
 
     pool: "mixed" for the standard 20/40/40 benchmark distribution, or a
-    named TeamSampler pool ("competitive", "variety") to draw from alone —
+    named TeamSampler pool ("competitive", "variety") to draw from alone -
     e.g. matching an external opponent's curated team set. team_index pins
     one fixed team from that pool (per-team win-rate probes).
     """
@@ -265,7 +265,7 @@ def make_player(ckpt: str, battle_format: str = "gen1ou", team=None,
                 **player_kwargs):
     """Build a poke-env Player wrapping a checkpoint agent (lazy import).
 
-    agent overrides the default ModelAgent — e.g. serve.overdrive's
+    agent overrides the default ModelAgent - e.g. serve.overdrive's
     OverdriveAgent for search-at-serve play."""
     from poke_env.player import Player
 

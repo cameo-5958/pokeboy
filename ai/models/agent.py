@@ -1,7 +1,7 @@
 """ModelAgent: a checkpoint-backed seat for `python -m sim battle`.
 
 Loads a train_imitation checkpoint, masks illegal actions, and *samples*
-from the policy (SPECS §7) — sampling happens on CPU with an owned
+from the policy (SPECS §7) - sampling happens on CPU with an owned
 generator so a seed fully determines the action sequence.
 """
 

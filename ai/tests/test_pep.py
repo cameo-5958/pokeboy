@@ -31,9 +31,6 @@ from models.train_pep import build_parser, iter_windows, train  # noqa: E402
 torch.set_num_threads(2)
 
 
-# --------------------------------------------------------------------------- synthetic features
-
-
 def random_decision(rng: np.random.Generator, n_switch: int = 2) -> dict:
     """One plausible Features record: 4 own moves, 1+n_switch own mons, 1-3 player mons, no items."""
     present = np.zeros(MAX_TOKENS, np.uint8)
@@ -130,9 +127,6 @@ def make_batch(n: int, seed: int = 0) -> tuple[dict, dict]:
     return features_to_tensors(arrays), {"raw": ds, "arrays": arrays}
 
 
-# --------------------------------------------------------------------------- data
-
-
 def test_decode_roundtrip():
     rng = np.random.default_rng(1)
     d = random_decision(rng)
@@ -160,9 +154,6 @@ def test_dataset_groups_and_orders(tmp_path):
     assert np.isnan(ds[0].teacher_probs[:3]).all() and np.isfinite(ds[0].teacher_probs[3:]).all()
     batch = collate_battles(ds.battles[:3])
     assert batch["mask"].shape == (3, 7) and batch["mask"].all()
-
-
-# --------------------------------------------------------------------------- model
 
 
 def test_shapes_and_masks():
@@ -242,9 +233,6 @@ def test_param_budget():
     n = m.num_params(include_matchup=False)
     assert 700_000 <= n <= 1_400_000, n
     assert m.num_params(True) - m.num_params(False) == 36481 * cfg.emb_matchup
-
-
-# --------------------------------------------------------------------------- trainer
 
 
 def test_iter_windows():

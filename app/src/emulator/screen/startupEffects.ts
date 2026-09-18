@@ -150,7 +150,7 @@ export function useCatalogEffects(options: {
 }) {
   const { api, settingsLoaded, setCartridges, setCartridgeIdx, setMods, setEnabledMods } = options;
   // The list is local-first, so a launch while the backend is unreachable
-  // (e.g. VPN not up yet) resolves from the offline cache — which can include
+  // (e.g. VPN not up yet) resolves from the offline cache - which can include
   // cartridges since removed server-side. Keep retrying, and re-check when the
   // app foregrounds, until a fresh response replaces any stale entries.
   useEffect(() => {

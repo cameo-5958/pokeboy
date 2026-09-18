@@ -27,7 +27,7 @@ before(async () => {
     hits.push({ path: req.path, auth: req.get("authorization") });
     res.json(REMOTE_REGISTRY);
   });
-  // Every other path 404s — exactly how a private repo answers raw requests.
+  // Every other path 404s - exactly how a private repo answers raw requests.
   await new Promise<void>((resolve) => { remote = app.listen(0, "127.0.0.1", resolve); });
   remoteUrl = `http://127.0.0.1:${(remote.address() as AddressInfo).port}`;
 });

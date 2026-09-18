@@ -4,8 +4,11 @@ run without poke-env installed; the Player subclass imports poke-env lazily."""
 
 import random
 
+import pytest
+
 from serve.showdown import state_from_battle, team_to_showdown
 from sim.teams import STANDARD_SETS
+from sim.teamsets import pools_available
 
 
 class Move:
@@ -115,6 +118,11 @@ def test_team_export_round_trips_through_our_parser():
     assert [mv for _, mv in parsed] == [m.moves for m in team]
 
 
+@pytest.mark.skipif(
+    not pools_available(),
+    reason="needs the metamon team corpus: cd ai && "
+           "uv run python -m data pull --source metamon --only teams",
+)
 def test_team_builder_resamples_per_battle():
     from serve.showdown import make_team_builder
 
@@ -126,6 +134,11 @@ def test_team_builder_resamples_per_battle():
     assert len(set(packed)) > 1  # a fresh sample each battle, not one fixed team
 
 
+@pytest.mark.skipif(
+    not pools_available(),
+    reason="needs the metamon team corpus: cd ai && "
+           "uv run python -m data pull --source metamon --only teams",
+)
 def test_team_builder_competitive_pool_only():
     from serve.showdown import make_team_builder
     from sim.teamsets import TeamSampler

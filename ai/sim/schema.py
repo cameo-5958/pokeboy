@@ -1,4 +1,4 @@
-"""schema_v1 battle state — the frozen interface contract (ai/SPECS.md §1.4).
+"""schema_v1 battle state - the frozen interface contract (ai/SPECS.md §1.4).
 
 Action space (§1.2): 0-3 move slots, 4-8 switch to bench order slots 2-6,
 9 pass / forced-continue / struggle.

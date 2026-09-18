@@ -2,7 +2,7 @@
 
 Same shape as sim.search.SearchTeacher (depth-limited, expectation over
 re-rolled RNG seeds, alpha blend of worst-case and predicted player reply),
-but it scores TrainerEnv actions — including item classes — by stepping
+but it scores TrainerEnv actions - including item classes - by stepping
 cloned environments, so item turns follow the same ordering and effect rules
 the data will be trained on. Full information is legal here: the teacher only
 produces demonstrations; the student consumes public-info features.

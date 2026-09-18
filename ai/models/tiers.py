@@ -1,4 +1,4 @@
-"""Model tier configs (sized for RTX 3080 10GB — see foundation design doc)."""
+"""Model tier configs (sized for RTX 3080 10GB - see foundation design doc)."""
 
 from __future__ import annotations
 

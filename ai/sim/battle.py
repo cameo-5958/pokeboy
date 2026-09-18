@@ -77,7 +77,7 @@ class Battle:
     def __init__(self, team1: list[PokemonSpec], team2: list[PokemonSpec], seed: int,
                  packed: bytes | None = None):
         self.teams = (team1, team2)
-        # a caller may hand in a pre-patched buffer (sim/reconstruct.py) —
+        # a caller may hand in a pre-patched buffer (sim/reconstruct.py) -
         # it must be pack_battle layout for these teams, before first update
         if packed is None:
             packed = pack_battle(team1, team2, seed)

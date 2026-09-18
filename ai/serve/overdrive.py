@@ -4,11 +4,11 @@ For each decision the policy shortlists candidate actions, the state is
 determinized K times (sample_opponent_team fills hidden opponent info from
 the benchmark team pools), a SearchTeacher scores the shortlist on each
 reconstructed engine battle, and the action with the best average score
-wins — policy probability breaks ties. This is the foul-play recipe with a
+wins - policy probability breaks ties. This is the foul-play recipe with a
 much faster engine and a learned prior: search quality where the policy is
 unsure, policy quality where search is blind (volatiles, long-term plans).
 
-Any failure — reconstruction, search, odd species — falls back to the raw
+Any failure - reconstruction, search, odd species - falls back to the raw
 policy, so overdrive is never worse than the model it wraps at stability.
 """
 
@@ -23,7 +23,7 @@ from sim.search import SearchTeacher, clone_raw
 
 
 def full_info_state(b: Battle, player: int) -> State:
-    """Player's state with the opponent fully revealed — used to value-score
+    """Player's state with the opponent fully revealed - used to value-score
     determinized children, where 'hidden' info was sampled by us anyway.
     Fully-revealed opponents also occur naturally late-game, so these states
     are in-distribution for the model."""

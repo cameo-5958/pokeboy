@@ -1,7 +1,7 @@
 """Encoder transformer over field-value tokens (ai/SPECS.md §4.2).
 
 embedding = E_field + E_value + E_slot + W_cont·cont ; bidirectional encoder
-(no positional encoding — structure lives in field/slot embeddings); learned
+(no positional encoding - structure lives in field/slot embeddings); learned
 query tokens are prepended: [ACT] feeds the policy head and, when value_bins
 > 0, [VAL] feeds a two-hot win-prob classification head (SPECS §4.2 head 2).
 Belief/opp-policy heads come with RL.

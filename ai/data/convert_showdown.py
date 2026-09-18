@@ -11,8 +11,8 @@ Action semantics for replay data (reveal-order, deterministic given state_json):
   switches: action = 4 + index of the target in the bench list (team in reveal
             order, minus the active mon).
 
-Decision boundaries (workspace/AI-DATA.md remediation): normal-turn decisions
-are snapshotted at the START of the turn — both players' rows come from one
+Decision boundaries: normal-turn decisions
+are snapshotted at the START of the turn - both players' rows come from one
 boundary state, so neither sees same-turn effects, reveals, or its own label.
 Forced replacements decide mid-turn and keep execution-time state. A player's
 decision is only emitted when it is observable AND its label is derivable from

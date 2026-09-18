@@ -4,14 +4,10 @@
 #include <set>
 #include <vector>
 
-// Deliberately NOT <cassert>. CMake builds this as Release, which defines
-// NDEBUG and compiles every assert() away -- including anything called inside
-// one. This test used to say `assert(gb.load_rom(...))`, so in Release the ROM
-// was never loaded at all: bus.attach() never ran and the first write_io
-// dereferenced a null joypad, segfaulting before it checked anything. Removing
-// the side effect alone would have been worse -- the test would then run the
-// boot and exit 0 having verified nothing. CHECK always evaluates its
-// condition, in every build type.
+// Not <cassert>: Release defines NDEBUG and compiles assert() away along with
+// anything called inside it. `assert(gb.load_rom(...))` here meant the ROM was
+// never loaded in Release, and the first write_io hit a null joypad. CHECK
+// always evaluates its condition.
 static int failures = 0;
 #define CHECK(condition) do { \
     if (!(condition)) { \

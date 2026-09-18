@@ -4,7 +4,7 @@
  * Runs on Node's built-in WebSocket (global since Node 22). Supports IDENTIFY
  * with zero intents (enough for INTERACTION_CREATE), heartbeating with ACK
  * zombie detection, RESUME after drops, and capped exponential reconnect
- * backoff. Nothing else — the Battle Link bot never needs guild state or
+ * backoff. Nothing else - the Battle Link bot never needs guild state or
  * message content.
  */
 

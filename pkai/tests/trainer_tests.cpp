@@ -3,6 +3,7 @@
 // wiring (LoneMoves, TeamMoves, champion rival) against data/trainers/*.asm.
 #include "pkai/tools/trainer_dump.h"
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 using namespace pkai::trainers;
 #define CHECK(x) do { if (!(x)) { std::cerr << __LINE__ << ": " << #x << "\n"; std::exit(1); } } while (0)
@@ -14,6 +15,10 @@ static const Class& cls(const Dump& d, const char* name) {
 static bool knows(const Mon& m, uint8_t move) { for (auto x : m.moves) if (x == move) return true; return false; }
 
 int main() {
+    if (!std::ifstream(AI_ROM).good()) {      // 77: ctest SKIP_RETURN_CODE
+        std::cerr << "no ROM at " << AI_ROM << ", build it with pred-patch/build_ai.sh\n";
+        return 77;
+    }
     Loader loader(AI_ROM, AI_SYM);
     const Dump d = loader.dump_all();
     CHECK(d.rom_crc32 == pkai::tables::rom_crc32);

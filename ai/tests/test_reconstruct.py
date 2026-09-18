@@ -11,10 +11,13 @@ reconstruct exactly.
 
 import random
 
+import pytest
+
 from sim.agents import MaxDamageBot
 from sim.battle import Battle
 from sim.reconstruct import battle_from_state, sample_opponent_team
 from sim.teams import sample_team
+from sim.teamsets import pools_available
 
 
 def _play(b: Battle, turns: int) -> None:
@@ -74,6 +77,11 @@ def test_reconstructed_battle_is_playable():
     assert recon.state(1) is not None
 
 
+@pytest.mark.skipif(
+    not pools_available(),
+    reason="needs the metamon team corpus: cd ai && "
+           "uv run python -m data pull --source metamon --only teams",
+)
 def test_sample_opponent_team_respects_revelations():
     b = _mid_battle(turns=8)
     st = b.state(1).to_json()

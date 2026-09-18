@@ -14,7 +14,7 @@ import type { AnimValue, BattleLinkMode, Unit } from "./types";
  * ------------------------------------------------------------------ */
 
 // Accessory bay for snapping mods onto the console. Anchored to the ejected
-// cartridge — right of it in landscape, above it in portrait — and fades in
+// cartridge - right of it in landscape, above it in portrait - and fades in
 // with the console drop, like the selector arrows. Two stacked panels: a
 // one-mod-at-a-time browser (name, blurb, YES/NO), and an enabled count.
 export function ModChanger({

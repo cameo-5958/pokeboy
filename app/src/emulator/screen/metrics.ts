@@ -9,7 +9,7 @@ export function cartMetrics(u: Unit, width: number) {
   return { labelWidth, labelHeight, height: labelHeight + u(58) };
 }
 
-// Fixed-size pieces so the panel stack height is known up front — portrait
+// Fixed-size pieces so the panel stack height is known up front - portrait
 // uses it to park the ejected cartridge low enough to leave room above.
 export function modMetrics(u: Unit) {
   const pad = u(10);

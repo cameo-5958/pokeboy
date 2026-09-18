@@ -90,7 +90,7 @@ def _metamon_rows():
 
 
 def test_metamon_tails_are_deep_and_schema_shaped():
-    """Metamon trajectories are sequential — tails must accumulate up to 20
+    """Metamon trajectories are sequential - tails must accumulate up to 20
     turns with the same entry schema the showdown converter emits."""
     mrows = _metamon_rows()
     tails = [json.loads(r["state_json"])["history_tail"] for r in mrows]

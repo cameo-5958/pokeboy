@@ -57,7 +57,7 @@ def awr_weights(won: torch.Tensor, v: torch.Tensor, beta: float) -> torch.Tensor
 
 def harden_rows(rows: list[dict]) -> list[dict]:
     """--kd-hard ablation: replace each action with the teacher's argmax and
-    drop the soft targets — plain BC on hardened teacher labels, isolating
+    drop the soft targets - plain BC on hardened teacher labels, isolating
     what the full distribution (vs its argmax) is worth."""
     for r in rows:
         r["action"] = int(np.argmax(r.pop("kd_probs")))
@@ -71,7 +71,7 @@ def kd_policy_loss(
 ) -> torch.Tensor:
     """Soft-label CE vs the (re-tempered) teacher distribution: equals hard
     CE for a one-hot teacher at temp 1. temp>1 softens both sides (teacher
-    re-tempered p^(1/T), zeros stay zero — illegal actions get no target
+    re-tempered p^(1/T), zeros stay zero - illegal actions get no target
     mass) and scales by T^2 to keep gradient magnitude comparable."""
     t = teacher_probs
     if temp != 1.0:
@@ -227,7 +227,7 @@ def periodic_eval(
     model.eval()
     correct = total = 0
     with torch.no_grad():
-        # batch 128: banquet at train-batch 128 peaks 8.5/10 GB — a 256 eval
+        # batch 128: banquet at train-batch 128 peaks 8.5/10 GB - a 256 eval
         # batch on top of resident optimizer state would risk OOM mid-run
         for batch, labels, _, _ in make_batches(hold_rows[:max_top1_rows], tok, 128, device) \
                 if hold_rows else ():

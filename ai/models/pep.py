@@ -75,9 +75,6 @@ def config_for(base: PEPConfig | dict | None = None, **overrides) -> PEPConfig:
     return replace(cfg, **overrides) if overrides else cfg
 
 
-# --------------------------------------------------------------------------- blocks
-
-
 class SelfAttention(nn.Module):
     """Multi-head self-attention, bias-free projections, key padding mask."""
 
@@ -233,9 +230,6 @@ class TokenEmbedding(nn.Module):
         return h + self.token_type(tok_type.long().clamp(0, N_TOKEN_TYPES - 1))
 
 
-# --------------------------------------------------------------------------- model
-
-
 class PEP(nn.Module):
     def __init__(self, cfg: PEPConfig | None = None):
         super().__init__()
@@ -368,8 +362,6 @@ def features_to_tensors(arrays: dict, device=None) -> dict[str, torch.Tensor]:
         out[k] = t
     return out
 
-
-# --------------------------------------------------------------------------- checkpoints
 
 FEATURE_SCHEMA = "pkai-features-v1"
 

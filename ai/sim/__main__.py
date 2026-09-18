@@ -4,7 +4,7 @@
   python -m sim bench --seconds S
 
 The jsonl agent speaks the seat protocol on stdio: one schema_v1 state JSON
-line out, one {"action": int} line back — the contract a future transport
+line out, one {"action": int} line back - the contract a future transport
 adapter (HTTP/WS/battle-link) will implement.
 """
 

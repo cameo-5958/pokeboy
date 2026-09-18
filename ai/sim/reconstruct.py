@@ -4,7 +4,7 @@ The serve-time-search foundation: my side comes fully from the state; the
 opponent's hidden slots and movesets are filled from a caller-provided
 candidate team (see sample_opponent_team for a usage-realistic sampler).
 Both sides are rotated so the active mon sits at slot 0, and hp/status/pp
-patches land on the packed buffer BEFORE the engine's initial switch-in —
+patches land on the packed buffer BEFORE the engine's initial switch-in -
 so paralysis/burn stat modifiers apply to the reconstructed active mon.
 
 Known approximation: volatile state (stat stages, Reflect, confusion,
@@ -22,7 +22,7 @@ from sim.battle import _POKE, _SIDE, _TURN_OFF, Battle
 from sim.pack import PokemonSpec, pack_battle
 
 # gen1 status byte: sleep counter in bits 0-2, then PSN/BRN/FRZ/PAR bits.
-# An unknown sleep counter becomes "2 turns left" — middle of the road.
+# An unknown sleep counter becomes "2 turns left" - middle of the road.
 _STATUS_BITS = {"SLP": 0x02, "PSN": 0x08, "BRN": 0x10, "FRZ": 0x20, "PAR": 0x40}
 
 
@@ -68,7 +68,7 @@ def battle_from_state(state: dict[str, Any], opp_team: list[PokemonSpec],
 
     opp_team must align with the state's opp listing (slot i fills listed
     mon i; unrevealed slots take the candidate as-is). Returns the battle
-    plus {reconstructed action int -> original action int} — identity here
+    plus {reconstructed action int -> original action int} - identity here
     because both sides keep the state's listing order minus the active.
     """
     my_side, opp_side = state["my_side"], state["opp_side"]

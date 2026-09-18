@@ -94,7 +94,7 @@ void Bus::write_io(uint16_t a, uint8_t v) {
         case 0xFF41: ppu->stat_write(v); return;
         case 0xFF42: ppu->scy = v; return;  case 0xFF43: ppu->scx = v; return;
         case 0xFF45: ppu->lyc = v; return;
-        case 0xFF46: {                               // OAM DMA — instant copy is fine
+        case 0xFF46: {                               // OAM DMA - instant copy is fine
             uint16_t src = v << 8;
             for (int i = 0; i < 0xA0; i++) oam[i] = read8_unrestricted(src + i);
             return;

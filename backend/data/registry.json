@@ -2,9 +2,8 @@
   "roms": [
     {
       "id": "pokemon-red",
-      "title": "Pok\u00e9mon Red",
+      "title": "Pokémon Red",
       "file": "pokemon-red.gb",
-      "img": "poke-red.png",
       "version": "1.0.0"
     }
   ],

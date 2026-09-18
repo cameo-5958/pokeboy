@@ -14,6 +14,8 @@ jobs:
   build:
     name: Build unsigned .ipa
     runs-on: macos-14
+    env:
+      EXPO_PUBLIC_BATTLE_LINK_URL: ${{ vars.BATTLE_LINK_URL }}
     defaults:
       run:
         working-directory: app
@@ -79,6 +81,7 @@ jobs:
       - name: Publish LiveContainer install
         env:
           IPA_HOST_TOKEN: ${{ secrets.IPA_HOST_TOKEN }}
+          IPA_HOST_URL: ${{ vars.IPA_HOST_URL }}
         run: |
           set -euo pipefail
 
@@ -98,7 +101,7 @@ jobs:
               --header "Content-Type: application/octet-stream" \
               --header "X-IPA-SHA256: $checksum" \
               --data-binary "@$ipa" \
-              "https://test.cameo.moe/pokeboy/api/builds/$GITHUB_SHA"
+              "$IPA_HOST_URL/api/builds/$GITHUB_SHA"
           )"
 
           install_url="$(
@@ -115,5 +118,5 @@ jobs:
             echo
             echo "[Install in LiveContainer]($install_url)"
             echo
-            echo "[Install page](https://test.cameo.moe/pokeboy/) · [Direct IPA]($ipa_url)"
+            echo "[Install page]($IPA_HOST_URL/) · [Direct IPA]($ipa_url)"
           } >> "$GITHUB_STEP_SUMMARY"

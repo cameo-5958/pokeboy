@@ -38,7 +38,7 @@ export function loadDotEnv(file = path.join(__dirname, "..", ".env")): void {
   try {
     text = fs.readFileSync(file, "utf8");
   } catch {
-    return; // no .env is fine — env vars / systemd EnvironmentFile still apply
+    return; // no .env is fine - env vars / systemd EnvironmentFile still apply
   }
   for (const [key, value] of Object.entries(parseDotEnv(text))) {
     if (process.env[key] === undefined) process.env[key] = value;
