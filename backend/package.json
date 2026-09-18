@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/env.test.ts src/websession.test.ts src/routes/web.test.ts src/routes/battle-link.test.ts",
+    "test": "tsx --test src/env.test.ts src/routes/battle-link.test.ts",
     "test:battle-link": "tsx --test src/routes/battle-link.test.ts",
     "test:content": "tsx --test src/content.test.ts",
     "key:new": "tsx scripts/key.ts new",

@@ -6,7 +6,7 @@ on the device. No ROMs in here, bring your own.
 ## Layout
 
 - `gameboy/` emulator core, tests, tools
-- `emulator/` frontends: linux (fbdev/evdev/tinyalsa), headless, web, win32
+- `emulator/` frontends: linux (fbdev/evdev/tinyalsa), headless, win32
 - `pkai/` battle AI: damage math, features, int8 inference, ROM hook
 - `pred-patch/` pokered with the $DB/$EB/$EC opcodes the AI hooks into
 - `ai/` simulator, training, weight export, Showdown eval
@@ -14,7 +14,6 @@ on the device. No ROMs in here, bring your own.
 - `hardware/` KiCad project, fab exports
 - `app/` React Native (Expo) app
 - `backend/` API for ROMs, mods and cartridge metadata
-- `web/` browser player shell
 
 ## Build
 
@@ -32,11 +31,10 @@ build/gbemu_headless game.gb 1800 out.bmp
 `pred-patch/` is a copy of a separate repository. Find patched pokered ROM
 here: []
 
-ROM, web core, AI:
+ROM, AI:
 
 ```sh
 pred-patch/build_ai.sh
-emulator/web/build.sh                    # emscripten
 cd ai
 uv sync --group dev && sim/build_engine.sh && scripts/build_pkai.sh
 uv run python tools/dump_trainers.py     # trainer parties, needs the ROM
