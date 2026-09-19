@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S gameboy -B build -DCMAKE_BUILD_TYPE=Release -DPKAI_BUILD_ROM=OFF -DBUILD_TESTING=ON
+      - run: cmake --build build -j
+      - run: ctest --test-dir build --output-on-failure
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S gameboy -B build -DPKAI_BUILD_ROM=OFF -DBUILD_TESTING=ON
+      - run: cmake --build build --config Release -j
+      - run: ctest --test-dir build -C Release --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gbemu-windows
+          path: build/Release/gbemu.exe
+          if-no-files-found: error
+
+  backend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
