@@ -3,6 +3,20 @@
 Game Boy handheld with its own emulator and a Gen 1 Pokemon battle AI that runs
 on the device. No ROMs in here, bring your own.
 
+## How the AI works
+
+Trainers are driven by a small transformer with a GRU on top. It is integer
+only: int8 weights, int16 hidden state, no floats on the device.
+
+The patched ROM runs an unused opcode (`$DB`, `$EB`, `$EC`) wherever the game
+would normally pick a trainer's move. The emulator traps it, reads the battle
+out of WRAM, runs the model and writes the choice back.
+
+One decision is too slow for a single frame on the Cortex-A8, so the model is
+cut into small steps (one GEMM block, one attention head, one GRU step) and the
+scheduler fits them in between frames. `ai/models/pep_int.py` is the reference
+and the C++ in `pkai/` has to match it bit for bit. There is a test for that.
+
 ## Layout
 
 - `gameboy/` emulator core, tests, tools
@@ -35,6 +49,9 @@ buildroot/scripts/qemu/run-system.sh
 cd backend && npm install && npm run dev
 cd app && npm install && npm start
 ```
+
+Most of the `pkai` tests skip themselves until the patched ROM and the weights
+have been built.
 
 ## License
 
